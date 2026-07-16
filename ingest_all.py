@@ -21,11 +21,19 @@ def ingest_all():
     import sqlite3
     db = sqlite3.connect(conn)
     c = db.cursor()
-    c.execute("DELETE FROM chunks")
-    c.execute("DELETE FROM documents")
+    try:
+        c.execute("DROP TABLE IF EXISTS parent_chunks_fts")
+        c.execute("DELETE FROM child_chunks")
+        c.execute("DELETE FROM parent_chunks")
+        c.execute("DELETE FROM documents")
+    except sqlite3.OperationalError:
+        pass # Table might not exist on first initialization
     db.commit()
     db.close()
-    print("Database cleared.")
+    
+    # Re-initialize vector store tables
+    vector_store._init_db()
+    print("Database cleared and schema initialized.")
 
     folder_path = "sample_guidelines"
     if not os.path.exists(folder_path):
@@ -40,12 +48,6 @@ def ingest_all():
     for idx, filename in enumerate(files):
         file_path = os.path.join(folder_path, filename)
         file_ext = filename.split('.')[-1].lower()
-        
-        # In pypdf, docx, pandas, etc., we treat txt as plain text
-        # Let's add simple txt parsing fallback directly in this script if needed
-        # In rag_engine.py, we only have pdf, docx, xlsx. Let's make sure we handle .txt by adding it to parser 
-        # or just reading it as plain text. Let's see: we can read plain text easily.
-        
         file_size = os.path.getsize(file_path)
         print(f"[{idx+1}/{len(files)}] Processing {filename} ({file_size / 1024:.1f} KB)...")
         
@@ -54,7 +56,7 @@ def ingest_all():
         try:
             # Parse text
             if file_ext == "txt":
-                with open(file_path, "r", encoding="utf-8") as f:
+                with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
                     text = f.read()
             else:
                 text = DocumentParser.parse(file_path, file_ext)
@@ -63,27 +65,17 @@ def ingest_all():
                 print(f"   ⚠️ Warning: Document '{filename}' is empty, skipping.")
                 continue
                 
-            # Chunk text
-            chunks = TextChunker.chunk(text)
-            if not chunks:
-                print(f"   ⚠️ Warning: No chunks generated for '{filename}', skipping.")
-                continue
-                
-            # Embed chunks
-            embeddings = embedding_engine.embed_chunks(chunks)
-            
             # Save to SQLite Vector Store
-            # Note: if it is txt, we can treat its type as 'txt'
-            vector_store.add_document(
+            doc_id, parent_count = vector_store.add_document(
                 filename=filename,
                 file_type=file_ext,
                 file_size=file_size,
-                chunks=chunks,
-                embeddings=embeddings
+                text=text,
+                embedding_engine=embedding_engine
             )
             
             elapsed = time.time() - start
-            print(f"   Indexed: {len(chunks)} chunks in {elapsed:.2f} seconds.")
+            print(f"   Indexed: {parent_count} parent chunks (with child embeddings) in {elapsed:.2f} seconds.")
             
         except Exception as e:
             print(f"   ❌ Error processing '{filename}': {str(e)}")

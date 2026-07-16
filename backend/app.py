@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from typing import Optional, List
 
 # Import our RAG Engine classes
-from backend.rag_engine import DocumentParser, TextChunker, EmbeddingEngine, SQLiteVectorStore
+from backend.rag_engine import DocumentParser, TextChunker, EmbeddingEngine, SQLiteVectorStore, RerankingEngine
 
 app = FastAPI(title="Local Insurance RAG System API")
 
@@ -26,6 +26,7 @@ app.add_middleware(
 # Initialize engines
 vector_store = SQLiteVectorStore()
 embedding_engine = EmbeddingEngine()
+reranking_engine = RerankingEngine()
 
 # Ensure frontend directory exists
 os.makedirs("frontend", exist_ok=True)
@@ -104,28 +105,15 @@ async def upload_document(file: UploadFile = File(...)):
         if not text.strip():
             raise HTTPException(status_code=400, detail="Document appears to be empty or unreadable.")
             
-        # Step 2: Chunking
-        chunk_start = time.time()
-        chunks = TextChunker.chunk(text)
-        chunk_time = (time.time() - chunk_start) * 1000
-        
-        if not chunks:
-            raise HTTPException(status_code=400, detail="Failed to chunk document content.")
-            
-        # Step 3: Embeddings
-        embed_start = time.time()
-        embeddings = embedding_engine.embed_chunks(chunks)
-        embed_time = (time.time() - embed_start) * 1000
-        
-        # Step 4: Save to vector database
+        # Step 2: Save to vector database (which chunks & embeds hierarchically)
         db_start = time.time()
         file_size = os.path.getsize(tmp_path)
-        vector_store.add_document(
+        doc_id, parent_count = vector_store.add_document(
             filename=file.filename,
             file_type=file_ext,
             file_size=file_size,
-            chunks=chunks,
-            embeddings=embeddings
+            text=text,
+            embedding_engine=embedding_engine
         )
         db_time = (time.time() - db_start) * 1000
         
@@ -133,12 +121,10 @@ async def upload_document(file: UploadFile = File(...)):
         
         return {
             "filename": file.filename,
-            "chunks_count": len(chunks),
+            "chunks_count": parent_count,
             "total_time_ms": round(total_time, 1),
             "steps": {
                 "parsing_ms": round(parse_time, 1),
-                "chunking_ms": round(chunk_time, 1),
-                "embedding_ms": round(embed_time, 1),
                 "db_storage_ms": round(db_time, 1)
             }
         }
@@ -170,11 +156,16 @@ def chat_with_docs(req: ChatRequest):
     embed_time = (time.time() - start_time) * 1000
     logs.append(f"Generated query vector in {embed_time:.1f}ms")
     
-    # Step 2: Query database
+    # Step 2: Query database (Hybrid search with FTS5 + RRF + Cross-Encoder Reranking)
     search_start = time.time()
-    matches = vector_store.search_similarity(query_emb, top_k=4)
+    matches = vector_store.search_similarity(
+        query_emb, 
+        req.query, 
+        reranking_engine=reranking_engine, 
+        top_k=4
+    )
     search_time = (time.time() - search_start) * 1000
-    logs.append(f"Vector database similarity search completed in {search_time:.1f}ms (matched {len(matches)} passages)")
+    logs.append(f"FTS5 + Vector hybrid search & Cross-Encoder reranking completed in {search_time:.1f}ms (returned {len(matches)} passages)")
     
     # If no matches, return early warning
     if not matches:
