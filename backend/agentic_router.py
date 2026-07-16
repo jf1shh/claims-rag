@@ -31,7 +31,19 @@ class AgenticRAGRouter:
             return self._run_simulated_agent(query_text, claim_id, vector_store, embedding_engine, reranking_engine, logs, start_time)
         
         # Else, online LM Studio mode
-        return self._run_online_agent(query_text, claim_id, engine, vector_store, embedding_engine, reranking_engine, logs, start_time)
+        engine_url = "http://127.0.0.1:1234" if engine == "lm-studio" else engine
+        return self._run_online_agent(query_text, claim_id, engine_url, vector_store, embedding_engine, reranking_engine, logs, start_time)
+
+    def _get_loaded_model(self, engine_url: str) -> str:
+        try:
+            response = requests.get(f"{engine_url}/v1/models", timeout=2.0)
+            if response.status_code == 200:
+                data = response.json()
+                if "data" in data and len(data["data"]) > 0:
+                    return data["data"][0]["id"]
+        except Exception:
+            pass
+        return "local-model"
 
     def _run_online_agent(
         self,
@@ -46,7 +58,8 @@ class AgenticRAGRouter:
     ) -> Dict[str, Any]:
         # Step 1: Query Decomposition (Planner Call)
         logs.append("📋 [Step 1: Planning] Decomposing query into target sub-queries...")
-        plan = self._get_llm_plan(query_text, claim_id, engine_url)
+        model_name = self._get_loaded_model(engine_url)
+        plan = self._get_llm_plan(query_text, claim_id, engine_url, model_name)
         
         logs.append(f"📄 [Agent Plan] Route Guidelines: {plan['needs_global_policies']} | Route Claim Dossier: {plan['needs_claim_dossier']}")
         for idx, sub_q in enumerate(plan["sub_queries"]):
@@ -140,6 +153,7 @@ class AgenticRAGRouter:
             url = f"{engine_url}/v1/chat/completions"
             headers = { "Content-Type": "application/json" }
             payload = {
+                "model": model_name,
                 "messages": [
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
@@ -175,7 +189,7 @@ class AgenticRAGRouter:
             "pipeline_logs": logs
         }
 
-    def _get_llm_plan(self, query_text: str, claim_id: Optional[str], engine_url: str) -> Dict[str, Any]:
+    def _get_llm_plan(self, query_text: str, claim_id: Optional[str], engine_url: str, model_name: str) -> Dict[str, Any]:
         """Requests a structured JSON plan from the LLM."""
         system_prompt = (
             "You are an AI Claims Planner. Decompose the claims query into target document searches.\n"
@@ -198,6 +212,7 @@ class AgenticRAGRouter:
         try:
             url = f"{engine_url}/v1/chat/completions"
             payload = {
+                "model": model_name,
                 "messages": [
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_prompt}
