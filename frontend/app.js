@@ -632,8 +632,6 @@ function logSystemEventFirstTime() {
 
 // 7. Prompt Preview Sync
 function updatePromptPreview(query, sources) {
-    // Show Prompt Card
-    document.getElementById('viz-prompt-card').classList.add('active');
     
     const systemPrompt = 
         "You are an expert AI claims handler assistant. Your job is to answer the user's questions about insurance claims, " +
