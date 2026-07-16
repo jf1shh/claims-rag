@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Insurance Claims RAG Station</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Top Navigation / Status Bar -->
+        <header class="app-header">
+            <div class="logo-area">
+                <span class="logo-icon">🛡️</span>
+                <div class="logo-text">
+                    <h1>ClaimsRAG</h1>
+                    <span class="logo-sub">Local Claims Reference Copilot</span>
+                </div>
+            </div>
+            
+            <div class="connection-status-panel">
+                <div class="status-chip" id="status-embed">
+                    <span class="status-indicator active"></span>
+                    <span class="status-label">Embeddings: all-MiniLM-L6 (Local)</span>
+                </div>
+                <div class="status-chip" id="status-lmstudio">
+                    <span class="status-indicator" id="ind-lmstudio"></span>
+                    <span class="status-label" id="label-lmstudio">LM Studio: Checking...</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Workspace -->
+        <main class="app-workspace">
+            
+            <!-- COLUMN 1: Document Ingestion Station -->
+            <section class="workspace-column sidebar-left">
+                <div class="column-header">
+                    <h2>📁 Ingestion Station</h2>
+                    <p class="section-desc">Add claims reference guides and policy documentation</p>
+                </div>
+                
+                <!-- Upload Dropzone -->
+                <div class="upload-zone" id="upload-zone">
+                    <input type="file" id="file-input" accept=".pdf,.docx,.xlsx,.xls,.txt" style="display: none;">
+                    <div class="upload-content">
+                        <span class="upload-icon">📥</span>
+                        <p class="upload-title">Drag & drop policy files</p>
+                        <p class="upload-sub">Supports PDF, DOCX, Excel, TXT (Max 50MB)</p>
+                        <button class="btn btn-secondary btn-sm" id="browse-btn">Browse Files</button>
+                    </div>
+                    <div class="upload-progress-container" id="upload-progress-container" style="display: none;">
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="upload-progress-fill"></div>
+                        </div>
+                        <span class="progress-status" id="upload-progress-status">Uploading...</span>
+                    </div>
+                </div>
+
+                <!-- Document List -->
+                <div class="document-section">
+                    <div class="section-title-bar">
+                        <h3>Indexed Guidelines</h3>
+                        <span class="badge" id="doc-count">0</span>
+                    </div>
+                    <div class="document-list-container">
+                        <div class="empty-docs-state" id="empty-docs-state">
+                            <span class="empty-icon">📭</span>
+                            <p>No guidelines indexed yet.</p>
+                            <p class="empty-sub">Upload references to start querying.</p>
+                        </div>
+                        <ul class="document-list" id="document-list">
+                            <!-- Populated dynamically -->
+                        </ul>
+                    </div>
+                </div>
+            </section>
+
+            <!-- COLUMN 2: Chat & Retrieval Assistant -->
+            <section class="workspace-column chat-center">
+                <div class="column-header">
+                    <h2>💬 Claims Reference Assistant</h2>
+                    <p class="section-desc">Query policy terms using natural language</p>
+                </div>
+
+                <!-- Chat Messages Area -->
+                <div class="chat-message-container" id="chat-messages">
+                    <div class="chat-welcome" id="chat-welcome">
+                        <div class="welcome-card">
+                            <span class="welcome-icon">💡</span>
+                            <h3>Simulated Claims Copilot</h3>
+                            <p>I help insurance claims handlers quickly search, extract, and draft responses using local reference guides.</p>
+                            <div class="suggested-queries">
+                                <p class="suggestion-label">Suggested Queries:</p>
+                                <button class="suggested-query-btn" data-query="What is the deductible for collision claims under Standard Auto Plan A?">🚗 Collision Deductibles</button>
+                                <button class="suggested-query-btn" data-query="What evidence and documentation are required to process an auto claim?">📋 Claim Evidence Checklist</button>
+                                <button class="suggested-query-btn" data-query="Is there a deductible for repairing a chipped windshield?">💎 Windshield Glass Repairs</button>
+                                <button class="suggested-query-btn" data-query="What are the daily caps and limits for rental car reimbursement under the plans?">🔑 Rental Car Reimbursements</button>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Dynamically populated messages go here -->
+                </div>
+
+                <!-- Chat Input Controls -->
+                <div class="chat-input-panel">
+                    <!-- Engine Selection Bar -->
+                    <div class="engine-bar">
+                        <span class="engine-label">LLM Engine:</span>
+                        <div class="engine-selector-group">
+                            <label class="engine-option">
+                                <input type="radio" name="llm-engine" value="lm-studio" checked>
+                                <span class="engine-chip">
+                                    <span class="engine-indicator"></span> LM Studio (1234)
+                                </span>
+                            </label>
+                            <label class="engine-option">
+                                <input type="radio" name="llm-engine" value="simulated">
+                                <span class="engine-chip">
+                                    <span class="engine-indicator"></span> Simulation Mode
+                                </span>
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <form class="input-form" id="chat-form">
+                        <textarea 
+                            id="query-input" 
+                            placeholder="Ask a claims policy question... (e.g., 'What is the depreciation rate for roofs?')"
+                            rows="2"
+                            required
+                        ></textarea>
+                        <button type="submit" class="btn btn-primary send-btn" id="send-btn">
+                            <span class="send-text">Query</span>
+                            <span class="send-icon">➔</span>
+                        </button>
+                    </form>
+                </div>
+            </section>
+
+            <!-- COLUMN 3: RAG Pipeline Visualizer -->
+            <section class="workspace-column sidebar-right">
+                <div class="column-header">
+                    <h2>⚡ RAG Pipeline Visualizer</h2>
+                    <p class="section-desc">Real-time trace of the retrieval pipeline steps</p>
+                </div>
+
+                <div class="visualizer-content">
+                    
+                    <!-- Ingestion Stats or Search Trace -->
+                    <div class="visualizer-card active" id="viz-trace-card">
+                        <h3>Search & Retrieval Trace</h3>
+                        <div class="trace-timeline" id="trace-timeline">
+                            <div class="empty-trace-state">
+                                <span class="empty-trace-icon">🪵</span>
+                                <p>Logs will appear here when you query the assistant or upload documents.</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Prompt Injector View -->
+                    <div class="visualizer-card" id="viz-prompt-card">
+                        <div class="card-header-bar">
+                            <h3>Prompt Injector View</h3>
+                            <span class="tag-status">Auto Context</span>
+                        </div>
+                        <div class="prompt-preview-container">
+                            <div class="prompt-section-label">System Template</div>
+                            <pre class="prompt-box system-box" id="viz-system-prompt">System prompt will appear here.</pre>
+                            
+                            <div class="prompt-section-label">Injected Context & Query</div>
+                            <pre class="prompt-box user-box" id="viz-user-prompt">Injected search results and user question will appear here.</pre>
+                        </div>
+                    </div>
+
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Source Chunk Modal -->
+    <div class="modal-backdrop" id="source-modal" style="display: none;">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3 id="modal-title">Matched Policy Passage</h3>
+                <button class="modal-close" id="modal-close">&times;</button>
+            </div>
+            <div class="modal-metadata">
+                <span class="modal-meta-item">📁 File: <strong id="modal-filename">-</strong></span>
+                <span class="modal-meta-item">📊 Similarity Score: <strong id="modal-score">-</strong></span>
+            </div>
+            <div class="modal-body">
+                <pre id="modal-content"></pre>
+            </div>
+        </div>
+    </div>
+
+    <script src="app.js?v=1.0.1"></script>
+</body>
+</html>

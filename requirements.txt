@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+pypdf
+python-docx
+pandas
+openpyxl
+sentence-transformers
+numpy
+requests
+python-multipart

@@ -1,0 +1,611 @@
+// App State
+let currentEngine = 'lm-studio';
+let documents = [];
+let backendStatus = null;
+
+// DOM Elements
+const browseBtn = document.getElementById('browse-btn');
+const fileInput = document.getElementById('file-input');
+const uploadZone = document.getElementById('upload-zone');
+const uploadProgressContainer = document.getElementById('upload-progress-container');
+const uploadProgressFill = document.getElementById('upload-progress-fill');
+const uploadProgressStatus = document.getElementById('upload-progress-status');
+const documentList = document.getElementById('document-list');
+const emptyDocsState = document.getElementById('empty-docs-state');
+const docCountBadge = document.getElementById('doc-count');
+
+const chatMessages = document.getElementById('chat-messages');
+const chatForm = document.getElementById('chat-form');
+const queryInput = document.getElementById('query-input');
+const sendBtn = document.getElementById('send-btn');
+const chatWelcome = document.getElementById('chat-welcome');
+
+const traceTimeline = document.getElementById('trace-timeline');
+const vizSystemPrompt = document.getElementById('viz-system-prompt');
+const vizUserPrompt = document.getElementById('viz-user-prompt');
+
+const sourceModal = document.getElementById('source-modal');
+const modalTitle = document.getElementById('modal-title');
+const modalFilename = document.getElementById('modal-filename');
+const modalScore = document.getElementById('modal-score');
+const modalContent = document.getElementById('modal-content');
+const modalClose = document.getElementById('modal-close');
+
+// Event Listeners
+document.addEventListener('DOMContentLoaded', initializeApp);
+
+// Initialize App
+async function initializeApp() {
+    setupEngineSelection();
+    setupDragAndDrop();
+    setupBrowseButton();
+    setupChatSuggestions();
+    setupModal();
+    
+    // Initial fetch of status and documents
+    await checkBackendStatus();
+    await fetchDocuments();
+    
+    // Periodically poll backend status & database doc list every 10 seconds
+    setInterval(checkBackendStatus, 10000);
+}
+
+// 1. LLM Engine Selection Logic
+function setupEngineSelection() {
+    const radios = document.querySelectorAll('input[name="llm-engine"]');
+    radios.forEach(radio => {
+        radio.addEventListener('change', (e) => {
+            currentEngine = e.target.value;
+            logSystemEvent(`LLM engine switched to: ${currentEngine.toUpperCase()}`);
+        });
+    });
+}
+
+// Check Backend Status (LM Studio, DB)
+async function checkBackendStatus() {
+    try {
+        const response = await fetch('/api/status');
+        if (!response.ok) throw new Error('Status endpoint failed');
+        
+        backendStatus = await response.json();
+        
+        const lmStudioActive = backendStatus && backendStatus.lm_studio && backendStatus.lm_studio.active;
+        const lmStudioModels = (backendStatus && backendStatus.lm_studio && backendStatus.lm_studio.models) || [];
+        
+        updateStatusIndicator('lmstudio', lmStudioActive, lmStudioModels);
+        
+        // Auto select best available engine
+        if (lmStudioActive) {
+            currentEngine = 'lm-studio';
+            const radioEl = document.querySelector('input[name="llm-engine"][value="lm-studio"]');
+            if (radioEl) radioEl.checked = true;
+            logSystemEvent("Auto-connected to active LM Studio endpoint");
+        } else {
+            currentEngine = 'simulated';
+            const radioEl = document.querySelector('input[name="llm-engine"][value="simulated"]');
+            if (radioEl) radioEl.checked = true;
+            logSystemEvent("No local LLM detected. Falling back to Simulated Claims LLM Mode");
+        }
+    } catch (error) {
+        console.error('Error fetching backend status:', error);
+        logSystemEvent('Error connecting to FastAPI backend API', 'error');
+        updateStatusIndicator('lmstudio', false, []);
+    }
+}
+
+function updateStatusIndicator(id, isActive, models) {
+    const indicator = document.getElementById(`ind-${id}`);
+    const label = document.getElementById(`label-${id}`);
+    const chip = document.getElementById(`status-${id}`);
+    
+    if (isActive) {
+        indicator.className = 'status-indicator active';
+        const modelName = models.length > 0 ? models[0] : 'Ready';
+        label.innerText = `LM Studio: ${modelName}`;
+        chip.style.borderColor = 'rgba(16, 185, 129, 0.3)';
+    } else {
+        indicator.className = 'status-indicator error';
+        label.innerText = `LM Studio: Offline`;
+        chip.style.borderColor = 'rgba(239, 68, 68, 0.15)';
+    }
+}
+
+// 2. Drag and Drop + File Upload Ingestion
+function setupDragAndDrop() {
+    ['dragenter', 'dragover'].forEach(eventName => {
+        uploadZone.addEventListener(eventName, (e) => {
+            e.preventDefault();
+            uploadZone.classList.add('dragover');
+        }, false);
+    });
+
+    ['dragleave', 'drop'].forEach(eventName => {
+        uploadZone.addEventListener(eventName, (e) => {
+            e.preventDefault();
+            uploadZone.classList.remove('dragover');
+        }, false);
+    });
+
+    uploadZone.addEventListener('drop', (e) => {
+        const dt = e.dataTransfer;
+        const files = dt.files;
+        if (files.length > 0) {
+            handleFileUpload(files[0]);
+        }
+    });
+}
+
+function setupBrowseButton() {
+    browseBtn.addEventListener('click', () => {
+        fileInput.click();
+    });
+    
+    fileInput.addEventListener('change', (e) => {
+        if (e.target.files.length > 0) {
+            handleFileUpload(e.target.files[0]);
+        }
+    });
+}
+
+async function handleFileUpload(file) {
+    const ext = file.name.split('.').pop().toLowerCase();
+    if (!['pdf', 'docx', 'xlsx', 'xls', 'txt'].includes(ext)) {
+        alert('Unsupported file format. Please upload PDF, DOCX, Excel, or Text documents.');
+        return;
+    }
+
+    // Reset upload UI
+    uploadProgressContainer.style.display = 'block';
+    uploadProgressFill.style.width = '0%';
+    uploadProgressStatus.innerText = 'Extracting and parsing text...';
+    
+    // Simulate UI progress
+    let prog = 0;
+    const interval = setInterval(() => {
+        if (prog < 90) {
+            prog += 10;
+            uploadProgressFill.style.width = `${prog}%`;
+        }
+    }, 200);
+
+    const formData = new FormData();
+    formData.append('file', file);
+
+    logSystemEvent(`Ingesting file: ${file.name} (${formatBytes(file.size)})`);
+    logSystemEvent("Parsing file content and running text extraction pipeline...");
+
+    try {
+        const response = await fetch('/api/upload', {
+            method: 'POST',
+            body: formData
+        });
+
+        clearInterval(interval);
+        
+        if (!response.ok) {
+            const err = await response.json();
+            throw new Error(err.detail || 'Upload failed');
+        }
+
+        const result = await response.json();
+        
+        uploadProgressFill.style.width = '100%';
+        uploadProgressStatus.innerText = 'Indexing complete!';
+        
+        logSystemEvent(`Document parsed successfully in ${result.steps.parsing_ms}ms`, 'success');
+        logSystemEvent(`Split into ${result.chunks_count} overlapping semantic chunks in ${result.steps.chunking_ms}ms`, 'success');
+        logSystemEvent(`Generated 384-dimensional embeddings via SentenceTransformers in ${result.steps.embedding_ms}ms`, 'success');
+        logSystemEvent(`Stored chunk mappings in SQLite vector store database in ${result.steps.db_storage_ms}ms`, 'success');
+        logSystemEvent(`Ingestion complete for ${file.name}. Total time: ${result.total_time_ms}ms`, 'success');
+        
+        setTimeout(() => {
+            uploadProgressContainer.style.display = 'none';
+        }, 1500);
+
+        await fetchDocuments();
+        
+    } catch (error) {
+        clearInterval(interval);
+        uploadProgressContainer.style.display = 'none';
+        logSystemEvent(`Ingestion failed for ${file.name}: ${error.message}`, 'error');
+        alert(`Failed to ingest document: ${error.message}`);
+    }
+}
+
+// 3. Guideline Document Management
+async function fetchDocuments() {
+    try {
+        const response = await fetch('/api/documents');
+        if (!response.ok) throw new Error('Failed to load documents');
+        
+        documents = await response.json();
+        renderDocuments();
+    } catch (error) {
+        console.error('Error fetching documents:', error);
+    }
+}
+
+function renderDocuments() {
+    documentList.innerHTML = '';
+    docCountBadge.innerText = documents.length;
+    
+    if (documents.length === 0) {
+        emptyDocsState.style.display = 'flex';
+        return;
+    }
+    
+    emptyDocsState.style.display = 'none';
+    
+    documents.forEach(doc => {
+        const li = document.createElement('li');
+        li.className = 'document-item';
+        
+        let icon = '📄';
+        if (doc.file_type === 'pdf') icon = '🟥';
+        else if (doc.file_type === 'docx') icon = '🟦';
+        else if (['xlsx', 'xls'].includes(doc.file_type)) icon = '🟩';
+        else if (doc.file_type === 'txt') icon = '🟨';
+        
+        li.innerHTML = `
+            <div class="doc-info">
+                <span class="doc-icon">${icon}</span>
+                <div class="doc-meta">
+                    <span class="doc-name" title="${doc.filename}">${doc.filename}</span>
+                    <div class="doc-size-date">
+                        <span>${formatBytes(doc.file_size)}</span>
+                        <span>•</span>
+                        <span>${doc.uploaded_at.split(' ')[0]}</span>
+                    </div>
+                </div>
+            </div>
+            <button class="btn-delete" title="Delete Guidelines">&times;</button>
+        `;
+        
+        // Delete button logic
+        li.querySelector('.btn-delete').addEventListener('click', async (e) => {
+            e.stopPropagation();
+            if (confirm(`Remove and de-index '${doc.filename}'?`)) {
+                await deleteDocument(doc.filename);
+            }
+        });
+        
+        documentList.appendChild(li);
+    });
+}
+
+async function deleteDocument(filename) {
+    logSystemEvent(`Deleting document: ${filename}`);
+    try {
+        const response = await fetch('/api/delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ filename })
+        });
+        
+        if (!response.ok) throw new Error('Delete request failed');
+        
+        logSystemEvent(`Successfully removed and deleted vector chunks for '${filename}'`, 'success');
+        await fetchDocuments();
+        
+        // If DB is empty, let status know
+        if (backendStatus) {
+            backendStatus.database.document_count = documents.length;
+        }
+    } catch (error) {
+        logSystemEvent(`Failed to delete document: ${error.message}`, 'error');
+        alert(`Failed to delete document: ${error.message}`);
+    }
+}
+
+// 4. Chat and RAG Search Copilot
+function setupChatSuggestions() {
+    const btns = document.querySelectorAll('.suggested-query-btn');
+    btns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            queryInput.value = btn.getAttribute('data-query');
+            queryInput.focus();
+        });
+    });
+
+    // Enter key submits query (Shift+Enter inserts newline)
+    queryInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            chatForm.requestSubmit();
+        }
+    });
+}
+
+chatForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const query = queryInput.value.trim();
+    if (!query) return;
+    
+    queryInput.value = '';
+    
+    // Hide welcome card if open
+    if (chatWelcome) {
+        chatWelcome.style.display = 'none';
+    }
+    
+    // Append User Message bubble
+    addMessageBubble('user', query);
+    
+    // Append Loading Assistant bubble
+    const loadingMessageId = addLoadingBubble();
+    
+    // Clear log trace
+    clearTraceLogs();
+    logSystemEvent(`Processing query: "${query}"`);
+    logSystemEvent(`Target LLM: ${currentEngine.toUpperCase()}`);
+    
+    try {
+        const response = await fetch('/api/chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                query: query,
+                engine: currentEngine
+            })
+        });
+        
+        if (!response.ok) {
+            const err = await response.json();
+            throw new Error(err.detail || 'Chat query failed');
+        }
+        
+        const result = await response.json();
+        
+        // Remove loading bubble and append result
+        removeLoadingBubble(loadingMessageId);
+        addMessageBubble('assistant', result.answer, result.sources, result.engine);
+        
+        // Log trace steps to the pipeline visualizer
+        result.pipeline_logs.forEach(log => {
+            if (log.includes('Generating query vector') || log.includes('Generated query vector')) {
+                logSystemEvent(log, 'system');
+            } else if (log.includes('similarity search completed') || log.includes('Vector database similarity search')) {
+                logSystemEvent(log, 'system');
+            } else if (log.includes('response in') || log.includes('generated response in')) {
+                logSystemEvent(log, 'success');
+            } else if (log.includes('failed') || log.includes('Error')) {
+                logSystemEvent(log, 'error');
+            } else {
+                logSystemEvent(log);
+            }
+        });
+        
+        // Show Prompt Preview details
+        updatePromptPreview(query, result.sources);
+        
+    } catch (error) {
+        console.error('Error during chat query:', error);
+        removeLoadingBubble(loadingMessageId);
+        addMessageBubble('assistant', `⚠️ **Error processing query:** ${error.message}. Please verify the backend and chosen LLM server status.`);
+        logSystemEvent(`RAG Query pipeline error: ${error.message}`, 'error');
+    }
+});
+
+function addMessageBubble(role, content, sources = [], engine = '') {
+    const msgDiv = document.createElement('div');
+    msgDiv.className = `message ${role}`;
+    
+    const formattedContent = formatMarkdown(content);
+    
+    let engineTag = '';
+    if (role === 'assistant' && engine) {
+        let tagClass = 'tag-status';
+        if (engine === 'simulated') tagClass = 'tag-status badge';
+        engineTag = `<span class="${tagClass}" style="margin-left:8px; font-size:9px;">${engine.toUpperCase()}</span>`;
+    }
+    
+    msgDiv.innerHTML = `
+        <div class="message-label">
+            <span>${role === 'user' ? 'Claims Handler' : 'Claims Assistant'}</span>
+            ${engineTag}
+        </div>
+        <div class="message-bubble">
+            ${formattedContent}
+            ${renderSources(sources)}
+        </div>
+    `;
+    
+    chatMessages.appendChild(msgDiv);
+    scrollChatToBottom();
+}
+
+function addLoadingBubble() {
+    const id = 'loading-' + Date.now();
+    const msgDiv = document.createElement('div');
+    msgDiv.className = 'message assistant';
+    msgDiv.id = id;
+    msgDiv.innerHTML = `
+        <div class="message-label">Claims Assistant</div>
+        <div class="message-bubble" style="color: var(--text-muted);">
+            <div class="loading-dots">Searching guidelines and thinking...</div>
+        </div>
+    `;
+    chatMessages.appendChild(msgDiv);
+    scrollChatToBottom();
+    return id;
+}
+
+function removeLoadingBubble(id) {
+    const element = document.getElementById(id);
+    if (element) {
+        element.remove();
+    }
+}
+
+function scrollChatToBottom() {
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
+// 5. Source Chunk Viewer Modal
+function setupModal() {
+    modalClose.addEventListener('click', hideModal);
+    sourceModal.addEventListener('click', (e) => {
+        if (e.target === sourceModal) hideModal();
+    });
+    // Escape key
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && sourceModal.style.display === 'flex') {
+            hideModal();
+        }
+    });
+}
+
+function showModal(filename, score, content) {
+    modalFilename.innerText = filename;
+    modalScore.innerText = `${(score * 100).toFixed(1)}%`;
+    modalContent.innerText = content;
+    sourceModal.style.display = 'flex';
+}
+
+function hideModal() {
+    sourceModal.style.display = 'none';
+}
+
+function renderSources(sources) {
+    if (!sources || sources.length === 0) return '';
+    
+    let cards = '';
+    sources.forEach(src => {
+        // Create an inline element action link
+        const filenameSafe = escapeHtml(src.filename);
+        const contentSafe = escapeHtml(src.content);
+        const scorePct = `${(src.score * 100).toFixed(0)}%`;
+        
+        let icon = '📄';
+        if (src.file_type === 'pdf') icon = '🟥';
+        else if (src.file_type === 'docx') icon = '🟦';
+        else if (['xlsx', 'xls'].includes(src.file_type)) icon = '🟩';
+        else if (src.file_type === 'txt') icon = '🟨';
+
+        cards += `
+            <div class="source-card" onclick="viewSource('${filenameSafe}', ${src.score}, \`${contentSafe.replace(/`/g, '\\`').replace(/\$/g, '\\$')}\`)">
+                <span class="source-file">${icon} ${filenameSafe}</span>
+                <div class="source-score-badge">
+                    <span>Similarity</span>
+                    <span class="score-num">${scorePct}</span>
+                </div>
+            </div>
+        `;
+    });
+    
+    return `
+        <div class="sources-title">Retrieved Reference Citations:</div>
+        <div class="sources-container">
+            ${cards}
+        </div>
+    `;
+}
+
+// Make viewSource globally accessible for the onclick handlers
+window.viewSource = function(filename, score, content) {
+    showModal(filename, score, content);
+};
+
+// 6. RAG Trace Logging
+function logSystemEvent(msg, type = 'info') {
+    const emptyTrace = traceTimeline.querySelector('.empty-trace-state');
+    if (emptyTrace) {
+        emptyTrace.remove();
+    }
+    
+    const div = document.createElement('div');
+    div.className = `trace-item ${type}`;
+    
+    const timeStr = new Date().toLocaleTimeString();
+    div.innerHTML = `[${timeStr}] ${escapeHtml(msg)}`;
+    
+    traceTimeline.appendChild(div);
+    traceTimeline.scrollTop = traceTimeline.scrollHeight;
+}
+
+function clearTraceLogs() {
+    traceTimeline.innerHTML = '';
+}
+
+function logSystemEventFirstTime() {
+    clearTraceLogs();
+}
+
+// 7. Prompt Preview Sync
+function updatePromptPreview(query, sources) {
+    // Show Prompt Card
+    document.getElementById('viz-prompt-card').classList.add('active');
+    
+    const systemPrompt = 
+        "You are an expert AI claims handler assistant. Your job is to answer the user's questions about insurance claims, " +
+        "policies, or guidelines using ONLY the provided reference documents.\n\n" +
+        "Rules:\n" +
+        "1. Base your answer strictly on the provided references.\n" +
+        "2. If the document content doesn't contain the answer, state that you cannot find it in the guidelines.\n" +
+        "3. Provide precise page/section/file references.\n" +
+        "4. Keep your answer clear, professional, and well-structured.";
+        
+    vizSystemPrompt.innerText = systemPrompt;
+    
+    let contextBlocks = [];
+    sources.forEach((src, idx) => {
+        contextBlocks.push(`--- SOURCE ${idx+1} | File: ${src.filename} (Sim: ${src.score.toFixed(3)}) ---\n${src.content}\n`);
+    });
+    
+    const userPrompt = 
+        `Retrieved Reference Guidelines:\n` +
+        `=================================\n` +
+        `${contextBlocks.join('\n')}` +
+        `=================================\n\n` +
+        `Claims Handler Query: ${query}\n\n` +
+        `Answer:`;
+        
+    vizUserPrompt.innerText = userPrompt;
+}
+
+// Helper Utilities
+function formatBytes(bytes, decimals = 1) {
+    if (bytes === 0) return '0 Bytes';
+    const k = 1024;
+    const dm = decimals < 0 ? 0 : decimals;
+    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+}
+
+function escapeHtml(unsafe) {
+    return unsafe
+         .replace(/&/g, "&amp;")
+         .replace(/</g, "&lt;")
+         .replace(/>/g, "&gt;")
+         .replace(/"/g, "&quot;")
+         .replace(/'/g, "&#039;");
+}
+
+function formatMarkdown(text) {
+    // Simple markdown translation
+    let html = escapeHtml(text);
+    
+    // Bold: **text**
+    html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+    
+    // Code blocks: ```code```
+    html = html.replace(/```(.*?)```/gs, '<pre class="prompt-box" style="margin: 8px 0; background:rgba(0,0,0,0.25); border:1px solid var(--border-color);">$1</pre>');
+    
+    // Inline code: `code`
+    html = html.replace(/`(.*?)`/g, '<code style="font-family:Consolas, monospace; background:rgba(255,255,255,0.1); padding: 1px 4px; border-radius:4px;">$1</code>');
+    
+    // Bullet points: \n- item
+    html = html.replace(/\n-\s+(.*?)/g, '<br>• $1');
+    html = html.replace(/\n\*\s+(.*?)/g, '<br>• $1');
+    
+    // Headings: ### title, ## title, # title
+    html = html.replace(/###\s+(.*?)(?=\n|<br>|$)/g, '<h4>$1</h4>');
+    html = html.replace(/##\s+(.*?)(?=\n|<br>|$)/g, '<h3>$1</h3>');
+    html = html.replace(/#\s+(.*?)(?=\n|<br>|$)/g, '<h2>$1</h2>');
+    
+    // Newlines to line breaks (unless we just did lists/headings)
+    html = html.replace(/\n/g, '<br>');
+    
+    return html;
+}
