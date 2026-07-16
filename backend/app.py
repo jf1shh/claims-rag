@@ -34,6 +34,7 @@ os.makedirs("frontend", exist_ok=True)
 class ChatRequest(BaseModel):
     query: str
     engine: str  # 'lm-studio' or 'simulated'
+    claim_id: Optional[str] = None
 
 class DeleteRequest(BaseModel):
     filename: str
@@ -137,6 +138,65 @@ async def upload_document(file: UploadFile = File(...)):
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
 
+@app.post("/api/upload-claim-file")
+async def upload_claim_document(claim_id: str = Form(...), file: UploadFile = File(...)):
+    """Uploads and processes a document specifically for a given claim ID."""
+    file_ext = file.filename.split(".")[-1].lower()
+    if file_ext not in ["pdf", "docx", "xlsx", "xls", "txt"]:
+        raise HTTPException(
+            status_code=400, 
+            detail="Unsupported format. Upload PDF, DOCX, Excel, or Text."
+        )
+        
+    start_time = time.time()
+    with tempfile.NamedTemporaryFile(delete=False, suffix=f".{file_ext}") as tmp:
+        shutil.copyfileobj(file.file, tmp)
+        tmp_path = tmp.name
+        
+    try:
+        parse_start = time.time()
+        text = DocumentParser.parse(tmp_path, file_ext)
+        parse_time = (time.time() - parse_start) * 1000
+        
+        if not text.strip():
+            raise HTTPException(status_code=400, detail="Document appears to be empty or unreadable.")
+            
+        db_start = time.time()
+        file_size = os.path.getsize(tmp_path)
+        doc_id, parent_count = vector_store.add_document(
+            filename=file.filename,
+            file_type=file_ext,
+            file_size=file_size,
+            text=text,
+            embedding_engine=embedding_engine,
+            claim_id=claim_id
+        )
+        db_time = (time.time() - db_start) * 1000
+        total_time = (time.time() - start_time) * 1000
+        
+        return {
+            "filename": file.filename,
+            "claim_id": claim_id,
+            "chunks_count": parent_count,
+            "total_time_ms": round(total_time, 1),
+            "steps": {
+                "parsing_ms": round(parse_time, 1),
+                "db_storage_ms": round(db_time, 1)
+            }
+        }
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+
+@app.get("/api/documents/claim/{claim_id}")
+def list_claim_documents(claim_id: str):
+    """Lists all documents attached to a specific claim."""
+    return vector_store.get_claim_documents(claim_id)
+
 @app.post("/api/delete")
 def delete_document(req: DeleteRequest):
     """Deletes a document from the store."""
@@ -161,11 +221,12 @@ def chat_with_docs(req: ChatRequest):
     matches = vector_store.search_similarity(
         query_emb, 
         req.query, 
+        claim_id=req.claim_id,
         reranking_engine=reranking_engine, 
         top_k=4
     )
     search_time = (time.time() - search_start) * 1000
-    logs.append(f"FTS5 + Vector hybrid search & Cross-Encoder reranking completed in {search_time:.1f}ms (returned {len(matches)} passages)")
+    logs.append(f"FTS5 + Vector hybrid search & Cross-Encoder reranking completed in {search_time:.1f}ms (returned {len(matches)} passages, claim scope: {req.claim_id})")
     
     # If no matches, return early warning
     if not matches:

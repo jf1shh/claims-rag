@@ -127,6 +127,10 @@ const btnAuditOEM = document.getElementById('btn-audit-oem');
 const btnAuditFraud = document.getElementById('btn-audit-fraud');
 const btnAuditLetter = document.getElementById('btn-audit-letter');
 
+const claimDocsList = document.getElementById('claim-docs-list');
+const claimUploadZone = document.getElementById('claim-upload-zone');
+const claimFileInput = document.getElementById('claim-file-input');
+
 // Event Listeners
 document.addEventListener('DOMContentLoaded', initializeApp);
 
@@ -140,6 +144,7 @@ async function initializeApp() {
     setupClaimsCases();
     setupTelemetryTabs();
     setupResizableColumns();
+    setupClaimUpload();
     
     // Initial fetch of status and documents
     await checkBackendStatus();
@@ -444,7 +449,8 @@ chatForm.addEventListener('submit', async (e) => {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 query: query,
-                engine: currentEngine
+                engine: currentEngine,
+                claim_id: activeCase ? activeCase.id : null
             })
         });
         
@@ -789,6 +795,9 @@ function loadCaseFolder(c) {
         `;
         claimEstimateBody.appendChild(tr);
     });
+
+    // Fetch attached files for this claim
+    fetchClaimDocuments(c.id);
 }
 
 function setupTelemetryTabs() {
@@ -905,3 +914,138 @@ function setupResizableColumns() {
         document.addEventListener('mouseup', onMouseUp);
     });
 }
+
+// =========================================================================
+// CLAIM-SPECIFIC ATTACHMENTS LOGIC
+// =========================================================================
+
+async function fetchClaimDocuments(claimId) {
+    try {
+        const response = await fetch(`/api/documents/claim/${encodeURIComponent(claimId)}`);
+        if (!response.ok) throw new Error('Failed to load claim documents');
+        
+        const docs = await response.json();
+        renderClaimDocuments(docs);
+    } catch (error) {
+        console.error('Error fetching claim documents:', error);
+    }
+}
+
+function renderClaimDocuments(docs) {
+    claimDocsList.innerHTML = '';
+    
+    if (docs.length === 0) {
+        claimDocsList.innerHTML = '<li class="empty-claim-docs">No attachments uploaded for this claim.</li>';
+        return;
+    }
+    
+    docs.forEach(doc => {
+        const li = document.createElement('li');
+        li.className = 'claim-docs-item';
+        
+        let icon = '📄';
+        if (doc.file_type === 'pdf') icon = '🟥';
+        else if (doc.file_type === 'docx') icon = '🟦';
+        else if (['xlsx', 'xls'].includes(doc.file_type)) icon = '🟩';
+        else if (doc.file_type === 'txt') icon = '🟨';
+        
+        li.innerHTML = `
+            <div class="doc-info">
+                <span>${icon}</span>
+                <span class="doc-name" title="${doc.filename}">${doc.filename}</span>
+            </div>
+            <div class="doc-actions">
+                <button class="btn-delete" onclick="deleteClaimDocument('${doc.filename}')">🗑️</button>
+            </div>
+        `;
+        claimDocsList.appendChild(li);
+    });
+}
+
+function setupClaimUpload() {
+    // Click triggers file selector
+    claimUploadZone.addEventListener('click', () => {
+        claimFileInput.click();
+    });
+    
+    claimFileInput.addEventListener('change', async (e) => {
+        const files = e.target.files;
+        if (!files || files.length === 0) return;
+        
+        for (let i = 0; i < files.length; i++) {
+            await uploadClaimFile(files[i], activeCase.id);
+        }
+    });
+    
+    // Drag & Drop
+    claimUploadZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        claimUploadZone.classList.add('dragover');
+    });
+    
+    claimUploadZone.addEventListener('dragleave', () => {
+        claimUploadZone.classList.remove('dragover');
+    });
+    
+    claimUploadZone.addEventListener('drop', async (e) => {
+        e.preventDefault();
+        claimUploadZone.classList.remove('dragover');
+        
+        const files = e.dataTransfer.files;
+        if (!files || files.length === 0) return;
+        
+        for (let i = 0; i < files.length; i++) {
+            await uploadClaimFile(files[i], activeCase.id);
+        }
+    });
+}
+
+async function uploadClaimFile(file, claimId) {
+    logSystemEvent(`Attaching file '${file.name}' to claim ${claimId}...`);
+    
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('claim_id', claimId);
+    
+    try {
+        const response = await fetch('/api/upload-claim-file', {
+            method: 'POST',
+            body: formData
+        });
+        
+        if (!response.ok) {
+            const err = await response.json();
+            throw new Error(err.detail || 'Upload failed');
+        }
+        
+        const result = await response.json();
+        logSystemEvent(`Successfully attached '${file.name}' to dossier (Indexed: ${result.chunks_count} chunks)`, 'success');
+        
+        // Refresh claim attachments
+        await fetchClaimDocuments(claimId);
+        
+    } catch (error) {
+        logSystemEvent(`Failed to attach file to dossier: ${error.message}`, 'error');
+        alert(`Failed to attach file: ${error.message}`);
+    }
+}
+
+// Make deleteClaimDocument globally accessible
+window.deleteClaimDocument = async function(filename) {
+    logSystemEvent(`Removing attachment: ${filename}`);
+    try {
+        const response = await fetch('/api/delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ filename })
+        });
+        
+        if (!response.ok) throw new Error('Delete request failed');
+        
+        logSystemEvent(`Removed attachment vector chunks for '${filename}'`, 'success');
+        await fetchClaimDocuments(activeCase.id);
+    } catch (error) {
+        logSystemEvent(`Failed to remove attachment: ${error.message}`, 'error');
+        alert(`Failed to delete document: ${error.message}`);
+    }
+};

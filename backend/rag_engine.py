@@ -148,14 +148,15 @@ class SQLiteVectorStore:
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         
-        # Documents table
+        # Documents table (with claim_id tag)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS documents (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 filename TEXT UNIQUE,
                 file_type TEXT,
                 file_size INTEGER,
-                uploaded_at TEXT
+                uploaded_at TEXT,
+                claim_id TEXT
             )
         """)
         
@@ -192,7 +193,7 @@ class SQLiteVectorStore:
         conn.commit()
         conn.close()
 
-    def add_document(self, filename, file_type, file_size, text, embedding_engine):
+    def add_document(self, filename, file_type, file_size, text, embedding_engine, claim_id=None):
         """Inserts document, parent chunks, FTS index, child chunks and their embeddings."""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
@@ -211,8 +212,8 @@ class SQLiteVectorStore:
             # Insert document
             uploaded_at = time.strftime("%Y-%m-%d %H:%M:%S")
             cursor.execute(
-                "INSERT INTO documents (filename, file_type, file_size, uploaded_at) VALUES (?, ?, ?, ?)",
-                (filename, file_type, file_size, uploaded_at)
+                "INSERT INTO documents (filename, file_type, file_size, uploaded_at, claim_id) VALUES (?, ?, ?, ?, ?)",
+                (filename, file_type, file_size, uploaded_at, claim_id)
             )
             doc_id = cursor.lastrowid
             
@@ -285,10 +286,10 @@ class SQLiteVectorStore:
             conn.close()
 
     def get_all_documents(self):
-        """Returns list of all uploaded documents."""
+        """Returns list of all uploaded global reference documents (claim_id is NULL)."""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
-        cursor.execute("SELECT filename, file_type, file_size, uploaded_at FROM documents ORDER BY uploaded_at DESC")
+        cursor.execute("SELECT filename, file_type, file_size, uploaded_at FROM documents WHERE claim_id IS NULL ORDER BY uploaded_at DESC")
         rows = cursor.fetchall()
         conn.close()
         return [
@@ -301,18 +302,36 @@ class SQLiteVectorStore:
             for r in rows
         ]
 
-    def search_similarity(self, query_embedding, query_text, reranking_engine=None, top_k=15):
-        """Computes hybrid similarity (Vector + FTS5) with RRF and optional Cross-Encoder reranking."""
+    def get_claim_documents(self, claim_id):
+        """Returns list of all documents attached to a specific claim."""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute("SELECT filename, file_type, file_size, uploaded_at FROM documents WHERE claim_id = ? ORDER BY uploaded_at DESC", (claim_id,))
+        rows = cursor.fetchall()
+        conn.close()
+        return [
+            {
+                "filename": r[0],
+                "file_type": r[1],
+                "file_size": r[2],
+                "uploaded_at": r[3]
+            }
+            for r in rows
+        ]
+
+    def search_similarity(self, query_embedding, query_text, claim_id=None, reranking_engine=None, top_k=15):
+        """Computes hybrid similarity (Vector + FTS5) with RRF and optional Cross-Encoder reranking scoped by claim_id."""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         
-        # --- 1. Vector Search (Child Chunks) ---
+        # --- 1. Vector Search (Child Chunks) Scoped by claim_id ---
         cursor.execute("""
             SELECT c.embedding, p.content, d.filename, d.file_type, p.id
             FROM child_chunks c
             JOIN parent_chunks p ON c.parent_id = p.id
             JOIN documents d ON p.document_id = d.id
-        """)
+            WHERE d.claim_id IS NULL OR d.claim_id = ?
+        """, (claim_id,))
         rows = cursor.fetchall()
         
         vector_ranked = []
@@ -369,7 +388,7 @@ class SQLiteVectorStore:
                     })
                 vector_ranked.sort(key=lambda x: x["score"], reverse=True)
 
-        # --- 2. Keyword Search (FTS5 on Parent Chunks) ---
+        # --- 2. Keyword Search (FTS5 on Parent Chunks) Scoped by claim_id ---
         fts_ranked = []
         clean_query = " ".join([t for t in query_text.split() if t.isalnum()])
         if clean_query:
@@ -379,9 +398,10 @@ class SQLiteVectorStore:
                     FROM parent_chunks p
                     JOIN documents d ON p.document_id = d.id
                     JOIN parent_chunks_fts f ON p.id = f.rowid
-                    WHERE parent_chunks_fts MATCH ?
+                    WHERE (d.claim_id IS NULL OR d.claim_id = ?)
+                      AND parent_chunks_fts MATCH ?
                     LIMIT 40
-                """, (clean_query,))
+                """, (claim_id, clean_query))
                 fts_rows = cursor.fetchall()
                 
                 for content, filename, file_type, p_id in fts_rows:

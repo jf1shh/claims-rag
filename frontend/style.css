@@ -1141,3 +1141,80 @@ body {
 .resizer:hover::after, .resizer.dragging::after {
     background: transparent;
 }
+
+/* Claim Specific Dossier Attachments styles */
+.claim-attachments-container {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.claim-docs-list-wrapper {
+    border: 1px solid var(--border-light);
+    border-radius: 4px;
+    background: #ffffff;
+    max-height: 120px;
+    overflow-y: auto;
+}
+
+.claim-docs-list {
+    list-style: none;
+}
+
+.claim-docs-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 10px;
+    border-bottom: 1px solid var(--border-light);
+    font-size: 11px;
+}
+
+.claim-docs-item:last-child {
+    border-bottom: none;
+}
+
+.claim-docs-item:hover {
+    background: var(--bg-hover);
+}
+
+.empty-claim-docs {
+    padding: 10px;
+    color: var(--text-muted);
+    font-size: 11px;
+    text-align: center;
+    font-style: italic;
+}
+
+.claim-upload-zone {
+    border: 1.5px dashed var(--border-color);
+    border-radius: 4px;
+    padding: 8px 12px;
+    text-align: center;
+    background: #ffffff;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+}
+
+.claim-upload-zone:hover, .claim-upload-zone.dragover {
+    border-color: var(--gw-primary);
+    background: var(--gw-primary-light);
+}
+
+.claim-upload-icon {
+    font-size: 14px;
+}
+
+.claim-upload-text {
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--text-muted);
+}
+
+.claim-upload-zone:hover .claim-upload-text {
+    color: var(--gw-primary);
+}
