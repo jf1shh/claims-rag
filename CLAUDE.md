@@ -210,10 +210,10 @@ http://localhost:8000
 
 ### 2026-07-16
 * **Phase**: Phase 4 — Optimized Vectorization & TXT Support.
-* **Attempted**: Created core RAG utilities, FastAPI backend, and glassmorphic UI. Programmed programmatic auto-specific policy PDF generator and batch-indexing script. Vectorized search similarities to matrix multiplications.
-* **Succeeded**: Indexed 15 documents in 0.65 seconds, verified search results, auto-detected active LM Studio models in the browser, and verified text file support.
+* **Attempted**: Created core RAG utilities, FastAPI backend, and glassmorphic UI. Programmed programmatic auto-specific policy PDF generator and batch-indexing script. Vectorized search similarities to matrix multiplications. Overhauled visual styles to match Guidewire ClaimCenter's Jutro light-mode design system. Added drag splitter resizers to all columns.
+* **Succeeded**: Indexed 46 documents in 1.47 seconds, verified search results, auto-detected active LM Studio models in the browser, verified text file support, and deployed resizable layouts.
 * **New constraints discovered**: Python print stdout buffering can hide background task log creations on Windows; resolved by executing python with `-u` flag.
-* **Plan changes**: Switched guidelines focus from property/water claims to auto insurance claims as requested by the user.
+* **Plan changes**: Switched guidelines focus from property/water claims to auto insurance claims as requested by the user. Removed Ollama integration to focus solely on LM Studio. Added resizable columns.
 
 ---
 

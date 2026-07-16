@@ -3,6 +3,84 @@ let currentEngine = 'lm-studio';
 let documents = [];
 let backendStatus = null;
 
+// Static Claims Database
+const CLAIMS_DATA = [
+    {
+        id: "#2026-99382",
+        status: "Under Review",
+        statusClass: "under-review",
+        insured: "Matthew Sterling",
+        vehicle: "2023 Tesla Model Y",
+        facility: "Caliber Collision (Los Angeles, CA)",
+        totalEst: "$4,850",
+        plan: "Plan B (Premium)",
+        deductible: "$500 Collision Deductible",
+        endorsements: ["OEM Parts Guarantee", "Premium Rental Upgrade"],
+        estimate: [
+            { cat: "Body", op: "Replace Rear Bumper Cover", rate: "$75/hr", qty: "6.0 hrs", total: "$450" },
+            { cat: "Paint", op: "Refinish Bumper & Blend Trunk", rate: "$75/hr", qty: "8.0 hrs", total: "$600" },
+            { cat: "Safety", op: "ADAS Backup Sensor Calibration", rate: "Flat", qty: "1 Unit", total: "$450" },
+            { cat: "Frame", op: "Pull Rear Body Panel (Alignment)", rate: "$85/hr", qty: "5.0 hrs", total: "$425" },
+            { cat: "Mechanical", op: "Replace Rear Motor Shield & Alignment", rate: "$120/hr", qty: "4.0 hrs", total: "$480" }
+        ]
+    },
+    {
+        id: "#2026-10492",
+        status: "Open",
+        statusClass: "open",
+        insured: "Sarah Jenkins",
+        vehicle: "2024 Ford F-150 SuperCrew",
+        facility: "Apex Auto Body (San Francisco, CA)",
+        totalEst: "$6,800",
+        plan: "Plan A (Standard)",
+        deductible: "$500 Comprehensive Deductible",
+        endorsements: ["Zero-Deductible Glass", "Premium Towing Plus"],
+        estimate: [
+            { cat: "PDR", op: "Paintless Dent Repair (42 dents)", rate: "Flat", qty: "1 Event", total: "$3,200" },
+            { cat: "Paint", op: "Refinish Passenger Doors", rate: "$75/hr", qty: "12.0 hrs", total: "$900" },
+            { cat: "Glass", op: "Replace Windshield (OEM Spec Glass)", rate: "Flat", qty: "1 Unit", total: "$1,200" },
+            { cat: "Safety", op: "Windshield ADAS Camera Recalibration", rate: "Flat", qty: "1 Unit", total: "$350" }
+        ]
+    },
+    {
+        id: "#2026-30291",
+        status: "Under Investigation",
+        statusClass: "under-investigation",
+        insured: "David Chen",
+        vehicle: "2022 Honda Civic Sport",
+        facility: "Elite Fleet Repair (Las Vegas, NV)",
+        totalEst: "$9,400",
+        plan: "Plan B (Premium)",
+        deductible: "$250 Comprehensive Deductible",
+        endorsements: ["OEM Parts Guarantee", "Custom Equipment ($3.5k limit)"],
+        estimate: [
+            { cat: "Mechanical", op: "Replace Cut Catalytic Converter (OEM)", rate: "$120/hr", qty: "2.0 hrs", total: "$1,500" },
+            { cat: "Body", op: "Replace 4x Sport Wheels & Tires", rate: "Flat", qty: "4 Units", total: "$2,400" },
+            { cat: "Electrical", op: "Replace Stolen Infotainment Console", rate: "$120/hr", qty: "6.0 hrs", total: "$3,500" },
+            { cat: "Body", op: "Repair Passenger Side Key Scratches", rate: "$75/hr", qty: "8.0 hrs", total: "$600" }
+        ]
+    },
+    {
+        id: "#2026-55912",
+        status: "SIU Flagged",
+        statusClass: "siu-flagged",
+        insured: "Elena Rostova",
+        vehicle: "2020 BMW 330i xDrive",
+        facility: "Classic Auto Restoration (Orlando, FL)",
+        totalEst: "$12,500",
+        plan: "Plan A (Standard)",
+        deductible: "$500 Comprehensive Deductible",
+        endorsements: ["Gap Insurance Coverage"],
+        estimate: [
+            { cat: "Mechanical", op: "Replace Engine Block (Hydro-locked)", rate: "$110/hr", qty: "20.0 hrs", total: "$9,500" },
+            { cat: "Mechanical", op: "Flush Oil Lines and Cooling System", rate: "$110/hr", qty: "4.0 hrs", total: "$440" },
+            { cat: "Electrical", op: "Replace Submerged ECU & Sensors", rate: "Flat", qty: "1 Unit", total: "$2,000" }
+        ]
+    }
+];
+
+let activeCase = CLAIMS_DATA[0];
+
 // DOM Elements
 const browseBtn = document.getElementById('browse-btn');
 const fileInput = document.getElementById('file-input');
@@ -31,6 +109,24 @@ const modalScore = document.getElementById('modal-score');
 const modalContent = document.getElementById('modal-content');
 const modalClose = document.getElementById('modal-close');
 
+// New Claims Portal DOM Elements
+const claimsList = document.getElementById('claims-list');
+const claimIdText = document.getElementById('claim-id-text');
+const claimStatusBadge = document.getElementById('claim-status-badge');
+const claimInsured = document.getElementById('claim-insured');
+const claimVehicle = document.getElementById('claim-vehicle');
+const claimFacility = document.getElementById('claim-facility');
+const claimTotalEst = document.getElementById('claim-total-est');
+const claimPolicyPlan = document.getElementById('claim-policy-plan');
+const claimPolicyDeductible = document.getElementById('claim-policy-deductible');
+const claimPolicyEndorsements = document.getElementById('claim-policy-endorsements');
+const claimEstimateBody = document.getElementById('claim-estimate-body');
+
+const btnAuditLabor = document.getElementById('btn-audit-labor');
+const btnAuditOEM = document.getElementById('btn-audit-oem');
+const btnAuditFraud = document.getElementById('btn-audit-fraud');
+const btnAuditLetter = document.getElementById('btn-audit-letter');
+
 // Event Listeners
 document.addEventListener('DOMContentLoaded', initializeApp);
 
@@ -41,6 +137,9 @@ async function initializeApp() {
     setupBrowseButton();
     setupChatSuggestions();
     setupModal();
+    setupClaimsCases();
+    setupTelemetryTabs();
+    setupResizableColumns();
     
     // Initial fetch of status and documents
     await checkBackendStatus();
@@ -608,4 +707,203 @@ function formatMarkdown(text) {
     html = html.replace(/\n/g, '<br>');
     
     return html;
+}
+
+// =========================================================================
+// CLAIMS QUEUE & CASE FOLDER INTEGRATION
+// =========================================================================
+
+function setupClaimsCases() {
+    // Populate Left Sidebar Cases Queue
+    claimsList.innerHTML = '';
+    CLAIMS_DATA.forEach(c => {
+        const li = document.createElement('li');
+        li.className = `claims-list-item ${c.id === activeCase.id ? 'active' : ''}`;
+        li.setAttribute('data-id', c.id);
+        
+        li.innerHTML = `
+            <div class="case-meta">
+                <span class="case-id">${c.id}</span>
+                <span class="case-status ${c.statusClass}">${c.status}</span>
+            </div>
+            <span class="case-name">${c.insured}</span>
+            <span class="case-vehicle">${c.vehicle}</span>
+        `;
+        
+        li.addEventListener('click', () => {
+            document.querySelectorAll('.claims-list-item').forEach(el => el.classList.remove('active'));
+            li.classList.add('active');
+            
+            const caseObj = CLAIMS_DATA.find(x => x.id === c.id);
+            if (caseObj) {
+                activeCase = caseObj;
+                loadCaseFolder(caseObj);
+                logSystemEvent(`Loaded claims case folder for ${caseObj.id} (${caseObj.insured})`);
+            }
+        });
+        
+        claimsList.appendChild(li);
+    });
+
+    // Load initial case
+    loadCaseFolder(activeCase);
+
+    // Setup Audit Button Click Listeners
+    btnAuditLabor.addEventListener('click', () => triggerAudit('labor'));
+    btnAuditOEM.addEventListener('click', () => triggerAudit('oem'));
+    btnAuditFraud.addEventListener('click', () => triggerAudit('fraud'));
+    btnAuditLetter.addEventListener('click', () => triggerAudit('letter'));
+}
+
+function loadCaseFolder(c) {
+    // Update text fields
+    claimIdText.innerText = c.id;
+    claimStatusBadge.innerText = c.status;
+    claimStatusBadge.className = `case-status-badge ${c.statusClass}`;
+    
+    claimInsured.innerText = c.insured;
+    claimVehicle.innerText = c.vehicle;
+    claimFacility.innerText = c.facility;
+    claimTotalEst.innerText = c.totalEst;
+    
+    claimPolicyPlan.innerText = c.plan;
+    claimPolicyDeductible.innerText = c.deductible;
+    
+    // Update endorsements chips
+    claimPolicyEndorsements.innerHTML = '';
+    c.endorsements.forEach(e => {
+        const span = document.createElement('span');
+        span.className = 'endorsement-chip';
+        span.innerText = e;
+        claimPolicyEndorsements.appendChild(span);
+    });
+    
+    // Update Estimate Table Items
+    claimEstimateBody.innerHTML = '';
+    c.estimate.forEach(row => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td><strong>${row.cat}</strong></td>
+            <td>${row.op}</td>
+            <td>${row.rate}</td>
+            <td>${row.qty}</td>
+            <td><strong>${row.total}</strong></td>
+        `;
+        claimEstimateBody.appendChild(tr);
+    });
+}
+
+function setupTelemetryTabs() {
+    const tabBtns = document.querySelectorAll('.tab-btn');
+    tabBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            tabBtns.forEach(el => el.classList.remove('active'));
+            btn.classList.add('active');
+            
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            const targetId = `tab-${btn.getAttribute('data-tab')}`;
+            const targetContent = document.getElementById(targetId);
+            if (targetContent) {
+                targetContent.classList.add('active');
+            }
+        });
+    });
+}
+
+async function triggerAudit(type) {
+    let queryText = "";
+    
+    switch (type) {
+        case 'labor':
+            queryText = `For claim ${activeCase.id} involving vehicle ${activeCase.vehicle} being repaired at ${activeCase.facility}: Check the regional labor rate schedules for 2026. Compare the standard capped rates for Sheet Metal, Frame, Painting, and Mechanical work against the shop charges in our estimate. Highlight any repair lines that exceed the allowable cap limits.`;
+            break;
+        case 'oem':
+            queryText = `Review the OEM Parts policy rider terms. For claim ${activeCase.id} involving a ${activeCase.vehicle} (which is currently under the coverage details specified), does the policy allow the adjuster to write aftermarket or LKQ parts, or does the policyholder's riders mandate brand-new OEM factory-original parts?`;
+            break;
+        case 'fraud':
+            queryText = `Analyze claim ${activeCase.id} for the vehicle ${activeCase.vehicle}. Perform a fraud red flags audit against the claims handler reference directives. Search the database for guidelines regarding pre-existing damage, telematics patterns (braking/speed), and reporting timelines, and list any red flags that adjusters should investigate.`;
+            break;
+        case 'letter':
+            queryText = `Draft a formal, professional Claim Decision and Payout Settlement Letter to the policyholder ${activeCase.insured} for claim ${activeCase.id}. In the letter, explain the vehicle damage assessed (${activeCase.vehicle}), apply the deductible (${activeCase.deductible}), outline covered repairs, list any disallowed charges, and note if subrogation is being pursued against the third party. Quote the corresponding policy sections.`;
+            break;
+    }
+    
+    if (!queryText) return;
+    
+    // Auto-focus chat input, set value, and submit form
+    queryInput.value = queryText;
+    queryInput.focus();
+    
+    // Auto switch telemetry tab to trace logs
+    document.querySelector('.tab-btn[data-tab="trace"]').click();
+    
+    // Submit form
+    chatForm.requestSubmit();
+}
+
+function setupResizableColumns() {
+    const resizerLeft = document.getElementById('resizer-left');
+    const resizerRight = document.getElementById('resizer-right');
+    
+    const sidebarLeft = document.querySelector('.sidebar-left');
+    const chatRight = document.querySelector('.chat-right');
+    const appWorkspace = document.querySelector('.app-workspace');
+    
+    if (!resizerLeft || !resizerRight) return;
+    
+    // Left Resizer Dragging
+    resizerLeft.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        resizerLeft.classList.add('dragging');
+        document.body.style.cursor = 'col-resize';
+        
+        function onMouseMove(eMove) {
+            const containerRect = appWorkspace.getBoundingClientRect();
+            let newWidth = eMove.clientX - containerRect.left;
+            
+            // Limit bounds
+            if (newWidth < 180) newWidth = 180;
+            if (newWidth > 380) newWidth = 380;
+            
+            sidebarLeft.style.flexBasis = `${newWidth}px`;
+        }
+        
+        function onMouseUp() {
+            resizerLeft.classList.remove('dragging');
+            document.body.style.cursor = '';
+            document.removeEventListener('mousemove', onMouseMove);
+            document.removeEventListener('mouseup', onMouseUp);
+        }
+        
+        document.addEventListener('mousemove', onMouseMove);
+        document.addEventListener('mouseup', onMouseUp);
+    });
+    
+    // Right Resizer Dragging
+    resizerRight.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        resizerRight.classList.add('dragging');
+        document.body.style.cursor = 'col-resize';
+        
+        function onMouseMove(eMove) {
+            const containerRect = appWorkspace.getBoundingClientRect();
+            let newWidth = containerRect.right - eMove.clientX;
+            
+            // Limit bounds
+            if (newWidth < 220) newWidth = 220;
+            if (newWidth > 550) newWidth = 550;
+            
+            chatRight.style.flexBasis = `${newWidth}px`;
+        }
+        
+        function onMouseUp() {
+            resizerRight.classList.remove('dragging');
+            document.body.style.cursor = '';
+            document.removeEventListener('mousemove', onMouseMove);
+            document.removeEventListener('mouseup', onMouseUp);
+        }
+        
+        document.addEventListener('mousemove', onMouseMove);
+        document.addEventListener('mouseup', onMouseUp);
+    });
 }

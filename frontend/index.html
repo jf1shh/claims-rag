@@ -3,22 +3,23 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Insurance Claims RAG Station</title>
-    <!-- Google Fonts -->
+    <title>ClaimsRAG — Auto Adjuster Portal</title>
+    <!-- Google Fonts for premium typography -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
     <div class="app-container">
-        <!-- Top Navigation / Status Bar -->
+        
+        <!-- Top Navigation / Server Status Bar -->
         <header class="app-header">
             <div class="logo-area">
                 <span class="logo-icon">🛡️</span>
                 <div class="logo-text">
                     <h1>ClaimsRAG</h1>
-                    <span class="logo-sub">Local Claims Reference Copilot</span>
+                    <span class="logo-sub">Enterprise Adjuster Portal</span>
                 </div>
             </div>
             
@@ -34,57 +35,188 @@
             </div>
         </header>
 
-        <!-- Main Workspace -->
+        <!-- Main Claims Workspace -->
         <main class="app-workspace">
             
-            <!-- COLUMN 1: Document Ingestion Station -->
+            <!-- COLUMN 1: Claims Case Queue & Guideline Uploads -->
             <section class="workspace-column sidebar-left">
-                <div class="column-header">
-                    <h2>📁 Ingestion Station</h2>
-                    <p class="section-desc">Add claims reference guides and policy documentation</p>
+                <!-- Claims Case Queue -->
+                <div class="case-queue-section">
+                    <div class="column-header">
+                        <h2>📋 Claim Case Queue</h2>
+                        <p class="section-desc">Select active claim file to load workspace</p>
+                    </div>
+                    <div class="claims-list-container">
+                        <ul class="claims-list" id="claims-list">
+                            <!-- Populated in JS -->
+                        </ul>
+                    </div>
                 </div>
                 
-                <!-- Upload Dropzone -->
-                <div class="upload-zone" id="upload-zone">
-                    <input type="file" id="file-input" accept=".pdf,.docx,.xlsx,.xls,.txt" style="display: none;">
-                    <div class="upload-content">
-                        <span class="upload-icon">📥</span>
-                        <p class="upload-title">Drag & drop policy files</p>
-                        <p class="upload-sub">Supports PDF, DOCX, Excel, TXT (Max 50MB)</p>
-                        <button class="btn btn-secondary btn-sm" id="browse-btn">Browse Files</button>
+                <!-- Document Ingestion Station -->
+                <div class="document-ingestion-section">
+                    <div class="column-header border-top">
+                        <h2>📁 Reference Guidelines</h2>
+                        <p class="section-desc">Ingest policy terms and state rules</p>
                     </div>
-                    <div class="upload-progress-container" id="upload-progress-container" style="display: none;">
-                        <div class="progress-bar">
-                            <div class="progress-fill" id="upload-progress-fill"></div>
+                    
+                    <!-- Upload Dropzone -->
+                    <div class="upload-zone" id="upload-zone">
+                        <input type="file" id="file-input" accept=".pdf,.docx,.xlsx,.xls,.txt" style="display: none;">
+                        <div class="upload-content">
+                            <span class="upload-icon">📥</span>
+                            <p class="upload-title">Drag & drop files</p>
+                            <p class="upload-sub">PDF, DOCX, XLSX, TXT</p>
+                            <button class="btn btn-secondary btn-sm" id="browse-btn">Browse Files</button>
                         </div>
-                        <span class="progress-status" id="upload-progress-status">Uploading...</span>
+                        <div class="upload-progress-container" id="upload-progress-container" style="display: none;">
+                            <div class="progress-bar">
+                                <div class="progress-fill" id="upload-progress-fill"></div>
+                            </div>
+                            <span class="progress-status" id="upload-progress-status">Uploading...</span>
+                        </div>
                     </div>
-                </div>
 
-                <!-- Document List -->
-                <div class="document-section">
-                    <div class="section-title-bar">
-                        <h3>Indexed Guidelines</h3>
-                        <span class="badge" id="doc-count">0</span>
-                    </div>
-                    <div class="document-list-container">
-                        <div class="empty-docs-state" id="empty-docs-state">
-                            <span class="empty-icon">📭</span>
-                            <p>No guidelines indexed yet.</p>
-                            <p class="empty-sub">Upload references to start querying.</p>
+                    <!-- Guideline List -->
+                    <div class="document-section">
+                        <div class="section-title-bar">
+                            <h3>Indexed Database</h3>
+                            <span class="badge" id="doc-count">0</span>
                         </div>
-                        <ul class="document-list" id="document-list">
-                            <!-- Populated dynamically -->
-                        </ul>
+                        <div class="document-list-container">
+                            <div class="empty-docs-state" id="empty-docs-state" style="display: none;">
+                                <span class="empty-icon">📭</span>
+                                <p>No guidelines indexed yet.</p>
+                            </div>
+                            <ul class="document-list" id="document-list">
+                                <!-- Populated dynamically -->
+                            </ul>
+                        </div>
                     </div>
                 </div>
             </section>
 
-            <!-- COLUMN 2: Chat & Retrieval Assistant -->
-            <section class="workspace-column chat-center">
+            <div class="resizer" id="resizer-left"></div>
+
+            <!-- COLUMN 2: Claims Case Folder Detail Workspace -->
+            <section class="workspace-column case-workspace">
                 <div class="column-header">
-                    <h2>💬 Claims Reference Assistant</h2>
-                    <p class="section-desc">Query policy terms using natural language</p>
+                    <div class="case-header-row">
+                        <h2>📂 Claim File: <span id="claim-id-text">Select Case</span></h2>
+                        <span class="case-status-badge" id="claim-status-badge">N/A</span>
+                    </div>
+                    <p class="section-desc">Active claim details, policy coverage, and repair estimates</p>
+                </div>
+                
+                <div class="case-details-container" id="case-details-container">
+                    <!-- Loaded dynamically, with static template fallback -->
+                    <div class="detail-card profile-card">
+                        <h3>Claim Profile</h3>
+                        <div class="profile-grid">
+                            <div class="grid-item">
+                                <span class="label">Policyholder</span>
+                                <span class="value" id="claim-insured">-</span>
+                            </div>
+                            <div class="grid-item">
+                                <span class="label">Vehicle</span>
+                                <span class="value" id="claim-vehicle">-</span>
+                            </div>
+                            <div class="grid-item">
+                                <span class="label">Repair Facility</span>
+                                <span class="value" id="claim-facility">-</span>
+                            </div>
+                            <div class="grid-item">
+                                <span class="label">Total Estimate</span>
+                                <span class="value est-value" id="claim-total-est">-</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="detail-card policy-card">
+                        <h3>Coverages & Deductibles</h3>
+                        <div class="policy-grid">
+                            <div class="grid-item">
+                                <span class="label">Policy Plan</span>
+                                <span class="value highlight-blue" id="claim-policy-plan">-</span>
+                            </div>
+                            <div class="grid-item">
+                                <span class="label">Deductibles Applied</span>
+                                <span class="value" id="claim-policy-deductible">-</span>
+                            </div>
+                        </div>
+                        <div class="endorsements-box">
+                            <span class="label">Active Riders & Endorsements</span>
+                            <div class="endorsements-chips" id="claim-policy-endorsements">
+                                <!-- Chips dynamically inserted -->
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="detail-card estimate-card">
+                        <h3>Repair Shop Estimate Items</h3>
+                        <div class="table-scroll-container">
+                            <table class="estimate-table">
+                                <thead>
+                                    <tr>
+                                        <th>Category</th>
+                                        <th>Repair Operations</th>
+                                        <th>Rate</th>
+                                        <th>Hours/Cost</th>
+                                        <th>Subtotal</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="claim-estimate-body">
+                                    <!-- Populated dynamically -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Adjuster Audit Dashboard Quick Actions -->
+                    <div class="detail-card audit-card">
+                        <h3>🛡️ Adjuster Copilot Audits</h3>
+                        <p class="audit-desc">Select an audit parameter to run a context-aware RAG policy query</p>
+                        <div class="audit-actions-grid">
+                            <button class="btn btn-audit" id="btn-audit-labor">
+                                <span class="btn-icon">⚡</span>
+                                <div class="btn-label-group">
+                                    <span class="title">Verify Labor Rates</span>
+                                    <span class="subtitle">Check hourly shop charge caps</span>
+                                </div>
+                            </button>
+                            <button class="btn btn-audit" id="btn-audit-oem">
+                                <span class="btn-icon">🔧</span>
+                                <div class="btn-label-group">
+                                    <span class="title">Check OEM Parts Rider</span>
+                                    <span class="subtitle">Verify aftermarket allowance</span>
+                                </div>
+                            </button>
+                            <button class="btn btn-audit" id="btn-audit-fraud">
+                                <span class="btn-icon">🔍</span>
+                                <div class="btn-label-group">
+                                    <span class="title">SIU Fraud Check</span>
+                                    <span class="subtitle">Scan for claim red flags</span>
+                                </div>
+                            </button>
+                            <button class="btn btn-audit" id="btn-audit-letter">
+                                <span class="btn-icon">📝</span>
+                                <div class="btn-label-group">
+                                    <span class="title">Draft Decision Letter</span>
+                                    <span class="subtitle">Write official settlement notice</span>
+                                </div>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <div class="resizer" id="resizer-right"></div>
+
+            <!-- COLUMN 3: Claims Reference Assistant & Retrieval Telemetry -->
+            <section class="workspace-column chat-right">
+                <div class="column-header">
+                    <h2>💬 Claims RAG Copilot</h2>
+                    <p class="section-desc">Chat with the policy database regarding this claim file</p>
                 </div>
 
                 <!-- Chat Messages Area -->
@@ -92,14 +224,13 @@
                     <div class="chat-welcome" id="chat-welcome">
                         <div class="welcome-card">
                             <span class="welcome-icon">💡</span>
-                            <h3>Simulated Claims Copilot</h3>
-                            <p>I help insurance claims handlers quickly search, extract, and draft responses using local reference guides.</p>
+                            <h3>Claims Copilot Active</h3>
+                            <p>Select a claim file and run any **Adjuster Audit** on the left, or query the RAG database directly below.</p>
                             <div class="suggested-queries">
-                                <p class="suggestion-label">Suggested Queries:</p>
-                                <button class="suggested-query-btn" data-query="What is the deductible for collision claims under Standard Auto Plan A?">🚗 Collision Deductibles</button>
-                                <button class="suggested-query-btn" data-query="What evidence and documentation are required to process an auto claim?">📋 Claim Evidence Checklist</button>
-                                <button class="suggested-query-btn" data-query="Is there a deductible for repairing a chipped windshield?">💎 Windshield Glass Repairs</button>
-                                <button class="suggested-query-btn" data-query="What are the daily caps and limits for rental car reimbursement under the plans?">🔑 Rental Car Reimbursements</button>
+                                <p class="suggestion-label">Suggested Policy Lookups:</p>
+                                <button class="suggested-query-btn" data-query="What is the standard labor rate for Sheet Metal, Frame, and Mechanical repairs in the 2026 guidelines?">🚗 Standard Labor Caps</button>
+                                <button class="suggested-query-btn" data-query="What are the rules and formulas for calculating Diminished Value claims?">📊 Diminished Value Rules</button>
+                                <button class="suggested-query-btn" data-query="What are the state minimum liability limits for California, Texas, and New York?">⚖️ State Minimum Limits</button>
                             </div>
                         </div>
                     </div>
@@ -130,7 +261,7 @@
                     <form class="input-form" id="chat-form">
                         <textarea 
                             id="query-input" 
-                            placeholder="Ask a claims policy question... (e.g., 'What is the depreciation rate for roofs?')"
+                            placeholder="Ask a claims policy question... (e.g., 'What is the depreciation rate for tires?')"
                             rows="2"
                             required
                         ></textarea>
@@ -140,34 +271,22 @@
                         </button>
                     </form>
                 </div>
-            </section>
 
-            <!-- COLUMN 3: RAG Pipeline Visualizer -->
-            <section class="workspace-column sidebar-right">
-                <div class="column-header">
-                    <h2>⚡ RAG Pipeline Visualizer</h2>
-                    <p class="section-desc">Real-time trace of the retrieval pipeline steps</p>
-                </div>
-
-                <div class="visualizer-content">
-                    
-                    <!-- Ingestion Stats or Search Trace -->
-                    <div class="visualizer-card active" id="viz-trace-card">
-                        <h3>Search & Retrieval Trace</h3>
+                <!-- TABS: Real-time RAG Telemetry -->
+                <div class="telemetry-tabs-container">
+                    <div class="tabs-header">
+                        <button class="tab-btn active" data-tab="trace">Pipeline Trace</button>
+                        <button class="tab-btn" data-tab="prompt">Prompt Preview</button>
+                    </div>
+                    <div class="tab-content active" id="tab-trace">
                         <div class="trace-timeline" id="trace-timeline">
                             <div class="empty-trace-state">
                                 <span class="empty-trace-icon">🪵</span>
-                                <p>Logs will appear here when you query the assistant or upload documents.</p>
+                                <p>Telemetry trace logs will appear here when you query the database.</p>
                             </div>
                         </div>
                     </div>
-
-                    <!-- Prompt Injector View -->
-                    <div class="visualizer-card" id="viz-prompt-card">
-                        <div class="card-header-bar">
-                            <h3>Prompt Injector View</h3>
-                            <span class="tag-status">Auto Context</span>
-                        </div>
+                    <div class="tab-content" id="tab-prompt">
                         <div class="prompt-preview-container">
                             <div class="prompt-section-label">System Template</div>
                             <pre class="prompt-box system-box" id="viz-system-prompt">System prompt will appear here.</pre>
@@ -176,17 +295,17 @@
                             <pre class="prompt-box user-box" id="viz-user-prompt">Injected search results and user question will appear here.</pre>
                         </div>
                     </div>
-
                 </div>
             </section>
+
         </main>
     </div>
 
-    <!-- Source Chunk Modal -->
-    <div class="modal-backdrop" id="source-modal" style="display: none;">
-        <div class="modal-card">
+    <!-- Citation Source Card Modal -->
+    <div class="modal-backdrop" id="source-modal">
+        <div class="modal-box">
             <div class="modal-header">
-                <h3 id="modal-title">Matched Policy Passage</h3>
+                <h2 id="modal-title">Source Reference Passage</h2>
                 <button class="modal-close" id="modal-close">&times;</button>
             </div>
             <div class="modal-metadata">
