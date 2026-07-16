@@ -108,6 +108,7 @@ const modalFilename = document.getElementById('modal-filename');
 const modalScore = document.getElementById('modal-score');
 const modalContent = document.getElementById('modal-content');
 const modalClose = document.getElementById('modal-close');
+const modalViewFullBtn = document.getElementById('modal-view-full-btn');
 
 // New Claims Portal DOM Elements
 const claimsList = document.getElementById('claims-list');
@@ -354,7 +355,7 @@ function renderDocuments() {
             <div class="doc-info">
                 <span class="doc-icon">${icon}</span>
                 <div class="doc-meta">
-                    <span class="doc-name" title="${doc.filename}">${doc.filename}</span>
+                    <span class="doc-name clickable" onclick="openDocumentViewer('${doc.filename}')" title="${doc.filename}">${doc.filename}</span>
                     <div class="doc-size-date">
                         <span>${formatBytes(doc.file_size)}</span>
                         <span>•</span>
@@ -562,7 +563,16 @@ function setupModal() {
 
 function showModal(filename, score, content) {
     modalFilename.innerText = filename;
-    modalScore.innerText = `${(score * 100).toFixed(1)}%`;
+    
+    if (typeof score === 'number') {
+        modalScore.innerText = `${(score * 100).toFixed(1)}%`;
+        modalViewFullBtn.style.display = 'inline-block';
+        modalViewFullBtn.onclick = () => openDocumentViewer(filename);
+    } else {
+        modalScore.innerText = score;
+        modalViewFullBtn.style.display = 'none';
+    }
+    
     modalContent.innerText = content;
     sourceModal.style.display = 'flex';
 }
@@ -952,7 +962,7 @@ function renderClaimDocuments(docs) {
         li.innerHTML = `
             <div class="doc-info">
                 <span>${icon}</span>
-                <span class="doc-name" title="${doc.filename}">${doc.filename}</span>
+                <span class="doc-name clickable" onclick="openDocumentViewer('${doc.filename}')" title="${doc.filename}">${doc.filename}</span>
             </div>
             <div class="doc-actions">
                 <button class="btn-delete" onclick="deleteClaimDocument('${doc.filename}')">🗑️</button>
@@ -1049,3 +1059,19 @@ window.deleteClaimDocument = async function(filename) {
         alert(`Failed to delete document: ${error.message}`);
     }
 };
+
+async function openDocumentViewer(filename) {
+    logSystemEvent(`Retrieving full content for document: '${filename}'`);
+    try {
+        const response = await fetch(`/api/documents/content/${encodeURIComponent(filename)}`);
+        if (!response.ok) throw new Error('Failed to load document content');
+        
+        const result = await response.json();
+        showModal(filename, 'N/A (Full Document View)', result.content);
+    } catch (error) {
+        logSystemEvent(`Failed to view document content: ${error.message}`, 'error');
+        alert(`Error loading document content: ${error.message}`);
+    }
+}
+
+window.openDocumentViewer = openDocumentViewer;

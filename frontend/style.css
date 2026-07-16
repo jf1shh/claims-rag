@@ -1218,3 +1218,12 @@ body {
 .claim-upload-zone:hover .claim-upload-text {
     color: var(--gw-primary);
 }
+
+.doc-name.clickable {
+    cursor: pointer;
+}
+
+.doc-name.clickable:hover {
+    color: var(--gw-primary);
+    text-decoration: underline;
+}

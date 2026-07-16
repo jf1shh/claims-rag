@@ -197,6 +197,28 @@ def list_claim_documents(claim_id: str):
     """Lists all documents attached to a specific claim."""
     return vector_store.get_claim_documents(claim_id)
 
+@app.get("/api/documents/content/{filename}")
+def get_document_content(filename: str):
+    """Fetches the full text content of a document by joining all its parent chunks."""
+    import sqlite3
+    conn = sqlite3.connect(vector_store.db_path)
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT p.content 
+        FROM parent_chunks p
+        JOIN documents d ON p.document_id = d.id
+        WHERE d.filename = ?
+        ORDER BY p.chunk_index ASC
+    """, (filename,))
+    rows = cursor.fetchall()
+    conn.close()
+    
+    if not rows:
+        raise HTTPException(status_code=404, detail="Document content not found.")
+        
+    full_text = "\n\n".join([r[0] for r in rows])
+    return {"filename": filename, "content": full_text}
+
 @app.post("/api/delete")
 def delete_document(req: DeleteRequest):
     """Deletes a document from the store."""
