@@ -12,6 +12,7 @@ from typing import Optional, List
 
 # Import our RAG Engine classes
 from backend.rag_engine import DocumentParser, TextChunker, EmbeddingEngine, SQLiteVectorStore, RerankingEngine
+from backend.agentic_router import AgenticRAGRouter
 
 app = FastAPI(title="Local Insurance RAG System API")
 
@@ -28,6 +29,7 @@ app.add_middleware(
 vector_store = SQLiteVectorStore()
 embedding_engine = EmbeddingEngine()
 reranking_engine = RerankingEngine()
+agentic_router = AgenticRAGRouter()
 
 # Ensure frontend directory exists
 os.makedirs("frontend", exist_ok=True)
@@ -240,140 +242,16 @@ def delete_document(req: DeleteRequest):
 
 @app.post("/api/chat")
 def chat_with_docs(req: ChatRequest):
-    """Answers a claims question using local RAG context."""
-    logs = []
-    
-    # Step 1: Embed query
-    start_time = time.time()
-    query_emb = embedding_engine.embed_query(req.query)
-    embed_time = (time.time() - start_time) * 1000
-    logs.append(f"Generated query vector in {embed_time:.1f}ms")
-    
-    # Step 2: Query database (Hybrid search with FTS5 + RRF + Cross-Encoder Reranking)
-    search_start = time.time()
-    matches = vector_store.search_similarity(
-        query_emb, 
-        req.query, 
+    """Answers a claims question using local Agentic RAG routing."""
+    result = agentic_router.run_query(
+        query_text=req.query,
         claim_id=req.claim_id,
-        reranking_engine=reranking_engine, 
-        top_k=4
+        engine=req.engine,
+        embedding_engine=embedding_engine,
+        vector_store=vector_store,
+        reranking_engine=reranking_engine
     )
-    search_time = (time.time() - search_start) * 1000
-    logs.append(f"FTS5 + Vector hybrid search & Cross-Encoder reranking completed in {search_time:.1f}ms (returned {len(matches)} passages, claim scope: {req.claim_id})")
-    
-    # If no matches, return early warning
-    if not matches:
-        return {
-            "answer": "I couldn't find any reference documents in the system. Please upload reference guidelines (PDF, DOCX, Excel) first in the sidebar.",
-            "sources": [],
-            "engine": "none",
-            "pipeline_logs": logs
-        }
-        
-    # Step 3: Construct context block
-    context_blocks = []
-    for idx, match in enumerate(matches):
-        context_blocks.append(
-            f"--- SOURCE {idx+1} | File: {match['filename']} (Sim: {match['score']:.3f}) ---\n{match['content']}\n"
-        )
-    context_text = "\n".join(context_blocks)
-    
-    # Step 4: Construct system prompt and user prompt
-    system_prompt = (
-        "You are an expert AI claims handler assistant. Your job is to answer the user's questions about insurance claims, "
-        "policies, or guidelines using ONLY the provided reference documents. \n\n"
-        "Rules:\n"
-        "1. Base your answer strictly on the provided references.\n"
-        "2. If the document content doesn't contain the answer, state that you cannot find it in the guidelines.\n"
-        "3. Provide precise page/section/file references in your output if visible.\n"
-        "4. Keep your answer clear, professional, and well-structured (use bullet points or headers if appropriate)."
-    )
-    
-    user_prompt = (
-        f"Retrieved Reference Guidelines:\n"
-        f"=================================\n"
-        f"{context_text}\n"
-        f"=================================\n\n"
-        f"Claims Handler Query: {req.query}\n\n"
-        f"Answer:"
-    )
-    
-    # Step 5: Route request based on selected engine
-    answer = ""
-    engine_used = req.engine
-    llm_start = time.time()
-    
-    if req.engine == "lm-studio":
-        try:
-            # Query models to get the currently loaded model name
-            models = get_loaded_models("http://127.0.0.1:1234")
-            model_name = models[0] if models else "local-model"
-            
-            logs.append(f"Connecting to LM Studio on http://127.0.0.1:1234/v1 using model: {model_name}...")
-            resp = requests.post(
-                "http://127.0.0.1:1234/v1/chat/completions",
-                json={
-                    "model": model_name,
-                    "messages": [
-                        {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": user_prompt}
-                    ],
-                    "temperature": 0.2,
-                    "max_tokens": 1024
-                },
-                timeout=45
-            )
-            if resp.status_code == 200:
-                answer = resp.json()["choices"][0]["message"]["content"]
-                llm_time = (time.time() - llm_start) * 1000
-                logs.append(f"LM Studio generated response in {llm_time:.1f}ms")
-            else:
-                raise Exception(f"LM Studio API returned error {resp.status_code}: {resp.text}")
-        except Exception as e:
-            logs.append(f"LM Studio call failed: {str(e)}. Falling back to simulation mode.")
-            engine_used = "simulated"
-
-    if engine_used == "simulated":
-        logs.append("Running in Simulated Claims LLM Mode...")
-        time.sleep(0.8) # Simulate processing delay for UI realism
-        
-        # Simple rule-based mock generation to show extraction working
-        answer_parts = [
-            "### [Simulated AI Claims Assistant Response]",
-            "*(No local LLM running. Simulated response drafted from matched policy passages.)*",
-            "\nBased on the matching references found in the system, here are the relevant details:\n"
-        ]
-        
-        for idx, match in enumerate(matches[:2]): # Use top 2 matches
-            snippet = match['content'][:300].replace('\n', ' ')
-            if len(match['content']) > 300:
-                snippet += "..."
-            answer_parts.append(
-                f"- **From {match['filename']}** (Match Score: {match['score']:.2f}):\n"
-                f"  > \"{snippet}\"\n"
-            )
-            
-        answer_parts.append(
-            "\n*To enable true natural language reasoning, launch LM Studio and toggle the engine selection above.*"
-        )
-        answer = "\n".join(answer_parts)
-        llm_time = (time.time() - llm_start) * 1000
-        logs.append(f"Simulation completed in {llm_time:.1f}ms")
-        
-    return {
-        "answer": answer,
-        "sources": [
-            {
-                "filename": m["filename"],
-                "file_type": m["file_type"],
-                "content": m["content"],
-                "score": round(m["score"], 3)
-            }
-            for m in matches
-        ],
-        "engine": engine_used,
-        "pipeline_logs": logs
-    }
+    return result
 
 # Mount frontend files at root
 app.mount("/", StaticFiles(directory="frontend", html=True), name="frontend")
