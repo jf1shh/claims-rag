@@ -4,6 +4,7 @@ import tempfile
 import requests
 import time
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -114,7 +115,8 @@ async def upload_document(file: UploadFile = File(...)):
             file_type=file_ext,
             file_size=file_size,
             text=text,
-            embedding_engine=embedding_engine
+            embedding_engine=embedding_engine,
+            file_path=tmp_path
         )
         db_time = (time.time() - db_start) * 1000
         
@@ -169,7 +171,8 @@ async def upload_claim_document(claim_id: str = Form(...), file: UploadFile = Fi
             file_size=file_size,
             text=text,
             embedding_engine=embedding_engine,
-            claim_id=claim_id
+            claim_id=claim_id,
+            file_path=tmp_path
         )
         db_time = (time.time() - db_start) * 1000
         total_time = (time.time() - start_time) * 1000
@@ -218,6 +221,14 @@ def get_document_content(filename: str):
         
     full_text = "\n\n".join([r[0] for r in rows])
     return {"filename": filename, "content": full_text}
+
+@app.get("/api/documents/download/{filename}")
+def download_document(filename: str):
+    """Serves the physical document from stored_documents/."""
+    file_path = os.path.join("stored_documents", filename)
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="File not found.")
+    return FileResponse(file_path)
 
 @app.post("/api/delete")
 def delete_document(req: DeleteRequest):

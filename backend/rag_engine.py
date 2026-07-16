@@ -193,8 +193,11 @@ class SQLiteVectorStore:
         conn.commit()
         conn.close()
 
-    def add_document(self, filename, file_type, file_size, text, embedding_engine, claim_id=None):
-        """Inserts document, parent chunks, FTS index, child chunks and their embeddings."""
+    def add_document(self, filename, file_type, file_size, text, embedding_engine, claim_id=None, file_path=None):
+        """Inserts document, parent chunks, FTS index, child chunks and their embeddings; copies physical file to disk."""
+        import shutil
+        os.makedirs("stored_documents", exist_ok=True)
+        
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         
@@ -208,6 +211,12 @@ class SQLiteVectorStore:
                 cursor.execute("DELETE FROM parent_chunks_fts WHERE rowid IN (SELECT id FROM parent_chunks WHERE document_id = ?)", (doc_id,))
                 # Delete document
                 cursor.execute("DELETE FROM documents WHERE id = ?", (doc_id,))
+                
+                # Delete old stored document file if exists
+                old_file = os.path.abspath(os.path.join("stored_documents", filename))
+                if os.path.exists(old_file):
+                    if not file_path or os.path.abspath(file_path) != old_file:
+                        os.remove(old_file)
             
             # Insert document
             uploaded_at = time.strftime("%Y-%m-%d %H:%M:%S")
@@ -216,6 +225,17 @@ class SQLiteVectorStore:
                 (filename, file_type, file_size, uploaded_at, claim_id)
             )
             doc_id = cursor.lastrowid
+            
+            # Save physical file on disk
+            dest_path = os.path.abspath(os.path.join("stored_documents", filename))
+            if file_path and os.path.exists(file_path):
+                src_abs = os.path.abspath(file_path)
+                if src_abs != dest_path:
+                    shutil.copy2(file_path, dest_path)
+            else:
+                if not os.path.exists(dest_path):
+                    with open(dest_path, "w", encoding="utf-8", errors="ignore") as f:
+                        f.write(text)
             
             # 1. Generate Parent Chunks
             parent_chunks = TextChunker.chunk(text, chunk_size=1200, chunk_overlap=200)
@@ -276,6 +296,12 @@ class SQLiteVectorStore:
                 
                 # Delete document (cascade will clean up parent_chunks and child_chunks)
                 cursor.execute("DELETE FROM documents WHERE id = ?", (doc_id,))
+                
+                # Delete physical file from stored_documents
+                stored_path = os.path.join("stored_documents", filename)
+                if os.path.exists(stored_path):
+                    os.remove(stored_path)
+                    
                 conn.commit()
                 return True
             return False

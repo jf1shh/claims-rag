@@ -561,7 +561,7 @@ function setupModal() {
     });
 }
 
-function showModal(filename, score, content) {
+function showModal(filename, score, content, isImage = false) {
     modalFilename.innerText = filename;
     
     if (typeof score === 'number') {
@@ -573,7 +573,16 @@ function showModal(filename, score, content) {
         modalViewFullBtn.style.display = 'none';
     }
     
-    modalContent.innerText = content;
+    if (isImage) {
+        modalContent.style.background = '#f0f2f5';
+        modalContent.style.fontFamily = 'inherit';
+        modalContent.innerHTML = `<div style="text-align: center; padding: 10px 0;"><img src="${content}" style="max-width: 100%; max-height: 440px; border-radius: 4px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); display: inline-block;"></div>`;
+    } else {
+        modalContent.style.background = '#fafafa';
+        modalContent.style.fontFamily = 'monospace';
+        modalContent.innerText = content;
+    }
+    
     sourceModal.style.display = 'flex';
 }
 
@@ -1061,13 +1070,30 @@ window.deleteClaimDocument = async function(filename) {
 };
 
 async function openDocumentViewer(filename) {
-    logSystemEvent(`Retrieving full content for document: '${filename}'`);
+    const ext = filename.split('.').pop().toLowerCase();
+    
+    // 1. If it's a PDF or Excel spreadsheet, open it physically in a new tab
+    if (ext === 'pdf' || ext === 'xlsx' || ext === 'xls') {
+        logSystemEvent(`Opening high-fidelity document in new tab: '${filename}'`);
+        window.open(`/api/documents/download/${encodeURIComponent(filename)}`, '_blank');
+        return;
+    }
+    
+    // 2. If it's an image, render it directly in the modal
+    if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) {
+        logSystemEvent(`Rendering photo in modal viewer: '${filename}'`);
+        showModal(filename, 'N/A (Image View)', `/api/documents/download/${encodeURIComponent(filename)}`, true);
+        return;
+    }
+    
+    // 3. Text or fallback content: fetch text from content API
+    logSystemEvent(`Retrieving full text content for document: '${filename}'`);
     try {
         const response = await fetch(`/api/documents/content/${encodeURIComponent(filename)}`);
         if (!response.ok) throw new Error('Failed to load document content');
         
         const result = await response.json();
-        showModal(filename, 'N/A (Full Document View)', result.content);
+        showModal(filename, 'N/A (Full Document View)', result.content, false);
     } catch (error) {
         logSystemEvent(`Failed to view document content: ${error.message}`, 'error');
         alert(`Error loading document content: ${error.message}`);
