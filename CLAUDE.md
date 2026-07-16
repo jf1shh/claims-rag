@@ -1,6 +1,7 @@
 # AutoClaimsRAG — Engineering Guide
 
 > **This is a living document.** Every session reads it at the start and updates it at the end.
+> **GitHub Repository**: [jf1shh/auto-claims-rag](https://github.com/jf1shh/auto-claims-rag)
 
 ---
 
