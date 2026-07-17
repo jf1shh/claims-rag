@@ -16,7 +16,7 @@ from pydantic import BaseModel
 from typing import Optional, List
 
 # Import our RAG Engine classes
-from backend.rag_engine import DocumentParser, TextChunker, EmbeddingEngine, SQLiteVectorStore, RerankingEngine
+from backend.rag_engine import DocumentParser, TextChunker, EmbeddingEngine, SQLiteVectorStore, RerankingEngine, safe_filename
 from backend.agentic_router import AgenticRAGRouter
 
 app = FastAPI(title="Local Insurance RAG System API")
@@ -232,6 +232,10 @@ def get_document_content(filename: str):
 @app.get("/api/documents/download/{filename}")
 def download_document(filename: str):
     """Serves the physical document from stored_documents/."""
+    try:
+        filename = safe_filename(filename)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid filename.")
     file_path = os.path.join("stored_documents", filename)
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="File not found.")

@@ -17,6 +17,20 @@ import pandas as pd
 
 DB_PATH = "rag_store.db"
 
+
+def safe_filename(filename):
+    """Strips any directory components so a client-supplied filename can't
+    escape stored_documents/ via path traversal (../, ..\\, or an absolute
+    path). Must be applied before any filename touches a filesystem path --
+    os.path.basename handles both '/' and '\\' on Windows; on POSIX there is
+    no backslash-traversal risk in the first place.
+    """
+    name = os.path.basename((filename or "").strip())
+    if not name or name in (".", ".."):
+        raise ValueError(f"Invalid filename: {filename!r}")
+    return name
+
+
 class DocumentParser:
     @staticmethod
     def parse(file_path, file_type):
@@ -85,26 +99,36 @@ class TextChunker:
 
         while start < text_len:
             end = min(start + chunk_size, text_len)
-            
+
             # Find a clean boundary (whitespace or newline)
             if end < text_len:
                 last_space = text.rfind(' ', end - 100, end)
                 if last_space != -1:
                     end = last_space
-            
+
             chunk = text[start:end].strip()
             if chunk:
                 chunks.append(chunk)
-                
-            start = end - chunk_overlap
-            
-            # Prevent infinite loops or tiny final fragments
-            if start >= text_len - chunk_overlap or end >= text_len:
-                remaining = text[end - chunk_overlap:].strip()
-                if remaining and len(remaining) > 50 and remaining not in chunks:
-                    chunks.append(remaining)
+
+            if end >= text_len:
+                # This chunk already reaches the end of the text -- there's no
+                # tail left to add. (Previously a "prevent infinite loops"
+                # fallback ran unconditionally here too and re-appended an
+                # overlapping duplicate of the tail just added -- every short
+                # document, and the end of every long one, got a redundant
+                # near-duplicate chunk. Confirmed via rag_store.db: e.g.
+                # custom_equipment_receipts_Chen.xlsx, ~350 chars, produced 2
+                # parent chunks -- the full text, then its own last ~200 chars
+                # again.)
                 break
-                
+
+            next_start = end - chunk_overlap
+            if next_start <= start:
+                # Boundary snapping (the whitespace search above) left no
+                # forward progress -- stop rather than loop without advancing.
+                break
+            start = next_start
+
         return chunks
 
 
@@ -258,8 +282,9 @@ class SQLiteVectorStore:
     def add_document(self, filename, file_type, file_size, text, embedding_engine, claim_id=None, file_path=None):
         """Inserts document, parent chunks, FTS index, child chunks and their embeddings; copies physical file to disk."""
         import shutil
+        filename = safe_filename(filename)
         os.makedirs("stored_documents", exist_ok=True)
-        
+
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         
@@ -344,6 +369,7 @@ class SQLiteVectorStore:
 
     def delete_document(self, filename):
         """Deletes a document and cascade deletes its chunks and FTS index."""
+        filename = safe_filename(filename)
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
         try:

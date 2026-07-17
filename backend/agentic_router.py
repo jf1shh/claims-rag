@@ -77,8 +77,16 @@ CLAIMS_DATA = [
 ]
 
 class AgenticRAGRouter:
+    # How long to trust a cached "currently loaded LM Studio model" answer
+    # before re-checking. _get_loaded_model was making a synchronous HTTP
+    # round-trip on every single chat request; the loaded model changes only
+    # when a human swaps it in LM Studio, so a short TTL avoids that cost on
+    # every query while still picking up a model swap within a few seconds.
+    MODEL_CACHE_TTL_SECONDS = 10.0
+
     def __init__(self):
-        pass
+        self._model_cache: Optional[str] = None
+        self._model_cache_at: float = 0.0
 
     def _get_claim_context_markdown(self, claim_id: str) -> str:
         claim = next((c for c in CLAIMS_DATA if c["id"] == claim_id), None)
@@ -123,20 +131,42 @@ class AgenticRAGRouter:
         # If simulated mode, execute high-fidelity structured routing
         if engine == "simulated":
             return self._run_simulated_agent(query_text, claim_id, vector_store, embedding_engine, reranking_engine, logs, start_time)
-        
-        # Else, online LM Studio mode
-        engine_url = "http://127.0.0.1:1234" if engine == "lm-studio" else engine
+
+        # Only "lm-studio" is accepted for the online path. engine used to be
+        # used directly as a request URL when it wasn't "lm-studio" -- an SSRF
+        # vector, since the retrieved claim/policy context would be POSTed to
+        # whatever URL a caller supplied. There's exactly one supported local
+        # engine, so anything else is rejected rather than treated as a target.
+        if engine != "lm-studio":
+            logs.append(f"❌ [Config Error] Unknown engine '{engine}'. Only 'simulated' and 'lm-studio' are supported.")
+            return {
+                "answer": f"Unknown engine '{engine}'. Please select 'simulated' or 'lm-studio'.",
+                "sources": [],
+                "claim_dossier": None,
+                "engine": engine,
+                "pipeline_logs": logs
+            }
+
+        engine_url = "http://127.0.0.1:1234"
         return self._run_online_agent(query_text, claim_id, engine_url, vector_store, embedding_engine, reranking_engine, logs, start_time)
 
     def _get_loaded_model(self, engine_url: str) -> str:
+        if self._model_cache and (time.time() - self._model_cache_at) < self.MODEL_CACHE_TTL_SECONDS:
+            return self._model_cache
         try:
             response = requests.get(f"{engine_url}/v1/models", timeout=2.0)
             if response.status_code == 200:
                 data = response.json()
                 if "data" in data and len(data["data"]) > 0:
-                    return data["data"][0]["id"]
+                    model_name = data["data"][0]["id"]
+                    self._model_cache = model_name
+                    self._model_cache_at = time.time()
+                    return model_name
         except Exception:
             pass
+        # Don't cache a failure -- retry on the next call rather than getting
+        # stuck on the "local-model" placeholder for the full TTL if LM
+        # Studio was just temporarily unreachable.
         return "local-model"
 
     def _run_online_agent(
