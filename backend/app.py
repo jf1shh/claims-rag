@@ -21,10 +21,14 @@ from backend.agentic_router import AgenticRAGRouter
 
 app = FastAPI(title="Local Insurance RAG System API")
 
-# Enable CORS for development
+# Restricted to localhost -- this app is 100% local-only by design (see
+# CLAUDE.md's Critical Constraints), so a wildcard origin with credentials
+# enabled had no upside and is a flagged anti-pattern regardless of current
+# exposure. Add an origin here explicitly if the dev server ever needs to
+# be reached from a different local port/host.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:8000", "http://127.0.0.1:8000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
