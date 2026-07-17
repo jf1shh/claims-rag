@@ -1,4 +1,9 @@
 import os
+# Force offline-only execution for Hugging Face transformers/sentence-transformers
+os.environ["HF_HUB_OFFLINE"] = "1"
+os.environ["TRANSFORMERS_OFFLINE"] = "1"
+os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
+
 import sqlite3
 import time
 import json
@@ -6,7 +11,9 @@ import numpy as np
 import pypdf
 import docx
 import pandas as pd
-from sentence_transformers import SentenceTransformer, CrossEncoder
+# NOTE: sentence_transformers/torch are imported lazily inside EmbeddingEngine
+# and RerankingEngine so that the pure-numpy SQLiteVectorStore (and document
+# parsing) can be imported and exercised without loading the heavy ML stack.
 
 DB_PATH = "rag_store.db"
 
@@ -103,6 +110,7 @@ class TextChunker:
 
 class EmbeddingEngine:
     def __init__(self, model_name="all-MiniLM-L6-v2"):
+        from sentence_transformers import SentenceTransformer
         print(f"Loading embedding model '{model_name}' (cached locally)...")
         self.model = SentenceTransformer(model_name)
         print("Model loaded successfully.")
@@ -120,6 +128,7 @@ class EmbeddingEngine:
 
 class RerankingEngine:
     def __init__(self, model_name="cross-encoder/ms-marco-MiniLM-L-6-v2"):
+        from sentence_transformers import CrossEncoder
         print(f"Loading reranking model '{model_name}' on CPU...")
         self.model = CrossEncoder(model_name, device="cpu")
         print("Reranking model loaded successfully.")
@@ -142,7 +151,60 @@ class RerankingEngine:
 class SQLiteVectorStore:
     def __init__(self, db_path=DB_PATH):
         self.db_path = db_path
+        # In-memory, pre-normalized embedding index. Built lazily on first
+        # search and invalidated whenever documents are added/removed. This
+        # avoids re-reading every embedding BLOB and recomputing corpus norms
+        # on each query (the primary CPU bottleneck as the corpus scales).
+        self._vector_cache = None
         self._init_db()
+
+    def _invalidate_vector_cache(self):
+        self._vector_cache = None
+
+    def _build_vector_cache(self):
+        """Loads all child embeddings once, L2-normalizes them, and caches the
+        matrix plus parallel metadata arrays for fast masked cosine search."""
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT c.embedding, p.content, d.filename, d.file_type, p.id, d.claim_id
+            FROM child_chunks c
+            JOIN parent_chunks p ON c.parent_id = p.id
+            JOIN documents d ON p.document_id = d.id
+        """)
+        rows = cursor.fetchall()
+        conn.close()
+
+        vectors, contents, filenames, file_types, parent_ids, claim_ids = [], [], [], [], [], []
+        for emb_bytes, content, filename, file_type, p_id, claim_id in rows:
+            vec = np.frombuffer(emb_bytes, dtype=np.float32)
+            if vec.shape[0] != 384:
+                continue
+            vectors.append(vec)
+            contents.append(content)
+            filenames.append(filename)
+            file_types.append(file_type)
+            parent_ids.append(p_id)
+            claim_ids.append(claim_id)
+
+        if vectors:
+            matrix = np.vstack(vectors).astype(np.float32)
+            norms = np.linalg.norm(matrix, axis=1, keepdims=True)
+            norms[norms == 0] = 1.0
+            matrix = matrix / norms  # pre-normalized so cosine == dot product
+        else:
+            matrix = np.zeros((0, 384), dtype=np.float32)
+
+        self._vector_cache = {
+            "matrix": matrix,
+            "contents": contents,
+            "filenames": filenames,
+            "file_types": file_types,
+            "parent_ids": parent_ids,
+            "claim_ids": np.array(claim_ids, dtype=object),
+            "global_mask": np.array([cid is None for cid in claim_ids], dtype=bool),
+        }
+        return self._vector_cache
 
     def _init_db(self):
         conn = sqlite3.connect(self.db_path)
@@ -272,6 +334,7 @@ class SQLiteVectorStore:
                     )
             
             conn.commit()
+            self._invalidate_vector_cache()
             return doc_id, len(parent_chunks)
         except Exception as e:
             conn.rollback()
@@ -301,8 +364,9 @@ class SQLiteVectorStore:
                 stored_path = os.path.join("stored_documents", filename)
                 if os.path.exists(stored_path):
                     os.remove(stored_path)
-                    
+
                 conn.commit()
+                self._invalidate_vector_cache()
                 return True
             return False
         except Exception as e:
@@ -349,59 +413,46 @@ class SQLiteVectorStore:
         """Computes hybrid similarity (Vector + FTS5) with RRF and optional Cross-Encoder reranking scoped by claim_id."""
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
-        
+
         # --- 1. Vector Search (Child Chunks) Scoped by claim_id ---
-        cursor.execute("""
-            SELECT c.embedding, p.content, d.filename, d.file_type, p.id
-            FROM child_chunks c
-            JOIN parent_chunks p ON c.parent_id = p.id
-            JOIN documents d ON p.document_id = d.id
-            WHERE d.claim_id IS NULL OR d.claim_id = ?
-        """, (claim_id,))
-        rows = cursor.fetchall()
-        
+        cache = self._vector_cache or self._build_vector_cache()
+        matrix = cache["matrix"]
+
         vector_ranked = []
-        if rows:
-            contents = []
-            filenames = []
-            file_types = []
-            parent_ids = []
-            vectors = []
-            
-            for emb_bytes, content, filename, file_type, p_id in rows:
-                chunk_vector = np.frombuffer(emb_bytes, dtype=np.float32)
-                if chunk_vector.shape[0] == 384:
-                    vectors.append(chunk_vector)
-                    contents.append(content)
-                    filenames.append(filename)
-                    file_types.append(file_type)
-                    parent_ids.append(p_id)
-            
-            if vectors:
-                matrix = np.vstack(vectors)
+        if matrix.shape[0] > 0:
+            # Mask to global docs plus (optionally) the active claim's docs.
+            mask = cache["global_mask"]
+            if claim_id is not None:
+                mask = mask | (cache["claim_ids"] == claim_id)
+
+            selected = np.where(mask)[0]
+            if selected.size > 0:
                 query = np.array(query_embedding, dtype=np.float32)
-                
-                # Vectorized similarity
-                dot_products = np.dot(matrix, query)
-                matrix_norms = np.linalg.norm(matrix, axis=1)
                 query_norm = np.linalg.norm(query)
-                matrix_norms[matrix_norms == 0] = 1.0
-                query_norm_val = query_norm if query_norm != 0 else 1.0
-                similarities = dot_products / (matrix_norms * query_norm_val)
-                
+                query = query / (query_norm if query_norm != 0 else 1.0)
+
+                # Both matrix rows and query are unit vectors → dot == cosine.
+                similarities = matrix[selected] @ query
+
+                contents = cache["contents"]
+                filenames = cache["filenames"]
+                file_types = cache["file_types"]
+                parent_ids = cache["parent_ids"]
+
                 # Map parent ID to maximum child score
                 parent_best_scores = {}
                 parent_metadata = {}
-                for idx, p_id in enumerate(parent_ids):
-                    score = float(similarities[idx])
+                for local_idx, global_idx in enumerate(selected):
+                    p_id = parent_ids[global_idx]
+                    score = float(similarities[local_idx])
                     if p_id not in parent_best_scores or score > parent_best_scores[p_id]:
                         parent_best_scores[p_id] = score
                         parent_metadata[p_id] = {
-                            "content": contents[idx],
-                            "filename": filenames[idx],
-                            "file_type": file_types[idx]
+                            "content": contents[global_idx],
+                            "filename": filenames[global_idx],
+                            "file_type": file_types[global_idx]
                         }
-                
+
                 # Compile vector results
                 for p_id, score in parent_best_scores.items():
                     meta = parent_metadata[p_id]
@@ -470,7 +521,9 @@ class SQLiteVectorStore:
             })
             
         fused_results.sort(key=lambda x: x["score"], reverse=True)
-        top_candidates = fused_results[:15]
+        # Keep a candidate pool at least as large as the requested top_k so the
+        # reranker (and non-reranked path) can actually return top_k results.
+        top_candidates = fused_results[:max(15, top_k)]
         
         # --- 4. Cross-Encoder Reranking ---
         if reranking_engine and top_candidates:
