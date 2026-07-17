@@ -65,13 +65,19 @@ def ingest_all():
                 print(f"   ⚠️ Warning: Document '{filename}' is empty, skipping.")
                 continue
                 
-            # Save to SQLite Vector Store
+            # Save to SQLite Vector Store. file_path must be passed so the real
+            # generated binary gets copied into stored_documents/ -- without
+            # it, add_document() falls back to writing the extracted text as
+            # a "PDF"/"DOCX"/"XLSX", which breaks download/view for every
+            # affected document (confirmed: this had silently happened for
+            # 42 of the 46 global documents already in rag_store.db).
             doc_id, parent_count = vector_store.add_document(
                 filename=filename,
                 file_type=file_ext,
                 file_size=file_size,
                 text=text,
-                embedding_engine=embedding_engine
+                embedding_engine=embedding_engine,
+                file_path=file_path
             )
             
             elapsed = time.time() - start
