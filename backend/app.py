@@ -258,5 +258,29 @@ def chat_with_docs(req: ChatRequest):
     )
     return result
 
+class SearchRequest(BaseModel):
+    query: str
+    claim_id: Optional[str] = None
+    mode: str  # 'naive' (vector-only) | 'hybrid' (vector+FTS+RRF) | 'hybrid_rerank' (+ cross-encoder)
+    top_k: int = 4
+
+@app.post("/api/eval/search")
+def eval_search(req: SearchRequest):
+    """Raw retrieval endpoint (no LLM synthesis) for the eval harness to compare
+    retrieval strategies. Not used by the frontend."""
+    if req.mode not in ("naive", "hybrid", "hybrid_rerank"):
+        raise HTTPException(status_code=400, detail="mode must be 'naive', 'hybrid', or 'hybrid_rerank'")
+
+    query_emb = embedding_engine.embed_query(req.query)
+    matches = vector_store.search_similarity(
+        query_emb,
+        req.query,
+        claim_id=req.claim_id,
+        reranking_engine=reranking_engine if req.mode == "hybrid_rerank" else None,
+        top_k=req.top_k,
+        use_fts=(req.mode != "naive"),
+    )
+    return {"mode": req.mode, "matches": matches}
+
 # Mount frontend files at root
 app.mount("/", StaticFiles(directory="frontend", html=True), name="frontend")

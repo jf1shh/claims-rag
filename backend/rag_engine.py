@@ -409,8 +409,12 @@ class SQLiteVectorStore:
             for r in rows
         ]
 
-    def search_similarity(self, query_embedding, query_text, claim_id=None, reranking_engine=None, top_k=15):
-        """Computes hybrid similarity (Vector + FTS5) with RRF and optional Cross-Encoder reranking scoped by claim_id."""
+    def search_similarity(self, query_embedding, query_text, claim_id=None, reranking_engine=None, top_k=15, use_fts=True):
+        """Computes hybrid similarity (Vector + FTS5) with RRF and optional Cross-Encoder reranking scoped by claim_id.
+
+        use_fts=False skips keyword search/RRF entirely and returns pure vector-only
+        results, used by the eval harness to produce a naive baseline for comparison.
+        """
         conn = sqlite3.connect(self.db_path)
         cursor = conn.cursor()
 
@@ -468,7 +472,7 @@ class SQLiteVectorStore:
         # --- 2. Keyword Search (FTS5 on Parent Chunks) Scoped by claim_id ---
         fts_ranked = []
         clean_query = " ".join([t for t in query_text.split() if t.isalnum()])
-        if clean_query:
+        if use_fts and clean_query:
             try:
                 cursor.execute("""
                     SELECT p.content, d.filename, d.file_type, p.id
