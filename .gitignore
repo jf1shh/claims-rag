@@ -35,6 +35,10 @@ pip-delete-this-directory.txt
 *.sqlite
 *.sqlite3
 sample_guidelines/
+stored_documents/
+
+# Claude Code local settings (machine-specific, not shared)
+.claude/settings.local.json
 
 # IDEs
 .idea/
