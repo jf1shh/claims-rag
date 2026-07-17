@@ -83,11 +83,12 @@ The aggregate retrieval gap understates the story. 12 of 19 queries are single-f
 
 ### Bugs this eval harness actually found and fixed
 
-An eval harness earns its keep by catching real defects, not by producing a nice-looking dashboard. This one caught three, in three different layers of the system:
+An eval harness earns its keep by catching real defects, not by producing a nice-looking dashboard. This one caught four, in four different layers of the system:
 
 1. **A real hallucination path in the production router.** A global policy query got misclassified by the planner (`needs_global_policies: False`) while no claim was active, which also short-circuited the claim-dossier retrieval branch — both retrieval paths got skipped, and the LLM synthesized a confident answer citing filenames that don't exist anywhere in the corpus. Root-caused, fixed with a fallback path plus a hard stop against zero-context synthesis, verified.
 2. **The simulated demo mode's hardcoded narrative contained facts the actual source documents don't support** — a coverage cap stated as $5,000 where the real document says $3,500, a rider eligibility threshold stated as 3 years where the real document says 5 years, a fabricated hour cap cited to a document that doesn't contain it, and a claim decision that mischaracterized a legitimate repair line item as a duplicate charge to reject. Found by cross-checking the golden set's reference answers against the real documents; corrected.
 3. **A measurement gap in the eval harness itself.** Faithfulness scoring initially checked answers only against the `sources` field returned by the API — but the router also grounds claim-scoped answers in a claim summary dossier injected directly into the prompt, which isn't a search result and wasn't in `sources`. Correct, dossier-grounded answers were scoring as unfaithful. Fixed by surfacing the dossier as its own field in the API response and scoring against it too.
+4. **A genuine multi-hop retrieval gap, and a second bug it exposed.** One query needed two documents — an endorsement's coverage cap *and* a claim's own itemized receipt — surfaced together to compute correctly. Single-shot semantic search wasn't guaranteeing both made it into context; the receipt kept losing its slot to a more topically-similar policy document. Fixed by always including a claim's own documents directly rather than making them compete semantically for a slot (claim dossiers are small — a handful of documents — so there's no retrieval-quality tradeoff to make). That fix then exposed a *second*, different problem: with the correct receipt now in context, the LLM still calculated from only one of its two line items and reached the wrong total. That answer was fully **faithful** to the context it used — it just didn't use all of it, which Faithfulness doesn't check. A one-line prompt instruction ("enumerate every item before totaling") fixed it, verified by direct before/after comparison, since this class of error doesn't move the Faithfulness score at all.
 
 ## Try it locally
 
@@ -113,7 +114,8 @@ Without an LM Studio server running, the app falls back to a rule-based simulati
 
 ## Known limitations
 
-- Single-shot top-k retrieval doesn't guarantee cross-document coverage for genuinely multi-hop claim math — see the evaluation section above. The planner decomposes queries but doesn't yet enforce which *documents* must jointly appear in the result set.
+- **Faithfulness measures groundedness, not correctness** — a real distinction, not a caveat unique to this project. An answer that uses only part of the available context can score perfectly faithful while still reaching the wrong conclusion (see bug #4 above). Don't infer answer correctness from a high Faithfulness score alone on multi-fact queries.
+- `eval/results.json`'s Context Precision/Recall numbers reflect single-shot retrieval via a debug endpoint, not the full agentic pipeline's guaranteed claim-document inclusion — the two are deliberately isolated so retrieval-strategy comparisons aren't confounded by pipeline-level behavior. An answer-correctness metric to quantify the multi-hop fix directly is unbuilt.
 - Faithfulness scoring is bounded by the local judge model's own reasoning quality — a real tradeoff of local-only evaluation against a larger hosted judge, made deliberately to keep the whole pipeline (including evaluation) consistent with the "runs entirely locally" design constraint.
 - The demo claim fixtures are currently duplicated between the backend and frontend rather than served from a single source of truth.
 
