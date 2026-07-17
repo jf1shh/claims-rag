@@ -66,20 +66,20 @@ Most RAG demos never measure anything past a handful of manually-eyeballed examp
 
 ### Results
 
-![Evaluation results: Context Precision and Recall for naive vs. hybrid+rerank retrieval, and Faithfulness before and after fixing the harness's dossier-scoring gap](assets/eval_results.png)
+![Evaluation results: Context Precision and Recall for naive vs. hybrid+rerank retrieval, and Faithfulness across the dossier-scoring fix and the corpus rebuild](assets/eval_results.png)
 
 | Metric | Naive | Hybrid + Rerank |
 |---|---|---|
-| Context Precision | 0.735 | 0.772 |
-| Context Recall | 0.884 | 0.902 |
-| Faithfulness (live answers) | — | 0.811 |
+| Context Precision | 0.754 | 0.807 |
+| Context Recall | 0.882 | 0.916 |
+| Faithfulness (live answers) | — | 0.854 |
 
-The aggregate retrieval gap understates the story. 12 of 19 queries are single-fact global lookups both methods already ace near-perfectly — the interesting signal is in the 7 claim-scoped queries:
+The aggregate retrieval gap understates the story. 12 of 19 queries are single-fact global lookups both methods ace near-perfectly — the interesting signal is in the 7 claim-scoped queries:
 
-- **Clear hybrid wins**: a deductible lookup where naive's top hit was a narratively-similar case study instead of the actual deductibles table (+0.19 precision); a claim-scoped police report query where naive's top-1 was an image file with no real text content, correctly demoted by reranking (+0.5 precision).
-- **Reported honestly, not cherry-picked away**: hybrid was flat or slightly *worse* on two queries, pulled in by an irrelevant image file and a topically-adjacent-but-wrong document respectively.
-- **The most important finding wasn't a hybrid-vs-naive story at all**: one query — "does this claim's stolen equipment exceed the endorsement cap, and by how much" — needs *two* documents (the endorsement's cap *and* the claim-specific receipt total) surfaced together, and single-shot top-k retrieval failed to do that in *either* mode. That's not a retrieval-tuning gap, it's the exact structural reason the agentic planner's query decomposition exists — this eval validates the architecture's design rationale, it doesn't just score the retrieval layer in isolation.
-- **Faithfulness rose from 0.735 to 0.811** once the harness was fixed to score against everything the model was actually grounded in (see bug #3 below) — every claim-scoped query's score improved once the claim dossier was included, while global-only queries stayed flat, confirming the fix targeted the right thing rather than just moving noise around.
+- **Clear hybrid wins**: a claim-scoped shop-estimate query where naive completely missed the source document (0.0 recall) while hybrid retrieved it with near-perfect precision and recall; a police report query where naive's top-1 was an image file with no real text content, correctly demoted by reranking (naive 0.5 → hybrid 1.0 precision).
+- **Reported honestly, not cherry-picked away**: hybrid was clearly *worse* on two queries — one where naive reached 1.0 precision and hybrid stalled at 0.5, another where hybrid's recall dropped to 0.4 (naive 0.75) after pulling in a topically-adjacent-but-wrong document. Real regressions, not smoothed over.
+- **The most important finding wasn't a hybrid-vs-naive story at all**: one query — "does this claim's stolen equipment exceed the endorsement cap, and by how much" — needs *two* documents (the endorsement's cap *and* the claim-specific receipt total) surfaced together, and single-shot top-k retrieval failed to do that in *either* mode, before or after the corpus rebuild. That's not a retrieval-tuning gap, it's the exact structural reason the agentic planner's query decomposition exists (see Phase 9 in the fixes below) — this eval validates the architecture's design rationale, it doesn't just score the retrieval layer in isolation.
+- **Faithfulness rose 0.735 → 0.811 → 0.854** across two distinct fixes: first when the harness was corrected to score against everything the model was actually grounded in (see bug #3 below), then again after a full corpus rebuild fixed a chunking bug and restored ~42 documents that had silently been saved as fake binaries (see "Bugs this eval harness actually found" in the codebase history). Two different fixes, two independent, honest improvements — not one number tuned repeatedly until it looked good.
 
 ### Bugs this eval harness actually found and fixed
 
