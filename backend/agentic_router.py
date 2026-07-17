@@ -200,26 +200,65 @@ class AgenticRAGRouter:
             logs.append(f"⚙️ [Tool Exec] Retrieval for '{sub_q}' complete in {(time.time() - sub_start)*1000:.1f}ms")
 
         # Step 3: Self-Correction / Query Translation Loop
+        #
+        # This must trigger whenever nothing was retrieved, not only when a
+        # claim_id is active. The planner's needs_global_policies /
+        # needs_claim_dossier classification can both come back False (or
+        # needs_claim_dossier=True with no claim_id active, which short-circuits
+        # the dossier branch entirely) -- without this fallback, retrieval is
+        # silently skipped and synthesis proceeds with zero context, which the
+        # LLM fills in by fabricating an answer and citing sources that don't
+        # exist in the corpus. Caught via eval harness: a global policy query
+        # returned 0 sources and cited invented filenames.
         if not all_matches and claim_id:
             logs.append("⚠️ [Self-Correction] Zero search matches returned. Executing Query Translation fallback...")
             fallback_q = f"claim details {claim_id}"
             logs.append(f"   ➔ Rewriting search target to: '{fallback_q}'")
-            
+
             fallback_emb = embedding_engine.embed_query(fallback_q)
             fallback_matches = vector_store.search_similarity(
-                fallback_emb, 
-                fallback_q, 
-                claim_id=claim_id, 
-                reranking_engine=reranking_engine, 
+                fallback_emb,
+                fallback_q,
+                claim_id=claim_id,
+                reranking_engine=reranking_engine,
                 top_k=4
             )
             all_matches.extend(fallback_matches)
             logs.append(f"🔄 [Self-Correction] Recovered {len(fallback_matches)} dossier sources.")
+        elif not all_matches:
+            logs.append("⚠️ [Self-Correction] Zero search matches returned. Retrying against global policies with the original query...")
+
+            fallback_emb = embedding_engine.embed_query(query_text)
+            fallback_matches = vector_store.search_similarity(
+                fallback_emb,
+                query_text,
+                claim_id=None,
+                reranking_engine=reranking_engine,
+                top_k=4
+            )
+            all_matches.extend(fallback_matches)
+            logs.append(f"🔄 [Self-Correction] Recovered {len(fallback_matches)} global policy sources.")
 
         # Sort combined matches by score
         all_matches.sort(key=lambda x: x.get("score", 0.0), reverse=True)
         top_matches = all_matches[:4]
-        
+
+        # Hard stop: never let the LLM synthesize freely with zero retrieved
+        # context. Without this, an ungrounded call reliably fabricates both
+        # an answer and citations to filenames that don't exist in the corpus.
+        if not top_matches:
+            logs.append("❌ [Synthesis Skipped] No supporting documents found after self-correction; refusing to answer ungrounded.")
+            elapsed = (time.time() - start_time) * 1000
+            logs.append(f"✅ [Agentic Coordinator] Completed reasoning cycle in {elapsed:.1f}ms")
+            return {
+                "answer": "I couldn't find any supporting documents for this question in the available guidelines"
+                           + (f" or claim #{claim_id} dossier" if claim_id else "") + ". "
+                           "Please rephrase the question or confirm the relevant policy/claim documents have been uploaded.",
+                "sources": [],
+                "engine": "lm-studio (agentic)",
+                "pipeline_logs": logs
+            }
+
         # Step 4: Final LLM Synthesis
         logs.append("✍️ [Step 2: Synthesis] Invoking local LLM to generate context-grounded audit response...")
         
