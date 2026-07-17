@@ -118,6 +118,7 @@ http://localhost:8000
 * **Normalized Embedding Cache Invalidation**: `search_similarity` reads from an in-memory, pre-normalized embedding matrix cache. Any code path that mutates `child_chunks`/`documents` MUST call `self._invalidate_vector_cache()` after commit, or searches will serve stale results. Cache rows are L2-normalized at build time, so the query vector must also be normalized and similarity is a plain dot product — do not reintroduce per-query corpus-norm computation.
 * **UTF-8 Robustness**: PDF and TXT text extraction must handle decoding errors gracefully (`errors="ignore"` or similar safeguards) to prevent crashes on non-ASCII symbols.
 * **Lazy ML Imports**: `sentence_transformers`/torch are imported inside `EmbeddingEngine`/`RerankingEngine.__init__`, not at module top, so the pure-numpy store stays importable without the ML stack. Keep it that way.
+* **Never Synthesize With Zero Retrieved Context**: `AgenticRAGRouter._run_online_agent` must not call the LLM for synthesis when `top_matches` is empty after self-correction — this reliably produces a confident answer that fabricates citations to nonexistent filenames (caught by the eval harness). Any new retrieval-skip path (planner misclassification, new claim scoping logic, etc.) must still be caught by the zero-context hard stop before touching synthesis.
 
 ---
 
@@ -145,6 +146,7 @@ http://localhost:8000
 | FastAPI Backend | `backend/app.py` | **Active** | Serving on port 8000; per-claim scoping + document serving. |
 | Web Frontend | `frontend/*` | **Active** | Claims queue, per-claim folders, viewable citations, pipeline logs. |
 | Batch Ingest CLI | ingest_all.py | Active | Batch-indexes the sample/seed document set. |
+| Eval Harness | `eval/*` | **Active** | Naive-vs-hybrid+rerank Context Precision/Recall + live Faithfulness, judged locally via LM Studio. Requires backend server running. |
 
 ---
 
@@ -192,6 +194,12 @@ http://localhost:8000
 * **Done when**: Repeat queries reuse the cached matrix (verified ~1.7× faster on the vector stage at current corpus, widening with scale) with identical results.
 * **Status**: Completed.
 
+### Phase 8 — Domain-Grounded Evaluation Harness (Completed)
+* **Goal**: Move from "it looks right" to a measured, repeatable retrieval/groundedness eval, using real adjusting judgment calls instead of generic Q&A.
+* **Builds**: `eval/golden_queries.py` (19 domain-grounded queries verified against actual `rag_store.db` content, spanning global policy + claim-scoped + a deliberate hallucination probe), `eval/ragas_lm_studio.py` (Ragas wired to LM Studio as a fully local judge), `eval/run_eval.py` (naive-vs-hybrid+rerank Context Precision/Recall comparison plus live-answer Faithfulness), `/api/eval/search` debug endpoint (`backend/app.py`) exposing a `naive`/`hybrid`/`hybrid_rerank` toggle, and a `use_fts` parameter on `SQLiteVectorStore.search_similarity` to produce a true vector-only baseline.
+* **Done when**: The harness runs end-to-end against the live server and produces per-query + aggregate Context Precision/Recall/Faithfulness scores.
+* **Status**: Completed. See Debugging History for two real bugs this surfaced (a ragas/langchain-community/instructor packaging incompatibility, and a genuine zero-context hallucination path in the agentic router — both fixed).
+
 ---
 
 ## MVP Scope
@@ -226,16 +234,20 @@ http://localhost:8000
 
 ### Known Issues
 * `CLAIMS_DATA` demo fixtures are duplicated in both `backend/agentic_router.py` and `frontend/app.js` — keep them in sync until unified behind an endpoint (see What's Next).
-* `stored_documents/` is not git-ignored; physical seed files would otherwise be committed (see What's Next).
+* The **simulated agent's hardcoded narrative contains facts not grounded in the actual seed documents** — found via the eval harness, not yet fixed: Custom Equipment cap stated as $5,000 (real doc: $3,500 per occurrence, `Endorsement_Custom_Audio_Visual.docx`), OEM Parts Guarantee age threshold stated as "under 3 years" (real doc: "under 5 years old", `Rider_OEM_Parts_Guarantee.pdf`), a "6.0 hours frame pull cap" cited to `Adjuster_Guide_Rear_Impact.docx` that document doesn't contain at all, and a hail/PDR "duplicative charge denial" for claim #2026-10492 not supported by `Case_Study_Hail_Damage_PlanA.pdf` (which shows the repaint as a legitimate line item). Only affects `engine="simulated"` mode; the real hybrid-search + online-LLM path is unaffected.
+* Single-shot top-k retrieval structurally fails on true multi-hop claim math (e.g. "does claim total exceed endorsement cap" needs both the endorsement doc *and* the claim-specific receipt doc in the same result set) — the eval harness's `chen-custom-equipment-cap` query scored 0.0/0.0 in both naive and hybrid modes. This is the architectural reason the agentic planner exists; it isn't yet solving this specific case since planning currently produces sub-queries but doesn't guarantee cross-document coverage.
+* **Eval harness measurement gap**: `_get_claim_context_markdown()` injects the full claim dossier (line-item estimate, policy details) directly into the LLM prompt as markdown, separate from the retrieved `sources` returned to the client. `eval/run_eval.py`'s Faithfulness scoring only sees `sources`, so claim-scoped answers that correctly cite dossier figures (e.g. estimate line items) look unfaithful even though they're genuinely grounded — just not in what the harness measures. Faithfulness scores for claim-scoped queries should be read as a lower bound, not a precise number, until the harness also scores against the dossier text.
 
 ---
 
 ## What's Next
 
-1. **User Testing**: Launch the server, open the web dashboard, and test claims questions with Qwen-2.5-14B loaded in LM Studio (exercise the agentic online path end-to-end).
-2. **Unify `CLAIMS_DATA`**: Serve the demo claims from a single backend endpoint the frontend consumes, eliminating the duplicated fixtures.
-3. **Repo hygiene**: Decide whether `stored_documents/` should be git-ignored (regenerable seed data) or tracked; update `.gitignore` accordingly.
-4. **Production Builds**: Package the application or prepare dockerized configs if distribution is desired.
+1. **Fix the simulated agent's ungrounded facts**: correct the Custom Equipment cap ($5,000 → $3,500), OEM Parts Guarantee age threshold (3yr → 5yr), the fabricated rear-impact frame-pull hour cap, and the Jenkins hail/PDR "duplicative" claim — all found by the eval harness, listed in Known Issues.
+2. **Multi-hop retrieval for claim math**: `chen-custom-equipment-cap`-style queries need two documents (endorsement cap + claim-specific receipt total) surfaced together; the agentic planner's sub-query decomposition doesn't yet guarantee this. Consider requiring the planner to enumerate needed *documents*, not just search intents.
+3. **Close the eval harness's dossier gap**: have `eval/run_eval.py` also score Faithfulness against the injected claim dossier markdown, not just `sources`, so claim-scoped scores aren't unfairly deflated.
+4. **User Testing**: Launch the server, open the web dashboard, and test claims questions with Qwen-2.5-14B loaded in LM Studio (exercise the agentic online path end-to-end).
+5. **Unify `CLAIMS_DATA`**: Serve the demo claims from a single backend endpoint the frontend consumes, eliminating the duplicated fixtures.
+6. **Production Builds**: Package the application or prepare dockerized configs if distribution is desired.
 
 ---
 
@@ -247,6 +259,10 @@ http://localhost:8000
 | 2026-07-16 | `Test-Path` on `task-69.log` | Returned `False` (file not found) | Output was buffered in Python, preventing log creation. Switched execution to unbuffered python `-u` flag. |
 | 2026-07-16 | `test_rag_pipeline.py` run | PackageNotFoundError (DOCX not found) | The test looked for deleted Word guidelines. Modified test to target the actual generated PDF regulations. |
 | 2026-07-16 | Import `sentence_transformers` in sandbox | `OSError [WinError 4551]`: Application Control policy blocked `torch/lib/shm.dll` | Environment (agent sandbox) blocks the torch DLL — not a code bug; the ML stack loads on the normal host. Made ML imports lazy and verified the numpy retrieval path standalone against `rag_store.db` without torch. |
+| 2026-07-17 | `import ragas` (v0.4.3) | `ModuleNotFoundError: No module named 'langchain_community.chat_models.vertexai'` | ragas 0.4.3 unconditionally imports `ChatVertexAI` from a module langchain-community removed when VertexAI support was split into a standalone package. Never actually used (only listed in an isinstance-check tuple). Fixed with a `sys.modules` shim injected before importing ragas (`eval/ragas_lm_studio.py`) — not a site-packages edit, so it survives a fresh `pip install`. Downgrading langchain-community instead was tried first and broke langchain-core/langgraph/langchain-openai version compatibility; reverted. |
+| 2026-07-17 | Ragas `Faithfulness`/`ContextPrecision`/`ContextRecall` against LM Studio | `openai.BadRequestError: 'response_format.type' must be 'json_schema' or 'text'` | `ragas.llms.llm_factory(provider="openai")` hardcodes `instructor.Mode.JSON` (plain `json_object`), which LM Studio's endpoint rejects. Fixed by bypassing `llm_factory` and constructing the `InstructorLLM` directly with `instructor.Mode.JSON_SCHEMA`. |
+| 2026-07-17 | Ragas `Faithfulness` scoring on claim-scoped queries | 4/19 queries: `InstructorRetryException: output incomplete due to max_tokens limit` | `InstructorModelArgs` defaults to `max_tokens=1024`, too small for the judge to enumerate every atomic statement + verdict on longer claim-scoped contexts. Fixed by passing `InstructorModelArgs(max_tokens=4096)` in `eval/ragas_lm_studio.py`. |
+| 2026-07-17 | Global-policy eval query (`rear-impact-adas-fee`) returned `sources: []` from `/api/chat` | LLM produced a confident, well-formatted answer citing filenames that don't exist anywhere in the corpus | Real bug in `AgenticRAGRouter._run_online_agent`: the planner classified the query as `needs_global_policies=False, needs_claim_dossier=True`; since `claim_id` was `None`, the dossier branch's `plan["needs_claim_dossier"] and claim_id` guard also evaluated falsy, so **both** retrieval branches were skipped and synthesis ran with zero context. The existing self-correction fallback only triggered `if not all_matches and claim_id` — global-only queries had no recovery path. Fixed: added a fallback branch for the `claim_id is None` case (retries the original query against global policies), and added a hard stop that refuses to call the LLM at all if `top_matches` is still empty after self-correction, returning a "couldn't find supporting documents" message instead of letting the model fabricate one. |
 
 ---
 
@@ -270,6 +286,20 @@ http://localhost:8000
 * **Audit findings deferred (not yet actioned)**: `time.sleep(1.0)` demo delay in the simulated agent; `CLAIMS_DATA` duplicated across backend/frontend; per-query `_get_loaded_model` HTTP round-trip could be cached; `get_document_content` opens sqlite inline instead of via a store method; `stored_documents/` not git-ignored.
 * **Plan changes**: Added Build Plan Phases 5–7 (hybrid retrieval/reranking, agentic router, performance hardening) to reflect already-shipped work.
 
+### 2026-07-17 (session 3 — portfolio pivot, resume/LinkedIn, eval harness)
+* **Phase**: Phase 8 — Domain-Grounded Evaluation Harness.
+* **Context established**: This project's real purpose is a portfolio piece (user has 17 years as an auto insurance claims/appraisal handler). Committed the prior session's uncommitted work as 3 scoped commits first (`9f4fd1b` agentic router + hybrid retrieval + perf, `45cfeae` CLAUDE.md sync, `11797c4` gitignore/launch config).
+* **Attempted**: Built a domain-grounded eval harness instead of generic Q&A — `eval/golden_queries.py` (19 queries verified against actual `rag_store.db` content: global policy lookups, claim-scoped multi-hop questions, one deliberate hallucination probe), `eval/ragas_lm_studio.py` (Ragas wired to LM Studio as a fully local judge), `eval/run_eval.py` (naive-vs-hybrid+rerank Context Precision/Recall, plus live-answer Faithfulness via `/api/chat`). Added `/api/eval/search` debug endpoint and a `use_fts` toggle on `search_similarity` to produce a true naive baseline.
+* **Succeeded**:
+  * Got Ragas 0.4.3 working against LM Studio despite two real packaging/compatibility bugs (see Debugging History) — verified against the actually-installed package API, not the docs, which described a different metrics surface than what's actually importable.
+  * Ran the full 19-query suite twice. Final (post-fix) numbers: Context Precision naive=0.735 / hybrid+rerank=0.772; Context Recall naive=0.884 / hybrid+rerank=0.902; Faithfulness=0.735 (all 19/19 queries scored, no drops).
+  * Found and fixed a real production bug via the eval harness: `AgenticRAGRouter` could skip retrieval entirely (planner misclassification + `claim_id=None` short-circuiting the dossier branch) and let the LLM synthesize with zero context, which reliably fabricated citations to nonexistent filenames. Added a fallback path for the `claim_id is None` case and a hard stop that refuses synthesis when no context was retrieved.
+  * Found (not yet fixed) that the simulated agent's hardcoded narrative contains facts unsupported by the actual seed documents — wrong caps, a fabricated hour limit, a mischaracterized "duplicative" charge. See Known Issues.
+  * Found a real gap in the eval harness itself: Faithfulness only scores against the `sources` field, not the claim dossier markdown also injected into the prompt, understating faithfulness on claim-scoped queries. See Known Issues / What's Next.
+  * Identified a genuine multi-hop retrieval failure (`chen-custom-equipment-cap`, 0.0/0.0 both modes) that motivates the agentic planner's existence rather than undermining it.
+* **New constraints discovered**: `ragas==0.4.3` requires a `sys.modules` shim for a `langchain_community.chat_models.vertexai` import it doesn't actually use, and must bypass `llm_factory`'s hardcoded `instructor.Mode.JSON` (use `JSON_SCHEMA` for LM Studio compatibility) with `max_tokens` raised well above the library default of 1024.
+* **Plan changes**: Added Build Plan Phase 8. Prioritized a domain-grounded eval over generic Q&A and over building out a full "claims system" (multi-user auth, financial ledger) — the latter direction was explicitly deprioritized once the portfolio purpose was established, since it doesn't showcase RAG/AI skill.
+
 ---
 
 ## Authoritative Sources
@@ -282,3 +312,5 @@ http://localhost:8000
 | SQLite FTS5 | https://www.sqlite.org/fts5.html | 2026-07-16 |
 | LM Studio (OpenAI-compatible API) | https://lmstudio.ai/docs/api/openai-api | 2026-07-16 |
 | ReportLab PDF | https://www.reportlab.com/docs/reportlab-userguide.pdf | 2026-07-16 |
+| Ragas | https://docs.ragas.io/en/stable/ | 2026-07-17 — docs describe an older/newer API shape than the installed 0.4.3; verify against the actually-installed package (`ragas.metrics.collections`, not the top-level `ragas.metrics` names) before trusting the docs literally. |
+| Instructor (structured LLM output) | https://python.useinstructor.com/ | 2026-07-17 |
