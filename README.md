@@ -66,6 +66,8 @@ Most RAG demos never measure anything past a handful of manually-eyeballed examp
 
 ### Results
 
+![Evaluation results: Context Precision and Recall for naive vs. hybrid+rerank retrieval, and Faithfulness before and after fixing the harness's dossier-scoring gap](assets/eval_results.png)
+
 | Metric | Naive | Hybrid + Rerank |
 |---|---|---|
 | Context Precision | 0.735 | 0.772 |
