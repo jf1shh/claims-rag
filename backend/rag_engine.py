@@ -409,6 +409,37 @@ class SQLiteVectorStore:
             for r in rows
         ]
 
+    def get_claim_chunks(self, claim_id):
+        """Returns every parent chunk belonging to a claim's own documents, unranked.
+
+        Claim dossiers are small (a handful of documents, 1-2 chunks each), so
+        there's no need to compete them against global policy documents for a
+        semantic-similarity slot -- a chunk specific to the active claim is
+        always relevant context when that claim is the one being discussed.
+        Semantic search scoped to a claim was found to sometimes rank a
+        globally-similar policy document over the claim's own narrowly-worded
+        receipt/report, silently dropping the one fact that actually answers
+        a claim-specific question (multi-hop math queries especially).
+        """
+        conn = sqlite3.connect(self.db_path)
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT p.content, d.filename, d.file_type
+            FROM parent_chunks p
+            JOIN documents d ON p.document_id = d.id
+            WHERE d.claim_id = ?
+            ORDER BY d.filename, p.chunk_index
+        """, (claim_id,))
+        rows = cursor.fetchall()
+        conn.close()
+        # score=1.0 is a sentinel meaning "guaranteed relevant by claim scope,"
+        # not a real similarity score -- callers format/round this as a float,
+        # so it must stay numeric, not None.
+        return [
+            {"content": content, "filename": filename, "file_type": file_type, "score": 1.0}
+            for content, filename, file_type in rows
+        ]
+
     def search_similarity(self, query_embedding, query_text, claim_id=None, reranking_engine=None, top_k=15, use_fts=True):
         """Computes hybrid similarity (Vector + FTS5) with RRF and optional Cross-Encoder reranking scoped by claim_id.
 

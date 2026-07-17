@@ -162,18 +162,18 @@ class AgenticRAGRouter:
         # Step 2: Tool Execution (Retrieve context)
         all_matches = []
         seen_passages = set()
-        
+
         for sub_q in plan["sub_queries"]:
             sub_start = time.time()
             query_emb = embedding_engine.embed_query(sub_q)
-            
+
             # Retrieve policies
             if plan["needs_global_policies"]:
                 matches = vector_store.search_similarity(
-                    query_emb, 
-                    sub_q, 
-                    claim_id=None, 
-                    reranking_engine=reranking_engine, 
+                    query_emb,
+                    sub_q,
+                    claim_id=None,
+                    reranking_engine=reranking_engine,
                     top_k=3
                 )
                 for m in matches:
@@ -181,67 +181,69 @@ class AgenticRAGRouter:
                     if p_key not in seen_passages:
                         seen_passages.add(p_key)
                         all_matches.append(m)
-                        
-            # Retrieve dossier attachments
-            if plan["needs_claim_dossier"] and claim_id:
-                matches = vector_store.search_similarity(
-                    query_emb, 
-                    sub_q, 
-                    claim_id=claim_id, 
-                    reranking_engine=reranking_engine, 
-                    top_k=3
-                )
-                for m in matches:
-                    p_key = (m["filename"], m["content"][:50])
-                    if p_key not in seen_passages:
-                        seen_passages.add(p_key)
-                        all_matches.append(m)
-            
+
             logs.append(f"⚙️ [Tool Exec] Retrieval for '{sub_q}' complete in {(time.time() - sub_start)*1000:.1f}ms")
+
+        # Claim dossier: always pull every chunk from the active claim's own
+        # documents directly, not via semantic search, and not gated on the
+        # planner's needs_claim_dossier flag (found unreliable -- see the
+        # zero-context bug fixed above). Claim dossiers are small (a handful
+        # of documents, 1-2 chunks each) and always relevant once a claim is
+        # active, so they shouldn't have to out-rank a globally-similar policy
+        # document for one of the semantic-search slots. That was silently
+        # dropping the one claim-specific fact (a receipt total, an inspection
+        # detail) that actually answers a claim-scoped multi-hop question --
+        # e.g. "does this claim's total exceed the endorsement cap" needs both
+        # the endorsement doc *and* the claim's own receipt in the same
+        # context, and single-shot semantic search wasn't guaranteeing that.
+        claim_chunks = []
+        if claim_id:
+            claim_chunks = vector_store.get_claim_chunks(claim_id)
+            if claim_chunks:
+                logs.append(f"📁 [Tool Exec] Loaded {len(claim_chunks)} chunk(s) from claim #{claim_id}'s own documents (guaranteed, unranked).")
 
         # Step 3: Self-Correction / Query Translation Loop
         #
-        # This must trigger whenever nothing was retrieved, not only when a
-        # claim_id is active. The planner's needs_global_policies /
-        # needs_claim_dossier classification can both come back False (or
-        # needs_claim_dossier=True with no claim_id active, which short-circuits
-        # the dossier branch entirely) -- without this fallback, retrieval is
-        # silently skipped and synthesis proceeds with zero context, which the
-        # LLM fills in by fabricating an answer and citing sources that don't
-        # exist in the corpus. Caught via eval harness: a global policy query
-        # returned 0 sources and cited invented filenames.
-        if not all_matches and claim_id:
-            logs.append("⚠️ [Self-Correction] Zero search matches returned. Executing Query Translation fallback...")
-            fallback_q = f"claim details {claim_id}"
-            logs.append(f"   ➔ Rewriting search target to: '{fallback_q}'")
+        # Only needed when there's truly nothing to ground on. If the claim's
+        # own documents were found (claim_chunks), that alone is sufficient
+        # grounding even with zero global policy matches -- no need to waste a
+        # fallback search. Must still trigger for global-only queries where
+        # the planner's sub-queries came up empty -- see the zero-context
+        # hallucination bug this was built to fix.
+        if not all_matches and not claim_chunks:
+            if claim_id:
+                logs.append("⚠️ [Self-Correction] Zero search matches returned. Executing Query Translation fallback...")
+                fallback_q = f"claim details {claim_id}"
+                logs.append(f"   ➔ Rewriting search target to: '{fallback_q}'")
 
-            fallback_emb = embedding_engine.embed_query(fallback_q)
-            fallback_matches = vector_store.search_similarity(
-                fallback_emb,
-                fallback_q,
-                claim_id=claim_id,
-                reranking_engine=reranking_engine,
-                top_k=4
-            )
-            all_matches.extend(fallback_matches)
-            logs.append(f"🔄 [Self-Correction] Recovered {len(fallback_matches)} dossier sources.")
-        elif not all_matches:
-            logs.append("⚠️ [Self-Correction] Zero search matches returned. Retrying against global policies with the original query...")
+                fallback_emb = embedding_engine.embed_query(fallback_q)
+                fallback_matches = vector_store.search_similarity(
+                    fallback_emb,
+                    fallback_q,
+                    claim_id=claim_id,
+                    reranking_engine=reranking_engine,
+                    top_k=4
+                )
+                all_matches.extend(fallback_matches)
+                logs.append(f"🔄 [Self-Correction] Recovered {len(fallback_matches)} dossier sources.")
+            else:
+                logs.append("⚠️ [Self-Correction] Zero search matches returned. Retrying against global policies with the original query...")
 
-            fallback_emb = embedding_engine.embed_query(query_text)
-            fallback_matches = vector_store.search_similarity(
-                fallback_emb,
-                query_text,
-                claim_id=None,
-                reranking_engine=reranking_engine,
-                top_k=4
-            )
-            all_matches.extend(fallback_matches)
-            logs.append(f"🔄 [Self-Correction] Recovered {len(fallback_matches)} global policy sources.")
+                fallback_emb = embedding_engine.embed_query(query_text)
+                fallback_matches = vector_store.search_similarity(
+                    fallback_emb,
+                    query_text,
+                    claim_id=None,
+                    reranking_engine=reranking_engine,
+                    top_k=4
+                )
+                all_matches.extend(fallback_matches)
+                logs.append(f"🔄 [Self-Correction] Recovered {len(fallback_matches)} global policy sources.")
 
-        # Sort combined matches by score
+        # Sort global matches by score and cap at 4, then prepend the claim's
+        # own (guaranteed, unranked) chunks -- they never compete for that cap.
         all_matches.sort(key=lambda x: x.get("score", 0.0), reverse=True)
-        top_matches = all_matches[:4]
+        top_matches = claim_chunks + all_matches[:4]
 
         # Hard stop: never let the LLM synthesize freely with zero retrieved
         # context. Without this, an ungrounded call reliably fabricates both
@@ -272,7 +274,10 @@ class AgenticRAGRouter:
         
         system_prompt = (
             "You are an expert AI claims handler assistant. Your job is to answer the user's questions about insurance claims, "
-            "policies, or guidelines using ONLY the provided reference sources and the active claim summary dossier. Perform calculations (payouts, caps, deductibles) if asked. "
+            "policies, or guidelines using ONLY the provided reference sources and the active claim summary dossier. "
+            "When a source lists multiple line items (e.g. a receipt, an itemized estimate), enumerate every item and its value "
+            "individually before computing any total, sum, or cap comparison -- do not calculate from a single item if more than "
+            "one applies. Perform calculations (payouts, caps, deductibles) if asked. "
             "If the source guidelines exclude coverage or indicate fraud, state it clearly. Cite source filenames in your explanation."
         )
         
