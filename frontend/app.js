@@ -355,7 +355,7 @@ function renderDocuments() {
             <div class="doc-info">
                 <span class="doc-icon">${icon}</span>
                 <div class="doc-meta">
-                    <span class="doc-name clickable" onclick="openDocumentViewer('${doc.filename}')" title="${doc.filename}">${doc.filename}</span>
+                    <span class="doc-name clickable"></span>
                     <div class="doc-size-date">
                         <span>${formatBytes(doc.file_size)}</span>
                         <span>•</span>
@@ -365,7 +365,16 @@ function renderDocuments() {
             </div>
             <button class="btn-delete" title="Delete Guidelines">&times;</button>
         `;
-        
+
+        // Set filename via safe DOM properties (never HTML-parsed) rather than
+        // string-interpolating it into innerHTML or an inline onclick -- a
+        // malicious filename could otherwise break out of the HTML attribute
+        // or the inline event-handler's JS string.
+        const nameSpan = li.querySelector('.doc-name');
+        nameSpan.textContent = doc.filename;
+        nameSpan.title = doc.filename;
+        nameSpan.addEventListener('click', () => openDocumentViewer(doc.filename));
+
         // Delete button logic
         li.querySelector('.btn-delete').addEventListener('click', async (e) => {
             e.stopPropagation();
@@ -373,7 +382,7 @@ function renderDocuments() {
                 await deleteDocument(doc.filename);
             }
         });
-        
+
         documentList.appendChild(li);
     });
 }
@@ -512,10 +521,17 @@ function addMessageBubble(role, content, sources = [], engine = '') {
         </div>
         <div class="message-bubble">
             ${formattedContent}
-            ${renderSources(sources)}
         </div>
     `;
-    
+
+    // Built as real DOM nodes (not string-interpolated) so a malicious
+    // filename or document body in a source can't break out of any HTML/JS
+    // parsing context -- see renderSources().
+    const sourcesEl = renderSources(sources);
+    if (sourcesEl) {
+        msgDiv.querySelector('.message-bubble').appendChild(sourcesEl);
+    }
+
     chatMessages.appendChild(msgDiv);
     scrollChatToBottom();
 }
@@ -591,38 +607,53 @@ function hideModal() {
 }
 
 function renderSources(sources) {
-    if (!sources || sources.length === 0) return '';
-    
-    let cards = '';
+    if (!sources || sources.length === 0) return null;
+
+    const wrap = document.createElement('div');
+
+    const title = document.createElement('div');
+    title.className = 'sources-title';
+    title.textContent = 'Retrieved Reference Citations:';
+    wrap.appendChild(title);
+
+    const container = document.createElement('div');
+    container.className = 'sources-container';
+
     sources.forEach(src => {
-        // Create an inline element action link
-        const filenameSafe = escapeHtml(src.filename);
-        const contentSafe = escapeHtml(src.content);
-        const scorePct = `${(src.score * 100).toFixed(0)}%`;
-        
         let icon = '📄';
         if (src.file_type === 'pdf') icon = '🟥';
         else if (src.file_type === 'docx') icon = '🟦';
         else if (['xlsx', 'xls'].includes(src.file_type)) icon = '🟩';
         else if (src.file_type === 'txt') icon = '🟨';
 
-        cards += `
-            <div class="source-card" onclick="viewSource('${filenameSafe}', ${src.score}, \`${contentSafe.replace(/`/g, '\\`').replace(/\$/g, '\\$')}\`)">
-                <span class="source-file">${icon} ${filenameSafe}</span>
-                <div class="source-score-badge">
-                    <span>Similarity</span>
-                    <span class="score-num">${scorePct}</span>
-                </div>
-            </div>
-        `;
+        const card = document.createElement('div');
+        card.className = 'source-card';
+        // Calls viewSource with real JS values, not values reconstructed from
+        // an HTML/inline-JS string -- a malicious filename or document body
+        // can't break out of any parsing context this way.
+        card.addEventListener('click', () => viewSource(src.filename, src.score, src.content));
+
+        const fileSpan = document.createElement('span');
+        fileSpan.className = 'source-file';
+        fileSpan.textContent = `${icon} ${src.filename}`;
+        card.appendChild(fileSpan);
+
+        const badge = document.createElement('div');
+        badge.className = 'source-score-badge';
+        const scoreLabel = document.createElement('span');
+        scoreLabel.textContent = 'Similarity';
+        const scoreNum = document.createElement('span');
+        scoreNum.className = 'score-num';
+        scoreNum.textContent = `${(src.score * 100).toFixed(0)}%`;
+        badge.appendChild(scoreLabel);
+        badge.appendChild(scoreNum);
+        card.appendChild(badge);
+
+        container.appendChild(card);
     });
-    
-    return `
-        <div class="sources-title">Retrieved Reference Citations:</div>
-        <div class="sources-container">
-            ${cards}
-        </div>
-    `;
+
+    wrap.appendChild(container);
+    return wrap;
 }
 
 // Make viewSource globally accessible for the onclick handlers
@@ -971,12 +1002,23 @@ function renderClaimDocuments(docs) {
         li.innerHTML = `
             <div class="doc-info">
                 <span>${icon}</span>
-                <span class="doc-name clickable" onclick="openDocumentViewer('${doc.filename}')" title="${doc.filename}">${doc.filename}</span>
+                <span class="doc-name clickable"></span>
             </div>
             <div class="doc-actions">
-                <button class="btn-delete" onclick="deleteClaimDocument('${doc.filename}')">🗑️</button>
+                <button class="btn-delete">🗑️</button>
             </div>
         `;
+
+        // Set filename via safe DOM properties and attach handlers via
+        // addEventListener rather than an inline onclick string -- see the
+        // same fix in renderDocuments() for why string-interpolating a
+        // filename into an inline event handler is unsafe.
+        const nameSpan = li.querySelector('.doc-name');
+        nameSpan.textContent = doc.filename;
+        nameSpan.title = doc.filename;
+        nameSpan.addEventListener('click', () => openDocumentViewer(doc.filename));
+        li.querySelector('.btn-delete').addEventListener('click', () => deleteClaimDocument(doc.filename));
+
         claimDocsList.appendChild(li);
     });
 }
