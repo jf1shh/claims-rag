@@ -142,6 +142,13 @@ async def main():
             chat_result = chat(q["query"], q["claim_id"])
             answer = chat_result.get("answer", "")
             sources = [s["content"] for s in chat_result.get("sources", [])]
+            # The LLM is also grounded in the claim dossier markdown injected
+            # directly into its prompt (not a search result, so it isn't in
+            # `sources`). Score against both, or claim-scoped answers that
+            # correctly cite dossier figures look unfaithful when they aren't.
+            dossier = chat_result.get("claim_dossier")
+            if dossier:
+                sources = sources + [dossier]
             faithfulness = await bounded_faithfulness(q["query"], answer, sources)
         except Exception as e:
             print(f"    ! /api/chat failed: {e}")

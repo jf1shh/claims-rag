@@ -255,6 +255,7 @@ class AgenticRAGRouter:
                            + (f" or claim #{claim_id} dossier" if claim_id else "") + ". "
                            "Please rephrase the question or confirm the relevant policy/claim documents have been uploaded.",
                 "sources": [],
+                "claim_dossier": None,
                 "engine": "lm-studio (agentic)",
                 "pipeline_logs": logs
             }
@@ -324,6 +325,12 @@ class AgenticRAGRouter:
                 }
                 for m in top_matches
             ],
+            # The LLM is also grounded in this claim summary dossier (injected
+            # directly into the prompt, not retrieved via search), so callers
+            # scoring groundedness against only `sources` will see a partial
+            # picture for claim-scoped answers. Surfaced separately rather than
+            # folded into `sources` since it isn't a search result.
+            "claim_dossier": claim_context if claim_context else None,
             "engine": "lm-studio (agentic)",
             "pipeline_logs": logs
         }
@@ -420,7 +427,7 @@ class AgenticRAGRouter:
             if audit_type == "labor":
                 logs.append("⚙️ [Tool Exec] policy_search: Found Regional_Labor_Rates_2026.xlsx and SOP_Auto_Repair_Labor_Rates.pdf")
                 logs.append("⚙️ [Tool Exec] dossier_search: Found shop_email_thread_Sterling.pdf (5.0 hours frame time)")
-                logs.append("🧮 [Calculator Tool] Checking frame pull hours: 5.0 hours <= 6.0 hours policy cap (Adjuster_Guide_Rear_Impact.docx).")
+                logs.append("🧮 [Calculator Tool] Checking ADAS recalibration requirement: rear bumper replacement mandates recalibration per Adjuster_Guide_Rear_Impact.docx ($250-$450 fee).")
                 logs.append("🧮 [Calculator Tool] Checking California Sheet Metal rate: $75/hr (complies with cap of $75/hr).")
                 logs.append("🧮 [Calculator Tool] Checking California Mechanical rate: $120/hr (complies with cap of $120/hr).")
                 answer_parts.extend([
@@ -431,8 +438,9 @@ class AgenticRAGRouter:
                     "   * **Body & Paint Rates**: The shop charges **$75.00/hr** for Bumper Cover Replacement and Painting. This complies with the **$75.00/hr Southern California Regional Cap** listed in *Regional_Labor_Rates_2026.xlsx*.",
                     "   * **Frame rate**: The shop charges **$85.00/hr** for panel pulling, which matches the maximum allowable California frame rate (PASSED).",
                     "   * **Mechanical rate**: The shop charges **$120.00/hr** for motor shield replacement, matching the California mechanical cap of **$120.00/hr** (PASSED).",
-                    "2. **Operation Hour Limits**:",
-                    "   * The request for **5.0 hours** to pull the rear body panel complies with the **6.0 hours** rear impact structural cap in *Adjuster_Guide_Rear_Impact.docx* (PASSED).",
+                    "2. **ADAS Recalibration Requirement**:",
+                    "   * *Adjuster_Guide_Rear_Impact.docx* mandates electronic ADAS recalibration ($250-$450 fee) on any rear bumper replacement or structural alignment, since blind-spot sensors and backup cameras are housed in the rear bumper assembly.",
+                    "   * The estimate includes **$450.00** for ADAS Backup Sensor Calibration — within the mandated fee range (PASSED).",
                     "",
                     "**Summary Recommendation**: Approve the repair labor rates and hours. Proceed to parts evaluation."
                 ])
@@ -446,11 +454,11 @@ class AgenticRAGRouter:
                     "",
                     "1. **Endorsement Checklist**:",
                     "   * Active Endorsements: **OEM Parts Guarantee** (verified active).",
-                    "   * Rider Terms (*Rider_OEM_Parts_Guarantee.pdf*): Mandates the usage of brand-new, factory-original OEM parts for all collision replacements on vehicles **under 3 years of age**.",
+                    "   * Rider Terms (*Rider_OEM_Parts_Guarantee.pdf*): Mandates the usage of brand-new, factory-original OEM parts for all collision replacements on vehicles **under 5 years of age**, purchased at policy inception.",
                     "2. **Vehicle Age Verification**:",
                     "   * Vehicle: 2023 Tesla Model Y.",
                     "   * Date of Loss Audit: 2026.",
-                    "   * Age Calculation: 2026 - 2023 = **3 years old**. The vehicle qualifies under the OEM mandate threshold.",
+                    "   * Age Calculation: 2026 - 2023 = **3 years old**. The vehicle qualifies under the 5-year OEM mandate threshold.",
                     "3. **Parts Authorization**:",
                     "   * Bumper Cover ($450) and Motor Shield ($480) are approved at factory OEM retail list prices. LKQ or aftermarket alternatives are prohibited.",
                     "",
@@ -542,23 +550,23 @@ class AgenticRAGRouter:
             elif audit_type == "fraud":
                 logs.append("⚙️ [Tool Exec] policy_search: Found Case_Study_Hail_Damage_PlanA.pdf")
                 logs.append("⚙️ [Tool Exec] dossier_search: Found dent_photos_description_Jenkins.pdf (18 hood dents, 24 roof dents, paint unbroken)")
-                logs.append("🔍 [Reflection] Checking unbroken paint status: PDR mandatory per Plan A.")
+                logs.append("🔍 [Reflection] Checking PDR and repainting scope against the case study precedent: distinct damage, not overlapping.")
                 answer_parts.extend([
                     "### 🔍 SIU Fraud Red Flags Audit: Sarah Jenkins (#2026-10492)",
-                    "**Status: RED FLAGS DETECTED (supplement adjustment required)**",
+                    "**Status: CLEAR (no flags detected; underpayment risk flagged for review)**",
                     "",
                     "1. **Estimate Duplication Check**:",
-                    "   * The estimate charges **$3,200.00** for Paintless Dent Repair (PDR) for 42 hail dents on the hood and roof, AND **$900.00** for door refinishing.",
-                    "   * Photo inspection log (*dent_photos_description_Jenkins.pdf*) proves the paint on the hood and roof dents is **completely unbroken**.",
-                    "   * Under *Case_Study_Hail_Damage_PlanA.pdf*, PDR is mandatory for paint-intact hail damage. Standard body shop panel repainting charges ($900.00) are denied as duplicative overlap.",
-                    "2. **Weather Verification**:",
-                    "   * Local weather logs verify a severe hail event (1.2-inch stones) occurred in San Francisco on the date of loss (PASSED).",
+                    "   * The estimate charges **$3,200.00** for Paintless Dent Repair (PDR, 42 hood/roof dents) and **$2,400.00** for conventional bodywork and repainting of the passenger doors.",
+                    "   * *Case_Study_Hail_Damage_PlanA.pdf* (precedent for this exact claim ID) confirms these are two distinct, non-overlapping repairs — PDR for unbroken-paint dents, repainting for the passenger door body damage — totaling **$6,800.00** together with the $1,200.00 windshield replacement. No duplication.",
+                    "2. **Deductible/Rider Check**:",
+                    "   * The case study record shows the standard **$500.00 Comprehensive deductible** was applied to the overall claim.",
+                    "   * However, Sarah Jenkins' active **Zero-Deductible Glass** rider (*Endorsement_Windshield_Zero_Deductible.docx*) waives the Comprehensive deductible specifically for windshield/safety glass replacement. If the $500 deductible was drawn entirely from the windshield line rather than the non-glass repairs, this may be a rider mis-application worth a supplement review.",
                     "",
-                    "**Summary Recommendation**: Reject the $900.00 repainting charge. Standardize repair on the PDR estimate only."
+                    "**Summary Recommendation**: Approve the estimate as-is; flag the deductible allocation against the Zero-Deductible Glass rider for adjuster review."
                 ])
             else: # letter / general
-                logs.append("⚙️ [Tool Exec] policy_search: Found Endorsement_Windshield_Zero_Deductible.docx")
-                logs.append("🧮 [Calculator Tool] Payout Math: $3,200 PDR + $1,200 Windshield + $350 Calibration - $0 glass deductible = $4,750.")
+                logs.append("⚙️ [Tool Exec] policy_search: Found Case_Study_Hail_Damage_PlanA.pdf, Endorsement_Windshield_Zero_Deductible.docx")
+                logs.append("🧮 [Calculator Tool] Payout Math: $3,200 PDR + $2,400 Repainting + $1,200 Windshield - $500 Comprehensive deductible = $6,300.")
                 answer_parts.extend([
                     "### 📝 Claim Decision & Payout Settlement Letter: Sarah Jenkins",
                     "**Date**: July 16, 2026",
@@ -571,13 +579,14 @@ class AgenticRAGRouter:
                     "We have completed our audit of the hail and windshield damage repair estimate submitted by Apex Auto Body for your 2024 Ford F-150.",
                     "",
                     "**Settlement Calculations**:",
-                    "*   **Total Approved Repairs**: $4,750.00",
+                    "*   **Total Approved Repairs**: $6,800.00",
                     "    *   *Paintless Dent Repair (PDR - 42 dents)*: $3,200.00 (Approved)",
-                    "    *   *Windshield Replacement*: $1,200.00 (Approved under glass rider)",
-                    "    *   *ADAS Windshield Camera Calibration*: $350.00 (Approved)",
-                    "    *   *Door Refinishing / Repainting*: **Denied ($0.00)**. Excluded under *Case_Study_Hail_Damage_PlanA.pdf* because paint was not fractured.",
-                    "*   **Deductible Applied**: -$0.00 (Glass deductible waived; Comprehensive deductible for PDR met by primary hail damage)",
-                    "*   **Net Settlement Payout**: **$4,750.00** (Paid directly to Apex Auto Body)",
+                    "    *   *Bodywork & Repainting (passenger doors)*: $2,400.00 (Approved — distinct from PDR, not duplicative)",
+                    "    *   *Windshield Replacement*: $1,200.00 (Approved)",
+                    "*   **Deductible Applied**: -$500.00 (Standard Comprehensive deductible)",
+                    "*   **Net Settlement Payout**: **$6,300.00** (Paid directly to Apex Auto Body)",
+                    "",
+                    "Note: Your policy includes a Zero-Deductible Glass rider, which waives the Comprehensive deductible for windshield replacement specifically. We are reviewing whether the $500.00 deductible above should instead be allocated only to the non-glass repairs; you may see a supplemental adjustment.",
                     "",
                     "Sincerely,",
                     "**Claims Adjuster Copilot**",
@@ -605,7 +614,7 @@ class AgenticRAGRouter:
             elif audit_type == "oem":
                 logs.append("⚙️ [Tool Exec] policy_search: Found Endorsement_Custom_Audio_Visual.docx")
                 logs.append("🧮 [Calculator Tool] Custom Equipment Value: Wheels ($2,400) + Infotainment ($3,500) = $5,900.")
-                logs.append("🧮 [Calculator Tool] Custom Cap Check: $5,900 exceeds endorsement policy limit of $5,000.00. Excluded value: $900.")
+                logs.append("🧮 [Calculator Tool] Custom Cap Check: $5,900 exceeds endorsement policy limit of $3,500.00 per occurrence. Excluded value: $2,400.")
                 answer_parts.extend([
                     "### 🔧 OEM Parts Rider Audit: David Chen (#2026-30291)",
                     "**Status: PARTIALLY APPROVED (Limit applied)**",
@@ -614,12 +623,12 @@ class AgenticRAGRouter:
                     "   * Active Endorsements: **OEM Parts Guarantee**, **Custom Equipment ($3.5k limit)**.",
                     "2. **Custom Parts Audit**:",
                     "   * Stolen equipment: **Enkei Wheels ($2,400.00)** and **Alpine Infotainment Console ($3,500.00)**.",
-                    "   * Under *Endorsement_Custom_Audio_Visual.docx*, custom equipment is capped at **$5,000.00** total, carrying a **$250.00 custom deductible**.",
-                    "   * The actual parts value of **$5,900.00** exceeds the limit by **$900.00** which must be paid out-of-pocket by the claimant.",
+                    "   * Under *Endorsement_Custom_Audio_Visual.docx*, custom equipment (aftermarket stereos, amplifiers, and screens not factory-installed) is capped at **$3,500.00 per occurrence**, subject to 10% annual depreciation from install date and proof of purchase.",
+                    "   * The actual parts value of **$5,900.00** exceeds the per-occurrence limit by **$2,400.00**, which must be paid out-of-pocket by the claimant.",
                     "3. **Exhaust OEM Audit**:",
                     "   * The catalytic converter is written as OEM ($1,500). Although the vehicle is a 2022 (4 years old), NV emissions laws mandate EPA-compliant OEM converters. Approved.",
                     "",
-                    "**Summary Recommendation**: Limit custom equipment settlement to $5,000.00."
+                    "**Summary Recommendation**: Limit custom equipment settlement to $3,500.00 per occurrence."
                 ])
             elif audit_type == "fraud":
                 logs.append("⚙️ [Tool Exec] policy_search: Found SOP_Claims_Fraud_Red_Flags.pdf")
@@ -640,7 +649,7 @@ class AgenticRAGRouter:
                 ])
             else: # letter / general
                 logs.append("⚙️ [Tool Exec] policy_search: Found Endorsement_Custom_Audio_Visual.docx")
-                logs.append("🧮 [Calculator Tool] Payout Math: $1,500 catalytic + $5,000 custom cap - $250 deductible = $6,250.")
+                logs.append("🧮 [Calculator Tool] Payout Math: $1,500 catalytic + $3,500 custom cap - $250 deductible = $4,750.")
                 answer_parts.extend([
                     "### 📝 Claim Decision & Payout Settlement Letter: David Chen",
                     "**Date**: July 16, 2026",
@@ -653,13 +662,13 @@ class AgenticRAGRouter:
                     "We have audited the theft damage repair estimate submitted by Elite Fleet Repair for your 2022 Honda Civic Sport.",
                     "",
                     "**Settlement Calculations**:",
-                    "*   **Total Approved Repairs**: $6,500.00",
+                    "*   **Total Approved Repairs**: $5,000.00",
                     "    *   *Catalytic Converter replacement*: $1,500.00 (Approved)",
-                    "    *   *Custom Equipment (Alpine console & Enkei wheels)*: Capped at **$5,000.00** (exceeded the policy limit of $5,000 by $900.00)",
+                    "    *   *Custom Equipment (Alpine console & Enkei wheels)*: Capped at **$3,500.00 per occurrence** (actual value $5,900.00 exceeded the limit by $2,400.00, payable out-of-pocket by claimant)",
                     "    *   *Passenger side key scratch repairs*: **Denied ($0.00)**. Excluded under *SOP_Claims_Fraud_Red_Flags.pdf* as pre-existing rust oxidation.",
                     "*   **Policy Deductibles**:",
                     "    *   *Comprehensive Deductible*: -$250.00",
-                    "*   **Net Settlement Payout**: **$6,250.00**",
+                    "*   **Net Settlement Payout**: **$4,750.00**",
                     "",
                     "Please note that Elite Fleet Repair's labor rate was reduced to the Nevada mechanical cap of $110/hr.",
                     "",
@@ -686,7 +695,7 @@ class AgenticRAGRouter:
                 ])
             elif audit_type == "oem":
                 logs.append("⚙️ [Tool Exec] policy_search: Found Rider_OEM_Parts_Guarantee.pdf")
-                logs.append("🧮 [Calculator Tool] Checking vehicle age: 2020 BMW is 6 years old (exceeds the 3-year OEM Parts Guarantee threshold).")
+                logs.append("🧮 [Calculator Tool] Checking vehicle age: 2020 BMW is 6 years old (exceeds the 5-year OEM Parts Guarantee threshold).")
                 logs.append("🧮 [Calculator Tool] Parts replacement limit: Deny OEM block ($9,500); Cap block parts costs at LKQ salvage rate of $5,200.")
                 answer_parts.extend([
                     "### 🔧 OEM Parts Rider Audit: Elena Rostova (#2026-55912)",
@@ -702,26 +711,25 @@ class AgenticRAGRouter:
                     "**Summary Recommendation**: Block replacement is denied due to exclusions; parts check is moot."
                 ])
             elif audit_type == "fraud":
-                logs.append("⚙️ [Tool Exec] policy_search: Found Case_Study_Engine_Hydro_Lock.pdf and DUI_Exclusion_Directive.txt")
-                logs.append("⚙️ [Tool Exec] dossier_search: Found telematics_log_Rostova.pdf (Speed 45 mph in standing water, followed by 3 starter crank attempts)")
+                logs.append("⚙️ [Tool Exec] policy_search: Found Case_Study_Engine_Hydro_Lock.pdf")
+                logs.append("⚙️ [Tool Exec] dossier_search: Found telematics_log_Rostova.pdf (Speed 45 mph in standing water, followed by 3 starter crank attempts) and engine_diagnostic_report_Rostova.pdf")
                 logs.append("🔍 [Reflection] Checking starter logs: 3 cranking attempts post-stall confirmed.")
-                logs.append("🔍 [Reflection] Checking police record details: Driver cited for DUI during flood incident.")
+                logs.append("🔍 [Reflection] Checking claim file for a DUI citation: no police report on file for this claim; no such record found.")
                 answer_parts.extend([
                     "### 🔍 SIU Fraud Red Flags Audit: Elena Rostova (#2026-55912)",
-                    "**Status: CRITICAL EXCLUSIONS DETECTED (CLAIM DENIED)**",
+                    "**Status: CRITICAL EXCLUSION DETECTED (CLAIM DENIED)**",
                     "",
                     "1. **Consequential Damage Audit**:",
-                    "   * Telematics diagnostic log (*telematics_log_Rostova.pdf*) proves that after the vehicle stalled in standing water, the starter ignition button was pressed **3 separate times**.",
+                    "   * Telematics diagnostic log (*telematics_log_Rostova.pdf*) shows that after the vehicle stalled in standing water, the starter ignition button was pressed **3 separate times**; *engine_diagnostic_report_Rostova.pdf* confirms standing water in the intake and a fractured engine block consistent with hydraulic lock.",
                     "   * Under *Case_Study_Engine_Hydro_Lock.pdf*, damages resulting from attempts to restart a stalled engine in deep water are driver-induced consequential damages and are **excluded**.",
                     "2. **DUI Exclusion Check**:",
-                    "   * Police report notes the claimant was cited for operating the vehicle under the influence (DUI) during the flood storm.",
-                    "   * Under the **DUI Exclusion Directive** (*DUI_Exclusion_Directive.txt*), coverage for collision or flood loss is voided in full if the driver is cited for DUI.",
+                    "   * No police report or citation record exists in this claim's file. The DUI exclusion (*DUI_Exclusion_Directive.txt*) is not applicable here — there is no evidence to invoke it, and this should not be asserted without a supporting record.",
                     "",
-                    "**Summary Recommendation**: Deny claims liability in full."
+                    "**Summary Recommendation**: Deny claims liability in full on consequential-damage grounds; DUI exclusion not applicable absent supporting evidence."
                 ])
             else: # letter / general
-                logs.append("⚙️ [Tool Exec] policy_search: Found DUI_Exclusion_Directive.txt")
-                logs.append("🧮 [Calculator Tool] Payout Math: Voided coverages due to DUI. Net Payout = $0.00.")
+                logs.append("⚙️ [Tool Exec] policy_search: Found Case_Study_Engine_Hydro_Lock.pdf")
+                logs.append("🧮 [Calculator Tool] Payout Math: Consequential damage exclusion applies in full. Net Payout = $0.00.")
                 answer_parts.extend([
                     "### 📝 Claim Decision & Payout Settlement Letter: Elena Rostova",
                     "**Date**: July 16, 2026",
@@ -733,15 +741,14 @@ class AgenticRAGRouter:
                     "",
                     "We regret to inform you that your insurance claim for the engine damage on your 2020 BMW 330i has been **Denied** in full.",
                     "",
-                    "**Reasons for Denial**:",
-                    "1.  **Consequential Damage**: Mechanical reports and telematics records prove that after the vehicle stalled in standing water, the ignition button was activated three times. This caused water ingestion to hydraulic-lock the block. Under *Case_Study_Engine_Hydro_Lock.pdf*, engine block fractures caused by starting attempt actions are excluded.",
-                    "2.  **DUI Exclusion**: The police report indicates you were cited for operating the vehicle under the influence (DUI). Under the *DUI_Exclusion_Directive.txt* endorsement active on your policy, comprehensive coverage is completely voided during DUI operations.",
+                    "**Reason for Denial**:",
+                    "Mechanical reports and telematics records show that after the vehicle stalled in standing water, the ignition was activated three times attempting to restart it, drawing water further into the engine and fracturing the block. Under *Case_Study_Engine_Hydro_Lock.pdf*, engine damage caused by restart attempts on a water-stalled engine is driver-induced consequential damage and is excluded from coverage.",
                     "",
                     "*   **Total Settlement Payout**: **$0.00**",
                     "",
                     "Sincerely,",
                     "**Claims Adjuster Copilot**",
-                    "*Citations: DUI_Exclusion_Directive.txt, Case_Study_Engine_Hydro_Lock.pdf, telematics_log_Rostova.pdf*"
+                    "*Citations: Case_Study_Engine_Hydro_Lock.pdf, telematics_log_Rostova.pdf, engine_diagnostic_report_Rostova.pdf*"
                 ])
             
         else: # Generic reference lookup
@@ -756,6 +763,8 @@ class AgenticRAGRouter:
         elapsed = (time.time() - start_time) * 1000
         logs.append(f"✅ [Agentic Coordinator] Completed reasoning cycle in {elapsed:.1f}ms")
         
+        claim_dossier = self._get_claim_context_markdown(claim_id) if claim_id else None
+
         return {
             "answer": answer,
             "sources": [
@@ -767,6 +776,7 @@ class AgenticRAGRouter:
                 }
                 for m in matches[:4]
             ],
+            "claim_dossier": claim_dossier if claim_dossier else None,
             "engine": "simulated (agentic)",
             "pipeline_logs": logs
         }

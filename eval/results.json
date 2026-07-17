@@ -6,8 +6,8 @@
     "naive_recall_avg": 0.884,
     "hybrid_precision_avg": 0.772,
     "hybrid_recall_avg": 0.902,
-    "faithfulness_avg": 0.735,
-    "elapsed_seconds": 2300.7
+    "faithfulness_avg": 0.811,
+    "elapsed_seconds": 2376.6
   },
   "results": [
     {
@@ -40,7 +40,7 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.99999999995,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.6666666666666666,
+      "faithfulness": 1.0,
       "naive_top_filenames": [
         "SOP_Auto_Repair_Labor_Rates.pdf",
         "Regional_Labor_Rates_2026.xlsx",
@@ -62,7 +62,7 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.9999999999,
       "hybrid_recall": 1.0,
-      "faithfulness": 1.0,
+      "faithfulness": 0.8571428571428571,
       "naive_top_filenames": [
         "DUI_Exclusion_Directive.txt",
         "Rider_Roadside_Assistance_Plus.pdf",
@@ -84,7 +84,7 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.9999999999,
       "hybrid_recall": 1.0,
-      "faithfulness": 1.0,
+      "faithfulness": 0.875,
       "naive_top_filenames": [
         "Rider_OEM_Parts_Guarantee.pdf",
         "SOP_Auto_Repair_Labor_Rates.pdf",
@@ -106,7 +106,7 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.9999999999,
       "hybrid_recall": 1.0,
-      "faithfulness": 1.0,
+      "faithfulness": 0.7,
       "naive_top_filenames": [
         "Endorsement_Custom_Audio_Visual.docx",
         "Endorsement_Windshield_Zero_Deductible.docx",
@@ -128,7 +128,7 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.9999999999,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.7777777777777778,
+      "faithfulness": 0.5714285714285714,
       "naive_top_filenames": [
         "Endorsement_Windshield_Zero_Deductible.docx",
         "Endorsement_Windshield_Zero_Deductible.docx",
@@ -194,7 +194,7 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.9999999999,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.5,
+      "faithfulness": 0.8333333333333334,
       "naive_top_filenames": [
         "SOP_Claims_Fraud_Red_Flags.pdf",
         "SOP_Claims_Fraud_Red_Flags.pdf",
@@ -238,7 +238,7 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.99999999995,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.8333333333333334,
+      "faithfulness": 0.7142857142857143,
       "naive_top_filenames": [
         "Adjuster_Guide_Rear_Impact.docx",
         "Adjuster_Guide_Rear_Impact.docx",
@@ -260,7 +260,7 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.99999999995,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.3333333333333333,
+      "faithfulness": 0.25,
       "naive_top_filenames": [
         "Case_Study_Hail_Damage_PlanA.pdf",
         "Case_Study_Stolen_Honda_Civic.pdf",
@@ -304,7 +304,7 @@
       "naive_recall": 0.0,
       "hybrid_precision": 0.0,
       "hybrid_recall": 0.3333333333333333,
-      "faithfulness": 0.2857142857142857,
+      "faithfulness": 0.6,
       "naive_top_filenames": [
         "Case_Study_Stolen_Honda_Civic.pdf",
         "SOP_Auto_Repair_Labor_Rates.pdf",
@@ -326,7 +326,7 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.49999999995,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.23809523809523808,
+      "faithfulness": 0.4166666666666667,
       "naive_top_filenames": [
         "dent_photos_description_Jenkins.pdf",
         "Case_Study_Hail_Damage_PlanA.pdf",
@@ -348,7 +348,7 @@
       "naive_recall": 0.0,
       "hybrid_precision": 0.0,
       "hybrid_recall": 0.0,
-      "faithfulness": 0.36363636363636365,
+      "faithfulness": 1.0,
       "naive_top_filenames": [
         "Endorsement_Custom_Audio_Visual.docx",
         "Rider_Roadside_Assistance_Plus.pdf",
@@ -370,7 +370,7 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.9999999999,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.6666666666666666,
+      "faithfulness": 1.0,
       "naive_top_filenames": [
         "civic_smashed_window.png",
         "police_theft_report_Chen.pdf",
@@ -392,7 +392,7 @@
       "naive_recall": 0.8,
       "hybrid_precision": 0.4166666666458333,
       "hybrid_recall": 0.8,
-      "faithfulness": 0.6,
+      "faithfulness": 1.0,
       "naive_top_filenames": [
         "Case_Study_Engine_Hydro_Lock.pdf",
         "telematics_log_Rostova.pdf",
@@ -414,7 +414,7 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.499999999975,
       "hybrid_recall": 1.0,
-      "faithfulness": 1.0,
+      "faithfulness": 0.9,
       "naive_top_filenames": [
         "DUI_Exclusion_Directive.txt",
         "Case_Study_Underinsured_Motorist.pdf",
