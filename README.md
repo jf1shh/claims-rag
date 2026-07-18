@@ -4,7 +4,7 @@ A local-first, agentic RAG system for auto insurance claims handling — built t
 
 ## Why this exists
 
-Insurance claims handlers spend a meaningful share of every day hunting through scattered PDFs, spreadsheets, and adjuster guides for the one fact that resolves a claim: a labor rate cap, an exclusion clause, a rider's eligibility window. That friction compounds under real regulatory variance (every state has different statutes and caps) and under real time pressure (claims carry SLAs). AutoClaimsRAG was built by an insurance claims/appraisal professional with 17 years in the industry, aimed specifically at that problem — not a generic document chatbot, but a system whose evaluation and design decisions are shaped by what actual adjusting judgment calls look like: exclusion stacking, regional rate caps, SIU fraud patterns, endorsement math, subrogation eligibility.
+Claims handlers spend a meaningful share of every day hunting through scattered PDFs, spreadsheets, and adjuster guides for the one fact that resolves a claim — a labor rate cap, an exclusion clause, a rider's eligibility window. AutoClaimsRAG was built by an insurance claims/appraisal professional with 17 years in the industry, so the evaluation and design decisions are shaped by what real adjusting judgment calls look like: exclusion stacking, regional rate caps, SIU fraud patterns, endorsement math, subrogation eligibility.
 
 Everything in this repo runs on synthetic, generated seed data — no proprietary or confidential content of any kind.
 
@@ -40,60 +40,34 @@ AgenticRAGRouter
 FastAPI ──▶ frontend (claims queue, per-claim folders, chat, pipeline logs)
 ```
 
-### Retrieval: hybrid, not just vector
+**Hybrid retrieval**: dense embeddings are good at paraphrase but weak on exact structured lookups — a query like "what's the comprehensive deductible" can under-rank a deductibles *spreadsheet* in favor of a narratively-similar case study PDF. SQLite FTS5 keyword search catches that case; the two signals are fused with Reciprocal Rank Fusion (no score calibration needed) and reordered by a local cross-encoder reranker.
 
-Dense embeddings are good at paraphrase and bad at exact structured lookups — a query like "what's the comprehensive deductible" can under-rank a deductibles *spreadsheet* in favor of a narratively-similar case study PDF, purely because prose embeds "closer" to a natural-language question than a table does. Keyword search (SQLite FTS5) catches exactly this case. The two are fused with **Reciprocal Rank Fusion**, which combines rank position from both signals without needing to calibrate incompatible similarity scores against each other, and the fused candidate pool is reordered by a local cross-encoder reranker for the final top-k.
+**Agentic planning**: each query is decomposed into targeted sub-queries scoped to global policy, the active claim's dossier, or both. If retrieval comes back empty, a self-correction step retries with a rewritten query; if it's still empty, synthesis is skipped entirely and the system says so, rather than letting the LLM answer from its own knowledge and cite sources that don't exist.
 
-### Agentic planning and self-correction
-
-Each query goes through a planner that decides whether it needs global policy documents, the active claim's dossier, or both, and decomposes it into targeted sub-queries. If retrieval comes back empty, a self-correction step retries with a rewritten query before giving up. If it's *still* empty, synthesis is skipped entirely — the system returns "I couldn't find supporting documents" rather than let the LLM answer from its own knowledge and cite sources that don't exist. That last guard exists because the eval harness (below) caught exactly that failure mode in production.
-
-### Performance
-
-Vector search runs against an in-memory, pre-normalized embedding matrix cache instead of re-reading every embedding BLOB from SQLite and recomputing corpus norms on every query — the naive version of that is a real bottleneck that scales with corpus size, not query count.
+**Performance**: vector search runs against an in-memory, pre-normalized embedding matrix cache instead of re-reading every embedding BLOB and recomputing corpus norms on every query.
 
 ## Evaluation — because "it looks right" isn't good enough
 
-Most RAG demos never measure anything past a handful of manually-eyeballed examples. This one does, and it's the part of the project I'd point a hiring manager to first.
+19 domain-grounded queries (not generic FAQ) — exclusion stacking, labor rate caps, SIU fraud red flags, OEM/LKQ parts eligibility, endorsement math, subrogation, plus a deliberate hallucination probe — each with a reference answer verified against the actual source documents. Three things are measured, all with a fully local LM Studio judge (zero calls to any hosted API):
 
-**The golden set is domain-grounded, not generic FAQ.** 19 queries covering exclusion stacking (DUI + consequential damage), regional labor rate caps, SIU fraud red flags, OEM/LKQ parts rider eligibility, deductible/endorsement math, and subrogation — plus one deliberate hallucination probe (asks about a DUI citation for a claim where no such document exists in the corpus, specifically to check whether the system fabricates evidence or correctly says it isn't there). Every reference answer was verified against the actual text in the underlying documents, not against what the demo mode claims — which turned out to matter (see below).
+| Metric | What it checks | Naive | Hybrid + Rerank |
+|---|---|---|---|
+| Context Precision | Retrieved chunks are actually relevant | 0.775 | 0.833 |
+| Context Recall | Nothing relevant was missed | 0.882 | 0.916 |
+| Faithfulness | Answer is grounded in retrieved context | — | 0.875 |
+| Factual Correctness | Answer covers what the verified reference requires | — | 0.695 |
 
-**Retrieval quality**: naive (vector-only) vs. the app's real hybrid+FTS5+RRF+cross-encoder pipeline, scored with Ragas Context Precision/Recall.
+![Evaluation results chart](assets/eval_results.png)
 
-**Groundedness**: Faithfulness of the live agentic router's actual generated answers, judged against everything that really grounded them — both the retrieved sources and the claim dossier context injected into the prompt.
-
-**Correctness**: Ragas FactualCorrectness (recall mode) of the live answer against a verified reference answer — does the response actually cover every fact the reference says it must. Added because Faithfulness alone missed a real bug: an answer can be perfectly grounded in what it retrieved and still be wrong if it only reasons about one of several relevant facts (see bug #4 below). Faithfulness checks response-vs-context; this checks response-vs-ground-truth, closing the gap.
-
-**The judge model runs locally too** — Ragas is wired to LM Studio via an OpenAI-compatible client, so evaluation makes zero calls to any hosted API, consistent with the rest of the system.
-
-### Results
-
-![Evaluation results: Context Precision and Recall for naive vs. hybrid+rerank retrieval, and Faithfulness across the dossier-scoring fix and the corpus rebuild](assets/eval_results.png)
-
-| Metric | Naive | Hybrid + Rerank |
-|---|---|---|
-| Context Precision | 0.775 | 0.833 |
-| Context Recall | 0.882 | 0.916 |
-| Faithfulness (live answers) | — | 0.875 |
-| Factual Correctness (live answers vs. reference) | — | 0.695 |
-
-The aggregate retrieval gap understates the story. 12 of 19 queries are single-fact global lookups both methods ace near-perfectly — the interesting signal is in the 7 claim-scoped queries:
-
-- **Clear hybrid wins**: a claim-scoped shop-estimate query where naive completely missed the source document (0.0 recall) while hybrid retrieved it with near-perfect precision and recall; a police report query where naive's top-1 was an image file with no real text content, correctly demoted by reranking (naive 0.5 → hybrid 1.0 precision).
-- **Reported honestly, not cherry-picked away**: hybrid was clearly *worse* on two queries — one where naive reached 1.0 precision and hybrid stalled at 0.5, another where hybrid's recall dropped to 0.4 (naive 0.75) after pulling in a topically-adjacent-but-wrong document. Real regressions, not smoothed over.
-- **The most important finding wasn't a hybrid-vs-naive story at all**: one query — "does this claim's stolen equipment exceed the endorsement cap, and by how much" — needs *two* documents (the endorsement's cap *and* the claim-specific receipt total) surfaced together, and single-shot top-k retrieval failed to do that in *either* mode, before or after the corpus rebuild (still 0.0/0.0 on both metrics via the isolated retrieval endpoint). That's not a retrieval-tuning gap, it's the exact structural reason the agentic planner's query decomposition exists (see Phase 9 in the fixes below) — and it's exactly where the new Correctness metric earns its keep: scored against the *real* `/api/chat` pipeline (which guarantees a claim's own documents are included, unlike the isolated retrieval endpoint above), that same query scores **1.0 correctness** — direct evidence the guaranteed-dossier fix works, measured rather than eyeballed.
-- **Faithfulness rose 0.735 → 0.811 → 0.854 → 0.875** across three distinct changes: first when the harness was corrected to score against everything the model was actually grounded in (see bug #3 below), then after a full corpus rebuild fixed a chunking bug and restored ~42 documents that had silently been saved as fake binaries, then again on the run that added Correctness alongside it (same judge, same queries — a reminder that a local-model judge has real run-to-run variance, not just fix-to-fix movement; see Known limitations). Distinct, honest improvements — not one number tuned repeatedly until it looked good.
-- **Factual Correctness averages 0.695 against a Faithfulness of 0.875** — that 18-point gap is the point of adding the metric: it's the same 19 answers, scored two different ways, and the gap is exactly the space where an answer can be fully grounded in its sources while still omitting a fact the ground truth requires. Two per-query scores came back as an unexplained 0.0 on answers manually verified as fully correct (`labor-mechanical-cap`, `chen-theft-report-detail`) — a local 14B judge's own NLI-verification flakiness, not a product bug; see Known limitations.
+**What stood out**: hybrid clearly wins on claim-scoped queries where naive vector search misses a source entirely (e.g. a shop-estimate document, 0.0→1.0 recall), and is reported honestly where it's *worse* (two queries where naive actually beat it — no cherry-picking). The most interesting result wasn't a hybrid-vs-naive story at all: one query needs two documents surfaced together (an endorsement cap *and* a claim's own receipt total), which single-shot retrieval never manages in either mode — that's the exact reason the agentic planner's guaranteed dossier-inclusion exists, and scored against the real pipeline it hits 1.0 Factual Correctness despite 0.0/0.0 on the isolated retrieval endpoint. The 18-point Faithfulness/Correctness gap is the metric doing its job: the same answers, judged two different ways, showing where "grounded" and "complete" diverge.
 
 ### Bugs this eval harness actually found and fixed
 
-An eval harness earns its keep by catching real defects, not by producing a nice-looking dashboard. This one caught five, in five different layers of the system:
-
-1. **A real hallucination path in the production router.** A global policy query got misclassified by the planner (`needs_global_policies: False`) while no claim was active, which also short-circuited the claim-dossier retrieval branch — both retrieval paths got skipped, and the LLM synthesized a confident answer citing filenames that don't exist anywhere in the corpus. Root-caused, fixed with a fallback path plus a hard stop against zero-context synthesis, verified.
-2. **The simulated demo mode's hardcoded narrative contained facts the actual source documents don't support** — a coverage cap stated as $5,000 where the real document says $3,500, a rider eligibility threshold stated as 3 years where the real document says 5 years, a fabricated hour cap cited to a document that doesn't contain it, and a claim decision that mischaracterized a legitimate repair line item as a duplicate charge to reject. Found by cross-checking the golden set's reference answers against the real documents; corrected.
-3. **A measurement gap in the eval harness itself.** Faithfulness scoring initially checked answers only against the `sources` field returned by the API — but the router also grounds claim-scoped answers in a claim summary dossier injected directly into the prompt, which isn't a search result and wasn't in `sources`. Correct, dossier-grounded answers were scoring as unfaithful. Fixed by surfacing the dossier as its own field in the API response and scoring against it too.
-4. **A genuine multi-hop retrieval gap, and a second bug it exposed.** One query needed two documents — an endorsement's coverage cap *and* a claim's own itemized receipt — surfaced together to compute correctly. Single-shot semantic search wasn't guaranteeing both made it into context; the receipt kept losing its slot to a more topically-similar policy document. Fixed by always including a claim's own documents directly rather than making them compete semantically for a slot (claim dossiers are small — a handful of documents — so there's no retrieval-quality tradeoff to make). That fix then exposed a *second*, different problem: with the correct receipt now in context, the LLM still calculated from only one of its two line items and reached the wrong total. That answer was fully **faithful** to the context it used — it just didn't use all of it, which Faithfulness doesn't check. A one-line prompt instruction ("enumerate every item before totaling") fixed it, verified by direct before/after comparison, since this class of error doesn't move the Faithfulness score at all.
-5. **The eval harness's own default metric configuration penalized correct answers.** The first Correctness run used Ragas's default `mode="f1"`, which scored several clearly-correct, well-cited answers as low as 0.0–0.24 — not because they were wrong, but because `f1`'s precision half penalizes any true elaboration (pulled from other legitimately-retrieved sources) that isn't in the terse golden `reference` text. Diagnosed by manually re-running one of the low-scoring queries directly against `/api/chat` and confirming the answer was in fact fully correct. Switched to `mode="recall"` — does the response cover what the reference requires, without punishing true extra context — which is also the more direct measurement of the original chen-custom-equipment-cap failure mode (a dropped fact, not an added one).
+1. **Zero-context hallucination**: a planner misclassification could skip retrieval entirely and let the LLM synthesize with no context, fabricating citations. Fixed with a hard stop against zero-context synthesis.
+2. **Simulated demo mode's hardcoded facts didn't match the real source documents** (wrong coverage caps, wrong eligibility thresholds, a fabricated rejection). Corrected against the real corpus.
+3. **Faithfulness scoring gap**: claim-scoped answers grounded in a prompt-injected dossier weren't checked against it, so correct answers scored as unfaithful. Fixed.
+4. **Multi-hop retrieval gap**: a claim's own documents were competing semantically for a slot against global policy docs and losing. Fixed by always including them directly — which then exposed a *second* bug (the LLM only reasoned about one of two line items despite having both). Both fixed and verified.
+5. **The eval harness's own default metric config penalized correct answers**: Ragas's default `mode="f1"` docked well-cited, correct answers for true elaboration not in the terse reference text. Switched to `mode="recall"`.
 
 ## Try it locally
 
@@ -119,10 +93,10 @@ Without an LM Studio server running, the app falls back to a rule-based simulati
 
 ## Known limitations
 
-- **Faithfulness measures groundedness, not correctness** — a real distinction, not a caveat unique to this project. An answer that uses only part of the available context can score perfectly faithful while still reaching the wrong conclusion (see bug #4 above). Don't infer answer correctness from a high Faithfulness score alone on multi-fact queries. Factual Correctness (recall mode) now closes this gap by scoring the same live answers against a verified reference instead of against retrieved context.
-- `eval/results.json`'s Context Precision/Recall numbers reflect single-shot retrieval via a debug endpoint, not the full agentic pipeline's guaranteed claim-document inclusion — the two are deliberately isolated so retrieval-strategy comparisons aren't confounded by pipeline-level behavior. Factual Correctness *is* scored against the real `/api/chat` pipeline, so it's the metric that actually reflects the guaranteed-dossier-inclusion fix from Phase 9.
-- Faithfulness and Factual Correctness scoring are both bounded by the local judge model's own reasoning quality — a real tradeoff of local-only evaluation against a larger hosted judge, made deliberately to keep the whole pipeline (including evaluation) consistent with the "runs entirely locally" design constraint. This isn't just a theoretical caveat: two queries with manually-verified-correct answers (`labor-mechanical-cap`, `chen-theft-report-detail`) scored an inexplicable 0.0 on Correctness, and re-running the full suite with identical code moved Faithfulness from 0.83 to 0.875 — both are the 14B judge's own scoring noise, not product regressions. Treat any single-run score as noisy; trust trends across reruns, not one decimal point.
-- The demo claim fixtures are currently duplicated between the backend and frontend rather than served from a single source of truth.
+- **Faithfulness measures groundedness, not correctness** — an answer can be fully faithful to partial context and still be wrong. Factual Correctness closes this by scoring against a verified reference instead.
+- Context Precision/Recall reflect single-shot retrieval via a debug endpoint, not the full pipeline's guaranteed claim-document inclusion; Factual Correctness *is* scored against the real `/api/chat` pipeline.
+- Both LLM-judged metrics are bounded by a local 14B judge's own reasoning quality (a deliberate local-only tradeoff) and show real run-to-run variance — treat single-run scores as noisy, trust trends across reruns.
+- Demo claim fixtures are currently duplicated between backend and frontend rather than served from a single source of truth.
 
 ## Tech stack
 
