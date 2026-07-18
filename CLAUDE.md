@@ -77,6 +77,13 @@ C:\PERSONAL\
 ├── test_rag_pipeline.py        ← CLI hybrid-search verification script
 ├── sample_guidelines/          ← Generated source documents (git-ignored)
 ├── stored_documents/           ← Physical copies served to the UI (viewer/download)
+├── assets/
+│   └── eval_results.png        ← Portfolio-facing eval chart (regenerate via eval/plot_results.py)
+├── eval/
+│   ├── golden_queries.py       ← 19 domain-grounded queries + verified reference answers
+│   ├── ragas_lm_studio.py      ← Wires Ragas to LM Studio as a local judge
+│   ├── run_eval.py             ← Runs the full suite, writes eval/results.json
+│   └── plot_results.py         ← Regenerates assets/eval_results.png from results.json
 ├── backend/
 │   ├── app.py                  ← FastAPI REST API + per-claim endpoints
 │   ├── rag_engine.py           ← Parsing, chunking, embedding, reranking, hybrid store
@@ -230,6 +237,12 @@ http://localhost:8000
 * **Done when**: The full 19-query suite runs end-to-end and produces a Correctness number alongside Context Precision/Recall/Faithfulness, and the `chen-custom-equipment-cap` query specifically shows a high score via the real agentic pipeline (validating Phase 9's fix numerically, not just by manual before/after).
 * **Status**: Completed and verified, with one real course-correction along the way: the first run used Ragas's default `mode="f1"`, which scored several manually-verified-correct, well-cited answers as low as 0.0–0.24 — precision half of f1 penalizes true elaboration pulled from other legitimately-retrieved sources that just isn't in the terse golden reference text (confirmed by pulling one low-scoring answer directly from `/api/chat` and reading it). Switched to `mode="recall"` (does the response cover what the reference requires, without punishing true extra context) and reran; distribution became sane (0.0–1.0 spread, few outliers) and the average moved from 0.437 to 0.695. `chen-custom-equipment-cap` scores 1.0 via the real `/api/chat` pipeline despite 0.0/0.0 Context Precision/Recall via the isolated retrieval endpoint — direct numeric confirmation that Phase 9's guaranteed-dossier-inclusion fix works, which is exactly the gap this phase set out to close. Two queries with independently-verified-correct answers (`labor-mechanical-cap`, `chen-theft-report-detail`) still scored an inexplicable 0.0 — root-caused to the local 14B judge's own NLI-verification flakiness (not a product bug), documented as a limitation rather than chased further. Final scores: Context Precision naive=0.775/hybrid=0.833, Context Recall naive=0.882/hybrid=0.916, Faithfulness=0.875, Factual Correctness=0.695. Faithfulness moving 0.854→0.875 with zero code changes to that metric between this run and the last is itself evidence of real judge-to-judge variance — see Debugging History.
 
+### Phase 12 — Portfolio Polish: Chart Rebuild, Scaling Write-Up, README Trim (Completed)
+* **Goal**: Close the Phase 11 loose end (stale chart) and address a real gap for an AI/RAG-role portfolio piece — no discussion anywhere of how this design would need to change at real scale (the current MVP is explicitly a single-adjuster local corpus). Also: the README had grown into dense, essay-length bullets that read like engineering notes rather than something a hiring manager skims in two minutes.
+* **Builds**: `eval/plot_results.py` — reusable script that reads `eval/results.json`'s summary and regenerates `assets/eval_results.png` (3 panels: Context Precision/Recall naive-vs-hybrid, a Faithfulness fix-history line, and a new Faithfulness-vs-Factual-Correctness bar comparison making the groundedness/correctness gap visible, not just tabular). Added `matplotlib` to `requirements.txt` since the chart is now regeneratable rather than a one-off artifact. A new "Scaling considerations" subsection in README.md, grounded in the actual code (`SQLiteVectorStore._build_vector_cache`/`search_similarity`) rather than generic scaling platitudes: brute-force (non-ANN) vector search, full-cache-rebuild-on-every-write as the real ingestion bottleneck, single-process/single-SQLite-file ceiling, and what wouldn't need to change (FTS5, reranking cost bounded by `top_k`) alongside what would (ANN index with incremental upsert, Postgres+pgvector).
+* **Done when**: The chart reflects the current `results.json` numbers, and the README states specific, code-grounded scaling bottlenecks rather than a vague "would need to scale this up" caveat.
+* **Status**: Completed. Also trimmed the README's Evaluation section (five paragraph-length bullets + a five-item bug essay) down to a results table, one findings paragraph, and one-line-per-bug — same content, much less density, following direct user feedback that the README had gotten too long to be a portfolio-facing document.
+
 ---
 
 ## MVP Scope
@@ -276,7 +289,6 @@ http://localhost:8000
 1. **User Testing**: Launch the server, open the web dashboard, and test claims questions with Qwen-2.5-14B loaded in LM Studio (exercise the agentic online path end-to-end).
 2. **Unify `CLAIMS_DATA`**: Serve the demo claims from a single backend endpoint the frontend consumes, eliminating the duplicated fixtures.
 3. **Production Builds**: Package the application or prepare dockerized configs if distribution is desired.
-4. **Rebuild `assets/eval_results.png`** with the Phase 11 numbers (Context Precision/Recall, Faithfulness, and the new Factual Correctness bar) — the README table and prose are current but the chart image still reflects pre-Phase-11 data.
 
 ---
 
@@ -353,6 +365,8 @@ http://localhost:8000
   * Updated README.md's Evaluation section (methodology, results table, per-query story bullets, bug list, known limitations) and CLAUDE.md (this file) with the new metric, current numbers, and the two debugging findings, rather than leaving stale numbers next to new prose.
 * **New constraints discovered**: `ragas.metrics.collections.FactualCorrectness(mode="f1")` is the wrong default for scoring against a terse hand-written reference — its precision half punishes true elaboration from other legitimately-retrieved sources. Use `mode="recall"` when the reference is intentionally terse and the goal is "does the answer cover the required facts," not "does the answer say nothing beyond the reference." See Debugging History for both this and the local-judge NLI flakiness observed on rerun.
 * **Plan changes**: Added Build Plan Phase 11. Removed the completed item from What's Next; added rebuilding `assets/eval_results.png` with the new numbers as a follow-up (not done this session — image regeneration wasn't in scope of the metric work).
+* **Follow-up (same session) — user asked "what else can we optimize," chose the chart rebuild + a scaling write-up (Build Plan Phase 12)**: Wrote `eval/plot_results.py` (new dependency: `matplotlib`, added to `requirements.txt`) so the chart is regeneratable from `results.json` instead of a one-off manual artifact; regenerated `assets/eval_results.png` with current numbers plus a new panel visualizing the Faithfulness-vs-Correctness gap directly. Read the actual `_build_vector_cache`/`search_similarity` code in `rag_engine.py` before writing a "Scaling considerations" README subsection, rather than writing generic scaling advice — grounded it in the real bottlenecks (brute-force non-ANN vector search, full-cache-rebuild-on-every-write, single-process/single-SQLite-file) and what wouldn't need to change (FTS5, reranking cost bounded by `top_k`).
+* **Follow-up (same session) — user feedback: "do we really need all this on the readme? can we make it more concise"**: Trimmed the Evaluation section from five paragraph-length bullets plus a five-item bug essay down to a results table, one findings paragraph, and one line per bug — no content cut, just density. Recorded as a durable preference: keep README.md scannable (portfolio-facing, skimmed by a hiring manager), keep the *session log in this file* as the place for full narrative detail — don't let README prose grow to dev-journal length again.
 
 ---
 
