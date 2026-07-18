@@ -13,6 +13,21 @@ Two things are measured, both against the golden query set in golden_queries.py:
    cites — i.e. does the real system's output stay grounded in what it
    retrieved, not just in retrieval quality in isolation.
 
+3. Correctness: FactualCorrectness (mode="recall") of the live answer against
+   the verified `reference` answer in golden_queries.py. This exists because
+   Faithfulness alone missed a real bug (see CLAUDE.md Debugging History,
+   chen-custom-equipment-cap): an answer can be perfectly grounded in
+   retrieved context and still be wrong if it only reasons about one of
+   several relevant line items. Faithfulness checks response-vs-context;
+   this checks response-vs-ground-truth — what fraction of the reference's
+   claims are actually covered by the response — so a response that drops a
+   claim present in the reference now measurably loses recall even when
+   every claim it does make is true. Deliberately NOT mode="f1"/"precision":
+   an early run showed verbose-but-correct answers scoring low because
+   precision penalizes true elaboration pulled from other retrieved sources
+   that simply isn't in the terse reference text. Faithfulness already
+   covers unsupported/fabricated claims; recall is the missing piece.
+
 Judge model: whatever's currently loaded in LM Studio, detected the same way
 the app itself does. Run this with the backend server already running
 (`uvicorn backend.app:app --port 8000`) and LM Studio serving a model.
@@ -99,18 +114,39 @@ async def score_faithfulness(faithfulness_metric, user_input, response, retrieve
         return None
 
 
+async def score_correctness(correctness_metric, response, reference):
+    if not response or not reference:
+        return None
+    try:
+        result = await correctness_metric.ascore(response=response, reference=reference)
+        return result.value
+    except Exception as e:
+        print(f"    ! correctness scoring failed: {e}")
+        return None
+
+
 async def main():
     print("=== AutoClaimsRAG Domain-Grounded Evaluation ===\n")
 
     model = get_loaded_model()
     print(f"Judge model (LM Studio): {model}\n")
 
-    from ragas.metrics.collections import ContextPrecision, ContextRecall, Faithfulness
+    from ragas.metrics.collections import ContextPrecision, ContextRecall, Faithfulness, FactualCorrectness
 
     judge = get_lm_studio_judge(model)
     precision_metric = ContextPrecision(llm=judge)
     recall_metric = ContextRecall(llm=judge)
     faithfulness_metric = Faithfulness(llm=judge)
+    # mode="recall" (not the default "f1"): a first f1 run showed verbose-but-
+    # correct answers scoring low because precision penalizes any elaboration
+    # not in the terse `reference` text (extra true context pulled from other
+    # retrieved sources counts as an unsupported claim). Faithfulness already
+    # catches unsupported/fabricated claims against retrieved context; what's
+    # missing and worth adding here is recall — did the answer cover every
+    # fact the reference says it must — which is exactly the failure mode
+    # (chen-custom-equipment-cap: one line item reasoned about, one dropped)
+    # that motivated this metric in the first place.
+    correctness_metric = FactualCorrectness(llm=judge, mode="recall")
 
     sem = asyncio.Semaphore(JUDGE_CONCURRENCY)
 
@@ -121,6 +157,10 @@ async def main():
     async def bounded_faithfulness(*args):
         async with sem:
             return await score_faithfulness(faithfulness_metric, *args)
+
+    async def bounded_correctness(*args):
+        async with sem:
+            return await score_correctness(correctness_metric, *args)
 
     results = []
     start = time.time()
@@ -138,6 +178,7 @@ async def main():
 
         chat_result = None
         faithfulness = None
+        correctness = None
         try:
             chat_result = chat(q["query"], q["claim_id"])
             answer = chat_result.get("answer", "")
@@ -150,6 +191,7 @@ async def main():
             if dossier:
                 sources = sources + [dossier]
             faithfulness = await bounded_faithfulness(q["query"], answer, sources)
+            correctness = await bounded_correctness(answer, q["reference"])
         except Exception as e:
             print(f"    ! /api/chat failed: {e}")
 
@@ -162,6 +204,7 @@ async def main():
             "hybrid_precision": hybrid_prec,
             "hybrid_recall": hybrid_rec,
             "faithfulness": faithfulness,
+            "correctness": correctness,
             "naive_top_filenames": [m["filename"] for m in naive_matches],
             "hybrid_top_filenames": [m["filename"] for m in hybrid_matches],
         }
@@ -169,7 +212,7 @@ async def main():
 
         print(f"    naive  P={naive_prec} R={naive_rec}")
         print(f"    hybrid P={hybrid_prec} R={hybrid_rec}")
-        print(f"    faithfulness={faithfulness}")
+        print(f"    faithfulness={faithfulness}  correctness={correctness}")
 
     elapsed = time.time() - start
     print(f"\nCompleted {len(GOLDEN_QUERIES)} queries in {elapsed:.1f}s\n")
@@ -186,6 +229,7 @@ async def main():
         "hybrid_precision_avg": avg("hybrid_precision"),
         "hybrid_recall_avg": avg("hybrid_recall"),
         "faithfulness_avg": avg("faithfulness"),
+        "correctness_avg": avg("correctness"),
         "elapsed_seconds": round(elapsed, 1),
     }
 
@@ -193,6 +237,7 @@ async def main():
     print(f"Context Precision:  naive={summary['naive_precision_avg']}  hybrid+rerank={summary['hybrid_precision_avg']}")
     print(f"Context Recall:     naive={summary['naive_recall_avg']}  hybrid+rerank={summary['hybrid_recall_avg']}")
     print(f"Faithfulness (live agentic answers): {summary['faithfulness_avg']}")
+    print(f"Factual Correctness (live agentic answers vs. reference): {summary['correctness_avg']}")
 
     out_path = Path(__file__).resolve().parent / "results.json"
     with open(out_path, "w", encoding="utf-8") as f:

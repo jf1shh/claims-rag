@@ -2,12 +2,13 @@
   "summary": {
     "model": "qwen2.5-14b-instruct-1m",
     "n_queries": 19,
-    "naive_precision_avg": 0.754,
+    "naive_precision_avg": 0.775,
     "naive_recall_avg": 0.882,
-    "hybrid_precision_avg": 0.807,
+    "hybrid_precision_avg": 0.833,
     "hybrid_recall_avg": 0.916,
-    "faithfulness_avg": 0.854,
-    "elapsed_seconds": 2530.7
+    "faithfulness_avg": 0.875,
+    "correctness_avg": 0.695,
+    "elapsed_seconds": 3432.2
   },
   "results": [
     {
@@ -18,7 +19,8 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.9999999999,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.5,
+      "faithfulness": 1.0,
+      "correctness": 0.0,
       "naive_top_filenames": [
         "SOP_Auto_Repair_Labor_Rates.pdf",
         "PIP_Medical_Fee_Schedule_FL.xlsx",
@@ -40,7 +42,8 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.99999999995,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.9444444444444444,
+      "faithfulness": 0.782608695652174,
+      "correctness": 0.33,
       "naive_top_filenames": [
         "SOP_Auto_Repair_Labor_Rates.pdf",
         "Regional_Labor_Rates_2026.xlsx",
@@ -62,7 +65,8 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.9999999999,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.7142857142857143,
+      "faithfulness": 1.0,
+      "correctness": 0.67,
       "naive_top_filenames": [
         "DUI_Exclusion_Directive.txt",
         "Rider_Roadside_Assistance_Plus.pdf",
@@ -85,6 +89,7 @@
       "hybrid_precision": 0.9999999999,
       "hybrid_recall": 1.0,
       "faithfulness": 1.0,
+      "correctness": 0.67,
       "naive_top_filenames": [
         "Rider_OEM_Parts_Guarantee.pdf",
         "SOP_Auto_Repair_Labor_Rates.pdf",
@@ -106,7 +111,8 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.9999999999,
       "hybrid_recall": 1.0,
-      "faithfulness": 1.0,
+      "faithfulness": 0.8333333333333334,
+      "correctness": 1.0,
       "naive_top_filenames": [
         "Endorsement_Custom_Audio_Visual.docx",
         "Auto_Deductibles_And_Limits.xlsx",
@@ -128,7 +134,8 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.9999999999,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.75,
+      "faithfulness": 0.7142857142857143,
+      "correctness": 1.0,
       "naive_top_filenames": [
         "Endorsement_Windshield_Zero_Deductible.docx",
         "Case_Study_Hail_Damage_PlanA.pdf",
@@ -151,6 +158,7 @@
       "hybrid_precision": 0.9999999999,
       "hybrid_recall": 1.0,
       "faithfulness": 0.8333333333333334,
+      "correctness": 1.0,
       "naive_top_filenames": [
         "Endorsement_Rental_Car_Upgrade.docx",
         "Endorsement_Roadside_Emergency_Premium.docx",
@@ -172,7 +180,8 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.9999999999,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.8888888888888888,
+      "faithfulness": 0.7777777777777778,
+      "correctness": 1.0,
       "naive_top_filenames": [
         "Adjuster_Guide_Rollover_Claims.docx",
         "Adjuster_Guide_Side_Impact.docx",
@@ -194,7 +203,8 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.9999999999,
       "hybrid_recall": 1.0,
-      "faithfulness": 1.0,
+      "faithfulness": 0.8571428571428571,
+      "correctness": 0.67,
       "naive_top_filenames": [
         "SOP_Claims_Fraud_Red_Flags.pdf",
         "SOP_Claims_Fraud_Red_Flags.pdf",
@@ -216,7 +226,8 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.9999999999,
       "hybrid_recall": 1.0,
-      "faithfulness": 1.0,
+      "faithfulness": 0.8333333333333334,
+      "correctness": 0.5,
       "naive_top_filenames": [
         "California_Auto_Claims_Regulations.pdf",
         "Texas_Auto_Insurance_Code_2026.pdf",
@@ -238,7 +249,8 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.8333333332916666,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.5,
+      "faithfulness": 0.7142857142857143,
+      "correctness": 1.0,
       "naive_top_filenames": [
         "Adjuster_Guide_Rear_Impact.docx",
         "Endorsement_Windshield_Zero_Deductible.docx",
@@ -260,7 +272,8 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.999999999975,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.6666666666666666,
+      "faithfulness": 0.875,
+      "correctness": 0.67,
       "naive_top_filenames": [
         "Case_Study_Hail_Damage_PlanA.pdf",
         "Auto_Deductibles_And_Limits.xlsx",
@@ -282,7 +295,8 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.249999999975,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.9375,
+      "faithfulness": 1.0,
+      "correctness": 0.8,
       "naive_top_filenames": [
         "shop_email_thread_Sterling.pdf",
         "SOP_Auto_Repair_Labor_Rates.pdf",
@@ -304,7 +318,8 @@
       "naive_recall": 0.0,
       "hybrid_precision": 0.9999999999,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.8888888888888888,
+      "faithfulness": 0.9473684210526315,
+      "correctness": 0.67,
       "naive_top_filenames": [
         "Case_Study_Stolen_Honda_Civic.pdf",
         "SOP_Auto_Repair_Labor_Rates.pdf",
@@ -326,7 +341,8 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.49999999995,
       "hybrid_recall": 1.0,
-      "faithfulness": 1.0,
+      "faithfulness": 0.9,
+      "correctness": 0.8,
       "naive_top_filenames": [
         "Case_Study_Hail_Damage_PlanA.pdf",
         "dent_photos_description_Jenkins.pdf",
@@ -348,7 +364,8 @@
       "naive_recall": 0.0,
       "hybrid_precision": 0.0,
       "hybrid_recall": 0.0,
-      "faithfulness": 0.9090909090909091,
+      "faithfulness": 0.6923076923076923,
+      "correctness": 1.0,
       "naive_top_filenames": [
         "Endorsement_Custom_Audio_Visual.docx",
         "Rider_Roadside_Assistance_Plus.pdf",
@@ -370,7 +387,8 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.9999999999,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.75,
+      "faithfulness": 0.8571428571428571,
+      "correctness": 0.0,
       "naive_top_filenames": [
         "civic_smashed_window.png",
         "police_theft_report_Chen.pdf",
@@ -388,11 +406,12 @@
       "id": "rostova-hydrolock-coverage",
       "claim_id": "#2026-55912",
       "query": "Is Elena Rostova's hydro-locked engine damage a covered loss?",
-      "naive_precision": 0.4166666666458333,
+      "naive_precision": 0.8055555555287036,
       "naive_recall": 0.75,
-      "hybrid_precision": 0.249999999975,
+      "hybrid_precision": 0.7499999999625,
       "hybrid_recall": 0.4,
-      "faithfulness": 0.9473684210526315,
+      "faithfulness": 1.0,
+      "correctness": 0.62,
       "naive_top_filenames": [
         "Case_Study_Engine_Hydro_Lock.pdf",
         "Adjuster_Guide_Rollover_Claims.docx",
@@ -415,6 +434,7 @@
       "hybrid_precision": 0.499999999975,
       "hybrid_recall": 1.0,
       "faithfulness": 1.0,
+      "correctness": 0.8,
       "naive_top_filenames": [
         "DUI_Exclusion_Directive.txt",
         "Case_Study_Underinsured_Motorist.pdf",
