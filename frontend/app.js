@@ -3,83 +3,23 @@ let currentEngine = 'lm-studio';
 let documents = [];
 let backendStatus = null;
 
-// Static Claims Database
-const CLAIMS_DATA = [
-    {
-        id: "#2026-99382",
-        status: "Under Review",
-        statusClass: "under-review",
-        insured: "Matthew Sterling",
-        vehicle: "2023 Tesla Model Y",
-        facility: "Caliber Collision (Los Angeles, CA)",
-        totalEst: "$4,850",
-        plan: "Plan B (Premium)",
-        deductible: "$500 Collision Deductible",
-        endorsements: ["OEM Parts Guarantee", "Premium Rental Upgrade"],
-        estimate: [
-            { cat: "Body", op: "Replace Rear Bumper Cover", rate: "$75/hr", qty: "6.0 hrs", total: "$450" },
-            { cat: "Paint", op: "Refinish Bumper & Blend Trunk", rate: "$75/hr", qty: "8.0 hrs", total: "$600" },
-            { cat: "Safety", op: "ADAS Backup Sensor Calibration", rate: "Flat", qty: "1 Unit", total: "$450" },
-            { cat: "Frame", op: "Pull Rear Body Panel (Alignment)", rate: "$85/hr", qty: "5.0 hrs", total: "$425" },
-            { cat: "Mechanical", op: "Replace Rear Motor Shield & Alignment", rate: "$120/hr", qty: "4.0 hrs", total: "$480" }
-        ]
-    },
-    {
-        id: "#2026-10492",
-        status: "Open",
-        statusClass: "open",
-        insured: "Sarah Jenkins",
-        vehicle: "2024 Ford F-150 SuperCrew",
-        facility: "Apex Auto Body (San Francisco, CA)",
-        totalEst: "$6,800",
-        plan: "Plan A (Standard)",
-        deductible: "$500 Comprehensive Deductible",
-        endorsements: ["Zero-Deductible Glass", "Premium Towing Plus"],
-        estimate: [
-            { cat: "PDR", op: "Paintless Dent Repair (42 dents)", rate: "Flat", qty: "1 Event", total: "$3,200" },
-            { cat: "Paint", op: "Refinish Passenger Doors", rate: "$75/hr", qty: "12.0 hrs", total: "$900" },
-            { cat: "Glass", op: "Replace Windshield (OEM Spec Glass)", rate: "Flat", qty: "1 Unit", total: "$1,200" },
-            { cat: "Safety", op: "Windshield ADAS Camera Recalibration", rate: "Flat", qty: "1 Unit", total: "$350" }
-        ]
-    },
-    {
-        id: "#2026-30291",
-        status: "Under Investigation",
-        statusClass: "under-investigation",
-        insured: "David Chen",
-        vehicle: "2022 Honda Civic Sport",
-        facility: "Elite Fleet Repair (Las Vegas, NV)",
-        totalEst: "$9,400",
-        plan: "Plan B (Premium)",
-        deductible: "$250 Comprehensive Deductible",
-        endorsements: ["OEM Parts Guarantee", "Custom Equipment ($3.5k limit)"],
-        estimate: [
-            { cat: "Mechanical", op: "Replace Cut Catalytic Converter (OEM)", rate: "$120/hr", qty: "2.0 hrs", total: "$1,500" },
-            { cat: "Body", op: "Replace 4x Sport Wheels & Tires", rate: "Flat", qty: "4 Units", total: "$2,400" },
-            { cat: "Electrical", op: "Replace Stolen Infotainment Console", rate: "$120/hr", qty: "6.0 hrs", total: "$3,500" },
-            { cat: "Body", op: "Repair Passenger Side Key Scratches", rate: "$75/hr", qty: "8.0 hrs", total: "$600" }
-        ]
-    },
-    {
-        id: "#2026-55912",
-        status: "SIU Flagged",
-        statusClass: "siu-flagged",
-        insured: "Elena Rostova",
-        vehicle: "2020 BMW 330i xDrive",
-        facility: "Classic Auto Restoration (Orlando, FL)",
-        totalEst: "$12,500",
-        plan: "Plan A (Standard)",
-        deductible: "$500 Comprehensive Deductible",
-        endorsements: ["Gap Insurance Coverage"],
-        estimate: [
-            { cat: "Mechanical", op: "Replace Engine Block (Hydro-locked)", rate: "$110/hr", qty: "20.0 hrs", total: "$9,500" },
-            { cat: "Mechanical", op: "Flush Oil Lines and Cooling System", rate: "$110/hr", qty: "4.0 hrs", total: "$440" },
-            { cat: "Electrical", op: "Replace Submerged ECU & Sensors", rate: "Flat", qty: "1 Unit", total: "$2,000" }
-        ]
-    }
-];
+// Claims Database -- fetched from /api/claims (backend/agentic_router.py's
+// CLAIMS_DATA), the same source of truth the agentic router grounds
+// claim-scoped answers in, so this can't drift out of sync with it.
+let CLAIMS_DATA = [];
+let activeCase = null;
 
-let activeCase = CLAIMS_DATA[0];
+function slugifyStatus(status) {
+    return (status || '').toLowerCase().replace(/\s+/g, '-');
+}
+
+async function fetchClaims() {
+    const response = await fetch('/api/claims');
+    if (!response.ok) throw new Error('Failed to fetch claims');
+    CLAIMS_DATA = await response.json();
+    CLAIMS_DATA.forEach(c => { c.statusClass = slugifyStatus(c.status); });
+    activeCase = CLAIMS_DATA[0];
+}
 
 // DOM Elements
 const browseBtn = document.getElementById('browse-btn');
@@ -142,11 +82,12 @@ async function initializeApp() {
     setupBrowseButton();
     setupChatSuggestions();
     setupModal();
+    await fetchClaims();
     setupClaimsCases();
     setupTelemetryTabs();
     setupResizableColumns();
     setupClaimUpload();
-    
+
     // Initial fetch of status and documents
     await checkBackendStatus();
     await fetchDocuments();

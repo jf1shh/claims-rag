@@ -17,7 +17,7 @@ from typing import Optional, List
 
 # Import our RAG Engine classes
 from backend.rag_engine import DocumentParser, TextChunker, EmbeddingEngine, SQLiteVectorStore, RerankingEngine, safe_filename
-from backend.agentic_router import AgenticRAGRouter
+from backend.agentic_router import AgenticRAGRouter, CLAIMS_DATA
 
 app = FastAPI(title="Local Insurance RAG System API")
 
@@ -91,6 +91,13 @@ def get_status():
 def list_documents():
     """Lists all processed documents."""
     return vector_store.get_all_documents()
+
+@app.get("/api/claims")
+def list_claims():
+    """Serves the demo claims queue -- the single source of truth CLAIMS_DATA
+    (backend/agentic_router.py) the agentic router already grounds claim-scoped
+    answers in, so the frontend's claim cards can't drift out of sync with it."""
+    return CLAIMS_DATA
 
 @app.post("/api/upload")
 async def upload_document(file: UploadFile = File(...)):

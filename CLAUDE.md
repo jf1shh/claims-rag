@@ -243,6 +243,12 @@ http://localhost:8000
 * **Done when**: The chart reflects the current `results.json` numbers, and the README states specific, code-grounded scaling bottlenecks rather than a vague "would need to scale this up" caveat.
 * **Status**: Completed. Also trimmed the README's Evaluation section (five paragraph-length bullets + a five-item bug essay) down to a results table, one findings paragraph, and one-line-per-bug — same content, much less density, following direct user feedback that the README had gotten too long to be a portfolio-facing document.
 
+### Phase 13 — Unify CLAIMS_DATA + Live User Testing (Completed)
+* **Goal**: Close the two remaining `What's Next` items — the `CLAIMS_DATA` demo fixtures duplicated between `backend/agentic_router.py` and `frontend/app.js` (a maintenance hazard, not a bug yet, but a real one waiting to happen), and an actual live pass through the UI against a real LM Studio model rather than trusting the eval harness alone.
+* **Builds**: `GET /api/claims` (`backend/app.py`) serving `agentic_router.CLAIMS_DATA` directly. `frontend/app.js` no longer holds a hardcoded `CLAIMS_DATA` array — `fetchClaims()` pulls it from the new endpoint at startup (awaited before `setupClaimsCases()` runs) and derives the `statusClass` CSS hook client-side (`slugifyStatus()`) since that field never existed on the backend copy. Bumped `app.js?v=1.0.2` → `v=1.0.3` in `index.html` for cache-busting (see Debugging History on why this matters).
+* **Done when**: The claims queue renders identically to before from a single source of truth, and a real chat query against a live LM Studio model produces a grounded, cited answer with a correct Pipeline Trace.
+* **Status**: Completed and verified live via the Browser pane. `/api/claims` returns 200 with all 4 claims; the claim queue and claim-file detail panel render correctly from the fetched data. Ran the "Verify Labor Rates" audit against claim `#2026-99382` with `qwen2.5-14b-instruct-1m` loaded in LM Studio: the Pipeline Trace confirmed the real planner→retrieve→synthesize flow end-to-end (planner routed both global guidelines and the claim dossier, ran 2 sub-query retrievals, loaded 3 guaranteed claim-dossier chunks per the Phase 9 fix, synthesized in ~38s), and the answer cited `SOP_Auto_Repair_Labor_Rates.pdf` with a similarity score. This is the first time this session's changes (and the Phase 9/11 fixes) were confirmed through the actual UI rather than only the eval harness or direct `/api/chat` calls.
+
 ---
 
 ## MVP Scope
@@ -276,9 +282,10 @@ http://localhost:8000
 * Simulation mode fallback when LLM servers are offline.
 * Domain-grounded eval harness (`eval/`) producing repeatable Context Precision/Recall/Faithfulness/Factual-Correctness scores against a fully local judge.
 * Frontend document rendering via `addEventListener`/DOM properties (no string-built inline event handlers), closing a stored-XSS class of bug.
+* Claims queue served from a single source of truth (`GET /api/claims` in `backend/app.py`, backed by `agentic_router.CLAIMS_DATA`) — the frontend fetches it at startup instead of holding its own hardcoded copy.
+* Verified live end-to-end against a real LM Studio model (`qwen2.5-14b-instruct-1m`): planner decomposition, guaranteed claim-dossier chunk loading, and grounded synthesis with a cited source all confirmed via the actual Pipeline Trace panel, not just unit-level checks.
 
 ### Known Issues
-* `CLAIMS_DATA` demo fixtures are duplicated in both `backend/agentic_router.py` and `frontend/app.js` — keep them in sync until unified behind an endpoint (see What's Next).
 * `eval/results.json`'s Context Precision/Recall numbers reflect single-shot retrieval via `/api/eval/search` only — they do **not** include the guaranteed claim-chunk inclusion described below, since that's a property of the full agentic pipeline (`/api/chat`), not of raw `search_similarity`. Re-scoring those two metrics against the real pipeline is unscoped work, not a bug; the eval harness deliberately isolates retrieval-strategy comparison from full-pipeline behavior. Factual Correctness (Phase 11) *is* scored against the real `/api/chat` pipeline, so it's the metric that actually reflects the guaranteed-dossier fix.
 * Faithfulness (0.875) and Factual Correctness (0.695) are both judged by a single local 14B model — a real tradeoff vs. a larger hosted judge, made deliberately to keep evaluation consistent with the "runs entirely locally" constraint. Documented as a limitation in README.md rather than treated as a defect. Concretely: two queries with manually-verified-correct answers scored an inexplicable 0.0 on Correctness (judge NLI-verification flakiness), and rerunning the identical Faithfulness metric code across two sessions moved 0.854→0.875 — treat single-run scores as noisy, trust trends across reruns.
 
@@ -286,9 +293,7 @@ http://localhost:8000
 
 ## What's Next
 
-1. **User Testing**: Launch the server, open the web dashboard, and test claims questions with Qwen-2.5-14B loaded in LM Studio (exercise the agentic online path end-to-end).
-2. **Unify `CLAIMS_DATA`**: Serve the demo claims from a single backend endpoint the frontend consumes, eliminating the duplicated fixtures.
-3. **Production Builds**: Package the application or prepare dockerized configs if distribution is desired.
+1. **Production Builds**: Package the application or prepare dockerized configs if distribution is desired.
 
 ---
 
@@ -367,6 +372,9 @@ http://localhost:8000
 * **Plan changes**: Added Build Plan Phase 11. Removed the completed item from What's Next; added rebuilding `assets/eval_results.png` with the new numbers as a follow-up (not done this session — image regeneration wasn't in scope of the metric work).
 * **Follow-up (same session) — user asked "what else can we optimize," chose the chart rebuild + a scaling write-up (Build Plan Phase 12)**: Wrote `eval/plot_results.py` (new dependency: `matplotlib`, added to `requirements.txt`) so the chart is regeneratable from `results.json` instead of a one-off manual artifact; regenerated `assets/eval_results.png` with current numbers plus a new panel visualizing the Faithfulness-vs-Correctness gap directly. Read the actual `_build_vector_cache`/`search_similarity` code in `rag_engine.py` before writing a "Scaling considerations" README subsection, rather than writing generic scaling advice — grounded it in the real bottlenecks (brute-force non-ANN vector search, full-cache-rebuild-on-every-write, single-process/single-SQLite-file) and what wouldn't need to change (FTS5, reranking cost bounded by `top_k`).
 * **Follow-up (same session) — user feedback: "do we really need all this on the readme? can we make it more concise"**: Trimmed the Evaluation section from five paragraph-length bullets plus a five-item bug essay down to a results table, one findings paragraph, and one line per bug — no content cut, just density. Recorded as a durable preference: keep README.md scannable (portfolio-facing, skimmed by a hiring manager), keep the *session log in this file* as the place for full narrative detail — don't let README prose grow to dev-journal length again.
+* **Follow-up (same session) — user asked "is [a self-verification loop] even going to be worth it," then chose the remaining backlog instead (Build Plan Phase 13)**: Talked through the tradeoff rather than building it — same-model self-critique is unproven for a 14B local judge, and the project already demonstrates the groundedness-vs-correctness insight via the measured metric gap, so the added latency (roughly another full LLM round-trip per query) wasn't clearly worth it. Recommended the two remaining `What's Next` items instead. Unified `CLAIMS_DATA`: added `GET /api/claims` (`backend/app.py`) and rewired `frontend/app.js` to fetch it (`fetchClaims()`, awaited before `setupClaimsCases()`), deriving `statusClass` client-side since that field only ever existed on the frontend's copy. Bumped the `app.js` cache-busting version. Then did the live user-testing pass: started the backend via the Browser pane's preview tooling, confirmed LM Studio was active (`qwen2.5-14b-instruct-1m`), ran the "Verify Labor Rates" audit against claim `#2026-99382`, and read the actual Pipeline Trace panel (via `traceTimeline.innerText`, since `computer` screenshots were timing out in this session's Browser pane) to confirm the real planner→retrieve→synthesize flow fired correctly end-to-end, not just that the eval harness's isolated queries passed.
+* **New constraints discovered**: The Browser pane's `computer` (screenshot) action timed out repeatedly this session while `get_page_text`/`read_page`/`javascript_tool` all worked fine — when screenshot hangs, fall back to text-based verification (`get_page_text`, targeted `javascript_tool` reads of specific elements like `traceTimeline.innerText`) rather than assuming the app itself is broken.
+* **Plan changes**: Added Build Plan Phase 13. `What's Next` now only has Production Builds/Docker packaging left, and that's explicitly optional ("if distribution is desired") rather than a real gap.
 
 ---
 
