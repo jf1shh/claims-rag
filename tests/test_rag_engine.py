@@ -31,6 +31,13 @@ class TestSafeFilename:
     def test_strips_windows_traversal(self):
         assert safe_filename("..\\..\\windows\\system32\\config") == "config"
         assert safe_filename("C:\\Windows\\evil.dll") == "evil.dll"
+        # basename of a bare "..\\" is "" on Windows (backslash is a
+        # separator there), so it must be rejected same as "..";
+        # on POSIX "..\\" is a literal, valid filename -- see
+        # test_rejects_empty_and_dot_names, which is intentionally
+        # platform-neutral and does not include this case.
+        with pytest.raises(ValueError):
+            safe_filename("..\\")
 
     def test_strips_absolute_path(self):
         assert safe_filename("/etc/shadow") == "shadow"
@@ -38,7 +45,7 @@ class TestSafeFilename:
     def test_strips_surrounding_whitespace(self):
         assert safe_filename("  doc.txt  ") == "doc.txt"
 
-    @pytest.mark.parametrize("bad", ["", "   ", ".", "..", "../", "..\\", None])
+    @pytest.mark.parametrize("bad", ["", "   ", ".", "..", "../", None])
     def test_rejects_empty_and_dot_names(self, bad):
         with pytest.raises(ValueError):
             safe_filename(bad)
