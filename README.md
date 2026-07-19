@@ -2,6 +2,7 @@
 
 [![tests](https://github.com/jf1shh/auto-claims-rag/actions/workflows/tests.yml/badge.svg)](https://github.com/jf1shh/auto-claims-rag/actions/workflows/tests.yml)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![release](https://img.shields.io/github/v/release/jf1shh/auto-claims-rag)](https://github.com/jf1shh/auto-claims-rag/releases/tag/v1.0.0)
 
 A local-first, agentic RAG system for auto insurance claims handling — built to show what happens when domain expertise and modern retrieval/agentic AI techniques compound instead of substitute for each other.
 
