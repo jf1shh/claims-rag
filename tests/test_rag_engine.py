@@ -1,0 +1,233 @@
+"""Unit tests for backend/rag_engine.py -- chunking, filename sanitization,
+and the SQLite vector store's write/delete/search invariants.
+
+Deliberately torch-free: EmbeddingEngine/RerankingEngine import
+sentence-transformers lazily, so these tests exercise the store with a
+deterministic fake embedder and never load the ML stack (keeps CI fast and
+runnable on any runner).
+"""
+import os
+import sqlite3
+
+import numpy as np
+import pytest
+
+from backend.rag_engine import SQLiteVectorStore, TextChunker, safe_filename
+
+
+# ---------------------------------------------------------------------------
+# safe_filename -- the path-traversal guard every filesystem-bound filename
+# must pass through (see CLAUDE.md Critical Constraints)
+# ---------------------------------------------------------------------------
+
+class TestSafeFilename:
+    def test_plain_filename_passes_through(self):
+        assert safe_filename("report.pdf") == "report.pdf"
+
+    def test_strips_posix_traversal(self):
+        assert safe_filename("../../etc/passwd") == "passwd"
+
+    @pytest.mark.skipif(os.name != "nt", reason="backslash is only a path separator on Windows; on POSIX it's a literal filename character, not a traversal vector")
+    def test_strips_windows_traversal(self):
+        assert safe_filename("..\\..\\windows\\system32\\config") == "config"
+        assert safe_filename("C:\\Windows\\evil.dll") == "evil.dll"
+
+    def test_strips_absolute_path(self):
+        assert safe_filename("/etc/shadow") == "shadow"
+
+    def test_strips_surrounding_whitespace(self):
+        assert safe_filename("  doc.txt  ") == "doc.txt"
+
+    @pytest.mark.parametrize("bad", ["", "   ", ".", "..", "../", "..\\", None])
+    def test_rejects_empty_and_dot_names(self, bad):
+        with pytest.raises(ValueError):
+            safe_filename(bad)
+
+
+# ---------------------------------------------------------------------------
+# TextChunker -- regression tests for the duplicate-tail bug (Phase 10) and
+# the no-forward-progress guard
+# ---------------------------------------------------------------------------
+
+class TestTextChunker:
+    def test_empty_text_returns_no_chunks(self):
+        assert TextChunker.chunk("") == []
+
+    def test_short_text_is_single_chunk_no_duplicate_tail(self):
+        # Pre-fix, a document shorter than chunk_size produced 2 chunks: the
+        # full text plus an overlapping duplicate of its own tail.
+        text = "A short receipt: wheels $2,400 and console $3,500."
+        chunks = TextChunker.chunk(text, chunk_size=800, chunk_overlap=150)
+        assert chunks == [text]
+
+    def test_long_text_covers_content_without_duplicate_final_chunk(self):
+        text = " ".join(f"word{i}" for i in range(1000))
+        chunks = TextChunker.chunk(text, chunk_size=200, chunk_overlap=50)
+        assert len(chunks) > 1
+        # Every chunk is real content, the last chunk is not a strict suffix
+        # duplicate of the one before it, and nothing was dropped.
+        assert all(c.strip() for c in chunks)
+        assert not chunks[-2].endswith(chunks[-1])
+        assert chunks[0].startswith("word0 ")
+        assert chunks[-1].endswith("word999")
+
+    def test_consecutive_chunks_overlap(self):
+        text = " ".join(f"word{i}" for i in range(1000))
+        chunks = TextChunker.chunk(text, chunk_size=200, chunk_overlap=50)
+        for a, b in zip(chunks, chunks[1:]):
+            # The start of each chunk repeats the tail of the previous one.
+            assert b.split()[0] in a
+
+    def test_no_infinite_loop_on_pathological_input(self):
+        # A run with no whitespace exercises the boundary-snap fallback; must
+        # terminate and still return content.
+        text = "x" * 5000
+        chunks = TextChunker.chunk(text, chunk_size=200, chunk_overlap=50)
+        assert chunks
+        assert "".join(chunks).startswith("x")
+
+
+# ---------------------------------------------------------------------------
+# SQLiteVectorStore -- write/delete invariants and hybrid search, with a
+# deterministic fake embedder (no torch)
+# ---------------------------------------------------------------------------
+
+class FakeEmbeddingEngine:
+    """Deterministic 384-dim embeddings from a seeded hash of the text, so
+    identical text always embeds identically and search is reproducible."""
+
+    def _embed(self, text):
+        rng = np.random.default_rng(abs(hash(text)) % (2**32))
+        vec = rng.standard_normal(384).astype(np.float32)
+        return vec / np.linalg.norm(vec)
+
+    def embed_chunks(self, chunks):
+        return [self._embed(c) for c in chunks]
+
+    def embed_query(self, query):
+        return self._embed(query)
+
+
+@pytest.fixture
+def store(tmp_path, monkeypatch):
+    # add_document/delete_document write physical copies to a cwd-relative
+    # stored_documents/ -- run each test inside its own temp dir.
+    monkeypatch.chdir(tmp_path)
+    return SQLiteVectorStore(db_path=str(tmp_path / "test.db"))
+
+
+@pytest.fixture
+def embedder():
+    return FakeEmbeddingEngine()
+
+
+def _counts(db_path):
+    conn = sqlite3.connect(db_path)
+    try:
+        docs = conn.execute("SELECT COUNT(*) FROM documents").fetchone()[0]
+        parents = conn.execute("SELECT COUNT(*) FROM parent_chunks").fetchone()[0]
+        children = conn.execute("SELECT COUNT(*) FROM child_chunks").fetchone()[0]
+        fts = conn.execute("SELECT COUNT(*) FROM parent_chunks_fts").fetchone()[0]
+        orphan_parents = conn.execute(
+            "SELECT COUNT(*) FROM parent_chunks WHERE document_id NOT IN (SELECT id FROM documents)"
+        ).fetchone()[0]
+        orphan_children = conn.execute(
+            "SELECT COUNT(*) FROM child_chunks WHERE parent_id NOT IN (SELECT id FROM parent_chunks)"
+        ).fetchone()[0]
+    finally:
+        conn.close()
+    return {
+        "docs": docs, "parents": parents, "children": children, "fts": fts,
+        "orphan_parents": orphan_parents, "orphan_children": orphan_children,
+    }
+
+
+LABOR_TEXT = (
+    "Regional labor rate schedule 2026. The maximum allowed mechanical labor "
+    "rate for Nevada is $110 per hour. Sheet metal repair is capped at $62 "
+    "per hour and refinishing at $62 per hour statewide."
+)
+GLASS_TEXT = (
+    "Zero-deductible glass endorsement. Windshield replacement with OEM spec "
+    "glass waives the comprehensive deductible entirely for safety glass."
+)
+
+
+class TestSQLiteVectorStore:
+    def test_add_document_indexes_chunks_and_fts(self, store, embedder):
+        store.add_document("labor.txt", "txt", 100, LABOR_TEXT, embedder)
+        c = _counts(store.db_path)
+        assert c["docs"] == 1
+        assert c["parents"] >= 1
+        assert c["children"] >= 1
+        assert c["fts"] == c["parents"]
+
+    def test_delete_document_cascades_no_orphans(self, store, embedder):
+        # Regression: PRAGMA foreign_keys defaults OFF per-connection, so ON
+        # DELETE CASCADE silently never fired until _connect() enabled it --
+        # deletes left orphaned parent/child chunk rows behind.
+        store.add_document("labor.txt", "txt", 100, LABOR_TEXT, embedder)
+        store.add_document("glass.txt", "txt", 100, GLASS_TEXT, embedder)
+        assert store.delete_document("labor.txt") is True
+        c = _counts(store.db_path)
+        assert c["docs"] == 1
+        assert c["orphan_parents"] == 0
+        assert c["orphan_children"] == 0
+        assert c["fts"] == c["parents"]
+
+    def test_overwrite_same_filename_does_not_leak_chunks(self, store, embedder):
+        store.add_document("labor.txt", "txt", 100, LABOR_TEXT, embedder)
+        before = _counts(store.db_path)
+        store.add_document("labor.txt", "txt", 100, LABOR_TEXT, embedder)
+        after = _counts(store.db_path)
+        assert after == before
+
+    def test_add_document_sanitizes_traversal_filename(self, store, embedder):
+        store.add_document("../../evil.txt", "txt", 100, LABOR_TEXT, embedder)
+        docs = store.get_all_documents()
+        assert [d["filename"] for d in docs] == ["evil.txt"]
+
+    def test_hybrid_search_returns_results_with_expected_shape(self, store, embedder):
+        store.add_document("labor.txt", "txt", 100, LABOR_TEXT, embedder)
+        store.add_document("glass.txt", "txt", 100, GLASS_TEXT, embedder)
+        q = "mechanical labor rate cap Nevada"
+        results = store.search_similarity(embedder.embed_query(q), q, top_k=2)
+        assert results
+        assert {"content", "filename", "file_type", "score"} <= set(results[0])
+
+    def test_fts_keyword_leg_surfaces_exact_term_match(self, store, embedder):
+        # The fake embedder is semantically blind (hash-based), so an exact
+        # keyword hit landing in the results proves the FTS5 leg + RRF fusion
+        # is doing the work.
+        store.add_document("labor.txt", "txt", 100, LABOR_TEXT, embedder)
+        store.add_document("glass.txt", "txt", 100, GLASS_TEXT, embedder)
+        q = "windshield glass deductible"
+        results = store.search_similarity(embedder.embed_query(q), q, top_k=2)
+        assert "glass.txt" in [r["filename"] for r in results]
+
+    def test_search_after_delete_serves_fresh_results(self, store, embedder):
+        # Regression guard for the vector-cache invalidation constraint.
+        store.add_document("labor.txt", "txt", 100, LABOR_TEXT, embedder)
+        q = "labor rate"
+        assert store.search_similarity(embedder.embed_query(q), q, top_k=4)
+        store.delete_document("labor.txt")
+        assert store.search_similarity(embedder.embed_query(q), q, top_k=4) == []
+
+    def test_claim_scoping_isolates_claims(self, store, embedder):
+        store.add_document("global.txt", "txt", 100, LABOR_TEXT, embedder)
+        store.add_document("receipt.txt", "txt", 100, GLASS_TEXT, embedder,
+                           claim_id="#2026-1")
+        q = "windshield glass deductible"
+        emb = embedder.embed_query(q)
+        other_claim = store.search_similarity(emb, q, claim_id="#2026-2", top_k=10)
+        assert "receipt.txt" not in [r["filename"] for r in other_claim]
+        own_claim = store.search_similarity(emb, q, claim_id="#2026-1", top_k=10)
+        assert "receipt.txt" in [r["filename"] for r in own_claim]
+
+    def test_get_claim_chunks_returns_all_chunks_with_sentinel_score(self, store, embedder):
+        store.add_document("receipt.txt", "txt", 100, GLASS_TEXT, embedder,
+                           claim_id="#2026-1")
+        chunks = store.get_claim_chunks("#2026-1")
+        assert chunks
+        assert all(ch["score"] == 1.0 for ch in chunks)
+        assert store.get_claim_chunks("#2026-nope") == []

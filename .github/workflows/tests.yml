@@ -1,0 +1,29 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  pytest:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # The unit tests are deliberately torch-free (EmbeddingEngine and
+      # RerankingEngine import sentence-transformers lazily), so CI installs
+      # only the light dependencies rather than the full ML stack.
+      - name: Install test dependencies
+        run: pip install numpy pypdf python-docx pandas openpyxl requests pytest
+
+      - name: Run unit tests
+        run: pytest tests/ -v
