@@ -9,6 +9,8 @@ A local-first, agentic RAG system for auto insurance claims handling — built t
 
 *Live demo: selecting a theft claim, then running an "OEM Parts Rider" audit. The agentic router plans sub-queries, retrieves from both global policy documents and the claim's own dossier (police report, parts receipts), and a fully local 14B model synthesizes a grounded, per-line-item answer with clickable source citations.*
 
+**Jump to:** [Why this exists](#why-this-exists) · [What it does](#what-it-does) · [FAQ (plain English)](#faq-plain-english) · [Architecture](#architecture) · [Evaluation](#evaluation--because-it-looks-right-isnt-good-enough) · [Try it locally](#try-it-locally) · [Known limitations](#known-limitations) · [Tech stack](#tech-stack)
+
 ## Why this exists
 
 Claims handlers spend a meaningful share of every day hunting through scattered PDFs, spreadsheets, and adjuster guides for the one fact that resolves a claim — a labor rate cap, an exclusion clause, a rider's eligibility window. AutoClaimsRAG was built by an insurance claims/appraisal professional with 17 years in the industry, so the evaluation and design decisions are shaped by what real adjusting judgment calls look like: exclusion stacking, regional rate caps, SIU fraud patterns, endorsement math, subrogation eligibility.
@@ -21,6 +23,22 @@ Everything in this repo runs on synthetic, generated seed data — no proprietar
 - Per-claim document scoping — upload a claim's own dossier (police report, telematics, shop estimates) and query it alongside global policy documents in the same conversation
 - An agentic router that plans multi-step retrieval, self-corrects when the first pass comes back empty, and **refuses to answer rather than let the model fabricate one** when nothing relevant was found
 - Runs entirely locally: embedding, reranking, vector search, and generation (via LM Studio) all execute on-device — no document content or query ever leaves the machine
+
+## FAQ (plain English)
+
+**What's "RAG"?** Instead of asking an AI chatbot to answer from what it memorized during training (which it can get subtly wrong or make up entirely), the system first searches your own documents for the relevant passages, then hands *those exact passages* to the AI and says "answer using only this." The answer comes with clickable citations back to the source file, so a claims handler can verify it in seconds instead of trusting it blindly.
+
+**What does "agentic" mean here?** It doesn't just do one search and hope for the best. For "does this claim exceed the coverage cap," it plans what to look up (the endorsement terms *and* the claim's own receipt), runs both searches, checks whether it found anything useful, retries with a reworded search if not, and only then writes an answer. That plan → check → retry loop is what "agentic" means, versus a single input/output round trip.
+
+**Does this send my data to OpenAI or the cloud?** No. The AI model, the document search, and the "read the document and score its own answer" evaluation step all run on the same machine, using free open-source models. Nothing is uploaded anywhere. That's a deliberate design constraint, not a limitation — insurance claim files are sensitive, so a real deployment can't depend on shipping them to a third party.
+
+**What happens if it doesn't know the answer?** It says so, instead of guessing. Most chatbots will confidently invent a plausible-sounding answer (and a plausible-sounding, nonexistent source) rather than admit they found nothing. This system checks first — if the search comes back empty, it refuses to answer rather than fabricate one. That refusal path is tested directly in the evaluation results below (see the "hallucination probe" query).
+
+**Is this connected to any real insurance company's systems or data?** No. Every document, claim, and policy number in this repo is synthetic — generated for this project, not pulled from any real claim file or company database. It was built independently, on personal time, using publicly available tools and made-up data, specifically to be shareable as a portfolio piece without touching anything confidential.
+
+**Could an insurance company actually use something like this?** As a proof of concept, yes — the retrieval and reasoning approach is sound and measured, not hand-waved. As-is, no: it's a single-user local tool with no login system, no support for multiple people editing the same database at once, and a small demo set of documents. See [Scaling considerations](#scaling-considerations) and [Known limitations](#known-limitations) for exactly what would need to change to go from "working demo" to "production system."
+
+**Why build this instead of just pasting policy PDFs into ChatGPT?** Privacy is one reason — real claim files shouldn't go through a cloud chatbot. The bigger one: pasting one document at a time doesn't scale past a handful of files, can't scope a search to "just this claim's paperwork," doesn't cite which exact passage an answer came from, and is never *measured* for how often it's actually right (see [Evaluation](#evaluation--because-it-looks-right-isnt-good-enough)) — it just *looks* convincing.
 
 ## Architecture
 
