@@ -138,4 +138,4 @@ FastAPI · SQLite (custom hybrid vector + FTS5 store) · sentence-transformers (
 
 ## About
 
-Built independently by [Jared Fisher](https://www.linkedin.com/in/jaredf-17680b7a) — 17 years in auto insurance claims and appraisal — as a demonstration of applying domain expertise directly to RAG and agentic AI system design, evaluation, and debugging.
+Built independently by [Jared Fisher](https://www.linkedin.com/in/jared-f-17680b7a) — 17 years in auto insurance claims and appraisal — as a demonstration of applying domain expertise directly to RAG and agentic AI system design, evaluation, and debugging.
