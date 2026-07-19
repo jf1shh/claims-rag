@@ -1,6 +1,13 @@
 # AutoClaimsRAG
 
+[![tests](https://github.com/jf1shh/auto-claims-rag/actions/workflows/tests.yml/badge.svg)](https://github.com/jf1shh/auto-claims-rag/actions/workflows/tests.yml)
+[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 A local-first, agentic RAG system for auto insurance claims handling — built to show what happens when domain expertise and modern retrieval/agentic AI techniques compound instead of substitute for each other.
+
+![AutoClaimsRAG demo — selecting a theft claim and running an OEM parts rider audit against a local LM Studio model](assets/demo.gif)
+
+*Live demo: selecting a theft claim, then running an "OEM Parts Rider" audit. The agentic router plans sub-queries, retrieves from both global policy documents and the claim's own dossier (police report, parts receipts), and a fully local 14B model synthesizes a grounded, per-line-item answer with clickable source citations.*
 
 ## Why this exists
 
@@ -64,12 +71,12 @@ This architecture is built for one adjuster's local corpus — hundreds of docum
 |---|---|---|---|
 | Context Precision | Retrieved chunks are actually relevant | 0.775 | 0.833 |
 | Context Recall | Nothing relevant was missed | 0.882 | 0.916 |
-| Faithfulness | Answer is grounded in retrieved context | — | 0.875 |
-| Factual Correctness | Answer covers what the verified reference requires | — | 0.695 |
+| Faithfulness | Answer is grounded in retrieved context | — | 0.845 |
+| Factual Correctness | Answer covers what the verified reference requires | — | 0.686 |
 
 ![Evaluation results chart](assets/eval_results.png)
 
-**What stood out**: hybrid clearly wins on claim-scoped queries where naive vector search misses a source entirely (e.g. a shop-estimate document, 0.0→1.0 recall), and is reported honestly where it's *worse* (two queries where naive actually beat it — no cherry-picking). The most interesting result wasn't a hybrid-vs-naive story at all: one query needs two documents surfaced together (an endorsement cap *and* a claim's own receipt total), which single-shot retrieval never manages in either mode — that's the exact reason the agentic planner's guaranteed dossier-inclusion exists, and scored against the real pipeline it hits 1.0 Factual Correctness despite 0.0/0.0 on the isolated retrieval endpoint. The 18-point Faithfulness/Correctness gap is the metric doing its job: the same answers, judged two different ways, showing where "grounded" and "complete" diverge.
+**What stood out**: hybrid clearly wins on claim-scoped queries where naive vector search misses a source entirely (e.g. a shop-estimate document, 0.0→1.0 recall), and is reported honestly where it's *worse* (two queries where naive actually beat it — no cherry-picking). The most interesting result wasn't a hybrid-vs-naive story at all: one query needs two documents surfaced together (an endorsement cap *and* a claim's own receipt total), which single-shot retrieval never manages in either mode — that's the exact reason the agentic planner's guaranteed dossier-inclusion exists, and scored against the real pipeline it hits 1.0 Factual Correctness despite 0.0/0.0 on the isolated retrieval endpoint. The ~16-point Faithfulness/Correctness gap is the metric doing its job: the same answers, judged two different ways, showing where "grounded" and "complete" diverge.
 
 ### Bugs this eval harness actually found and fixed
 
@@ -106,7 +113,6 @@ Without an LM Studio server running, the app falls back to a rule-based simulati
 - **Faithfulness measures groundedness, not correctness** — an answer can be fully faithful to partial context and still be wrong. Factual Correctness closes this by scoring against a verified reference instead.
 - Context Precision/Recall reflect single-shot retrieval via a debug endpoint, not the full pipeline's guaranteed claim-document inclusion; Factual Correctness *is* scored against the real `/api/chat` pipeline.
 - Both LLM-judged metrics are bounded by a local 14B judge's own reasoning quality (a deliberate local-only tradeoff) and show real run-to-run variance — treat single-run scores as noisy, trust trends across reruns.
-- Demo claim fixtures are currently duplicated between backend and frontend rather than served from a single source of truth.
 
 ## Tech stack
 
