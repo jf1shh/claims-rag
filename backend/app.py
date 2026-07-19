@@ -51,14 +51,10 @@ class ChatRequest(BaseModel):
 class DeleteRequest(BaseModel):
     filename: str
 
-def check_service_status(url: str) -> bool:
-    try:
-        response = requests.get(url, timeout=1.5)
-        return response.status_code == 200
-    except requests.RequestException:
-        return False
-
-def get_loaded_models(url: str) -> List[str]:
+def get_loaded_models(url: str) -> Optional[List[str]]:
+    """Returns the loaded model ids, or None if LM Studio is unreachable.
+    None-vs-empty-list distinguishes 'server down' from 'server up with no
+    model loaded', so the status check needs only this single round-trip."""
     try:
         response = requests.get(f"{url}/v1/models", timeout=1.5)
         if response.status_code == 200:
@@ -66,15 +62,15 @@ def get_loaded_models(url: str) -> List[str]:
             return [m["id"] for m in data.get("data", [])]
     except requests.RequestException:
         pass
-            
-    return []
+    return None
 
 @app.get("/api/status")
 def get_status():
     """Checks the status of the local LLM servers."""
-    lm_studio_active = check_service_status("http://127.0.0.1:1234/v1/models")
-    lm_studio_models = get_loaded_models("http://127.0.0.1:1234") if lm_studio_active else []
-    
+    lm_studio_models = get_loaded_models("http://127.0.0.1:1234")
+    lm_studio_active = lm_studio_models is not None
+    lm_studio_models = lm_studio_models or []
+
     return {
         "lm_studio": {
             "active": lm_studio_active,
@@ -149,6 +145,10 @@ async def upload_document(file: UploadFile = File(...)):
                 "db_storage_ms": round(db_time, 1)
             }
         }
+    except HTTPException:
+        # Deliberate 4xx responses (empty document, etc.) must not be
+        # re-wrapped by the generic handler below into a 500.
+        raise
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -205,6 +205,8 @@ async def upload_claim_document(claim_id: str = Form(...), file: UploadFile = Fi
                 "db_storage_ms": round(db_time, 1)
             }
         }
+    except HTTPException:
+        raise
     except Exception as e:
         import traceback
         traceback.print_exc()

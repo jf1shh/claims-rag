@@ -17,8 +17,8 @@ import matplotlib.pyplot as plt
 # CLAUDE.md's Debugging History / Build Plan, kept here only for the chart's
 # trend line. Update this tuple by hand if a future session adds another
 # fix-driven Faithfulness data point worth showing.
-FAITHFULNESS_HISTORY = [0.735, 0.811, 0.854]
-FAITHFULNESS_HISTORY_LABELS = ["initial", "dossier-scoring fix", "corpus rebuild"]
+FAITHFULNESS_HISTORY = [0.735, 0.811, 0.854, 0.875]
+FAITHFULNESS_HISTORY_LABELS = ["initial", "dossier-scoring fix", "corpus rebuild", "+ correctness metric"]
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -28,7 +28,7 @@ def main():
     summary = json.loads(results_path.read_text(encoding="utf-8"))["summary"]
 
     faithfulness_trend = FAITHFULNESS_HISTORY + [summary["faithfulness_avg"]]
-    faithfulness_labels = FAITHFULNESS_HISTORY_LABELS + ["+ correctness metric"]
+    faithfulness_labels = FAITHFULNESS_HISTORY_LABELS + ["fts-rank fix rerun"]
 
     fig, axes = plt.subplots(1, 3, figsize=(15, 4.5))
     fig.suptitle("AutoClaimsRAG Evaluation Results (19 golden queries, local LM Studio judge)", fontsize=12)

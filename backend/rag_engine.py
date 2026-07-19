@@ -164,9 +164,14 @@ class RerankingEngine:
         
         pairs = [(query, p["content"]) for p in passages]
         scores = self.model.predict(pairs, show_progress_bar=False)
-        
+
         for idx, score in enumerate(scores):
-            passages[idx]["rerank_score"] = float(score)
+            # The cross-encoder emits raw logits (unbounded, often >1), but
+            # every consumer treats scores as 0-1 relevance (the UI renders
+            # them as percentages -- raw logits displayed as "386% similarity").
+            # Sigmoid squashes to 0-1 and is monotonic, so ranking order is
+            # unchanged everywhere.
+            passages[idx]["rerank_score"] = float(1.0 / (1.0 + np.exp(-score)))
             
         passages.sort(key=lambda x: x["rerank_score"], reverse=True)
         return passages[:top_k]
@@ -182,13 +187,24 @@ class SQLiteVectorStore:
         self._vector_cache = None
         self._init_db()
 
+    def _connect(self):
+        """Opens a connection with foreign-key enforcement enabled. SQLite
+        ships with PRAGMA foreign_keys OFF per-connection, so the schema's ON
+        DELETE CASCADE clauses silently never fire on a raw connect() --
+        deleting a document orphaned its parent/child chunk rows instead of
+        cascading (verified empirically). Every connection in this class must
+        go through here."""
+        conn = sqlite3.connect(self.db_path)  # sole raw connect in this class
+        conn.execute("PRAGMA foreign_keys = ON")
+        return conn
+
     def _invalidate_vector_cache(self):
         self._vector_cache = None
 
     def _build_vector_cache(self):
         """Loads all child embeddings once, L2-normalizes them, and caches the
         matrix plus parallel metadata arrays for fast masked cosine search."""
-        conn = sqlite3.connect(self.db_path)
+        conn = self._connect()
         cursor = conn.cursor()
         cursor.execute("""
             SELECT c.embedding, p.content, d.filename, d.file_type, p.id, d.claim_id
@@ -231,7 +247,7 @@ class SQLiteVectorStore:
         return self._vector_cache
 
     def _init_db(self):
-        conn = sqlite3.connect(self.db_path)
+        conn = self._connect()
         cursor = conn.cursor()
         
         # Documents table (with claim_id tag)
@@ -285,7 +301,7 @@ class SQLiteVectorStore:
         filename = safe_filename(filename)
         os.makedirs("stored_documents", exist_ok=True)
 
-        conn = sqlite3.connect(self.db_path)
+        conn = self._connect()
         cursor = conn.cursor()
         
         try:
@@ -370,7 +386,7 @@ class SQLiteVectorStore:
     def delete_document(self, filename):
         """Deletes a document and cascade deletes its chunks and FTS index."""
         filename = safe_filename(filename)
-        conn = sqlite3.connect(self.db_path)
+        conn = self._connect()
         cursor = conn.cursor()
         try:
             cursor.execute("SELECT id FROM documents WHERE filename = ?", (filename,))
@@ -403,7 +419,7 @@ class SQLiteVectorStore:
 
     def get_all_documents(self):
         """Returns list of all uploaded global reference documents (claim_id is NULL)."""
-        conn = sqlite3.connect(self.db_path)
+        conn = self._connect()
         cursor = conn.cursor()
         cursor.execute("SELECT filename, file_type, file_size, uploaded_at FROM documents WHERE claim_id IS NULL ORDER BY uploaded_at DESC")
         rows = cursor.fetchall()
@@ -420,7 +436,7 @@ class SQLiteVectorStore:
 
     def get_claim_documents(self, claim_id):
         """Returns list of all documents attached to a specific claim."""
-        conn = sqlite3.connect(self.db_path)
+        conn = self._connect()
         cursor = conn.cursor()
         cursor.execute("SELECT filename, file_type, file_size, uploaded_at FROM documents WHERE claim_id = ? ORDER BY uploaded_at DESC", (claim_id,))
         rows = cursor.fetchall()
@@ -447,7 +463,7 @@ class SQLiteVectorStore:
         receipt/report, silently dropping the one fact that actually answers
         a claim-specific question (multi-hop math queries especially).
         """
-        conn = sqlite3.connect(self.db_path)
+        conn = self._connect()
         cursor = conn.cursor()
         cursor.execute("""
             SELECT p.content, d.filename, d.file_type
@@ -472,7 +488,7 @@ class SQLiteVectorStore:
         use_fts=False skips keyword search/RRF entirely and returns pure vector-only
         results, used by the eval harness to produce a naive baseline for comparison.
         """
-        conn = sqlite3.connect(self.db_path)
+        conn = self._connect()
         cursor = conn.cursor()
 
         # --- 1. Vector Search (Child Chunks) Scoped by claim_id ---
@@ -531,6 +547,10 @@ class SQLiteVectorStore:
         clean_query = " ".join([t for t in query_text.split() if t.isalnum()])
         if use_fts and clean_query:
             try:
+                # ORDER BY rank (bm25) is load-bearing: RRF below scores each
+                # list by rank position, and without it FTS5 returns rows in
+                # rowid (insertion) order -- arbitrary ranks for fusion, and
+                # LIMIT truncating by age rather than relevance.
                 cursor.execute("""
                     SELECT p.content, d.filename, d.file_type, p.id
                     FROM parent_chunks p
@@ -538,6 +558,7 @@ class SQLiteVectorStore:
                     JOIN parent_chunks_fts f ON p.id = f.rowid
                     WHERE (d.claim_id IS NULL OR d.claim_id = ?)
                       AND parent_chunks_fts MATCH ?
+                    ORDER BY rank
                     LIMIT 40
                 """, (claim_id, clean_query))
                 fts_rows = cursor.fetchall()

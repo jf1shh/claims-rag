@@ -6,9 +6,9 @@
     "naive_recall_avg": 0.882,
     "hybrid_precision_avg": 0.833,
     "hybrid_recall_avg": 0.916,
-    "faithfulness_avg": 0.875,
-    "correctness_avg": 0.695,
-    "elapsed_seconds": 3432.2
+    "faithfulness_avg": 0.845,
+    "correctness_avg": 0.686,
+    "elapsed_seconds": 3388.2
   },
   "results": [
     {
@@ -42,8 +42,8 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.99999999995,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.782608695652174,
-      "correctness": 0.33,
+      "faithfulness": 1.0,
+      "correctness": 0.6,
       "naive_top_filenames": [
         "SOP_Auto_Repair_Labor_Rates.pdf",
         "Regional_Labor_Rates_2026.xlsx",
@@ -66,7 +66,7 @@
       "hybrid_precision": 0.9999999999,
       "hybrid_recall": 1.0,
       "faithfulness": 1.0,
-      "correctness": 0.67,
+      "correctness": 0.83,
       "naive_top_filenames": [
         "DUI_Exclusion_Directive.txt",
         "Rider_Roadside_Assistance_Plus.pdf",
@@ -111,7 +111,7 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.9999999999,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.8333333333333334,
+      "faithfulness": 0.8888888888888888,
       "correctness": 1.0,
       "naive_top_filenames": [
         "Endorsement_Custom_Audio_Visual.docx",
@@ -157,8 +157,8 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.9999999999,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.8333333333333334,
-      "correctness": 1.0,
+      "faithfulness": 0.6666666666666666,
+      "correctness": 0.67,
       "naive_top_filenames": [
         "Endorsement_Rental_Car_Upgrade.docx",
         "Endorsement_Roadside_Emergency_Premium.docx",
@@ -180,7 +180,7 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.9999999999,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.7777777777777778,
+      "faithfulness": 1.0,
       "correctness": 1.0,
       "naive_top_filenames": [
         "Adjuster_Guide_Rollover_Claims.docx",
@@ -203,8 +203,8 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.9999999999,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.8571428571428571,
-      "correctness": 0.67,
+      "faithfulness": 0.8333333333333334,
+      "correctness": 0.75,
       "naive_top_filenames": [
         "SOP_Claims_Fraud_Red_Flags.pdf",
         "SOP_Claims_Fraud_Red_Flags.pdf",
@@ -226,7 +226,7 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.9999999999,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.8333333333333334,
+      "faithfulness": 0.5,
       "correctness": 0.5,
       "naive_top_filenames": [
         "California_Auto_Claims_Regulations.pdf",
@@ -272,8 +272,8 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.999999999975,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.875,
-      "correctness": 0.67,
+      "faithfulness": 0.6666666666666666,
+      "correctness": 0.8,
       "naive_top_filenames": [
         "Case_Study_Hail_Damage_PlanA.pdf",
         "Auto_Deductibles_And_Limits.xlsx",
@@ -295,8 +295,8 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.249999999975,
       "hybrid_recall": 1.0,
-      "faithfulness": 1.0,
-      "correctness": 0.8,
+      "faithfulness": 0.9411764705882353,
+      "correctness": 0.0,
       "naive_top_filenames": [
         "shop_email_thread_Sterling.pdf",
         "SOP_Auto_Repair_Labor_Rates.pdf",
@@ -318,8 +318,8 @@
       "naive_recall": 0.0,
       "hybrid_precision": 0.9999999999,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.9473684210526315,
-      "correctness": 0.67,
+      "faithfulness": 0.7777777777777778,
+      "correctness": 0.5,
       "naive_top_filenames": [
         "Case_Study_Stolen_Honda_Civic.pdf",
         "SOP_Auto_Repair_Labor_Rates.pdf",
@@ -341,8 +341,8 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.49999999995,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.9,
-      "correctness": 0.8,
+      "faithfulness": 0.6923076923076923,
+      "correctness": 0.6,
       "naive_top_filenames": [
         "Case_Study_Hail_Damage_PlanA.pdf",
         "dent_photos_description_Jenkins.pdf",
@@ -364,7 +364,7 @@
       "naive_recall": 0.0,
       "hybrid_precision": 0.0,
       "hybrid_recall": 0.0,
-      "faithfulness": 0.6923076923076923,
+      "faithfulness": 0.9166666666666666,
       "correctness": 1.0,
       "naive_top_filenames": [
         "Endorsement_Custom_Audio_Visual.docx",
@@ -387,8 +387,8 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.9999999999,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.8571428571428571,
-      "correctness": 0.0,
+      "faithfulness": 0.75,
+      "correctness": 0.67,
       "naive_top_filenames": [
         "civic_smashed_window.png",
         "police_theft_report_Chen.pdf",
@@ -411,7 +411,7 @@
       "hybrid_precision": 0.7499999999625,
       "hybrid_recall": 0.4,
       "faithfulness": 1.0,
-      "correctness": 0.62,
+      "correctness": 0.44,
       "naive_top_filenames": [
         "Case_Study_Engine_Hydro_Lock.pdf",
         "Adjuster_Guide_Rollover_Claims.docx",
@@ -434,7 +434,7 @@
       "hybrid_precision": 0.499999999975,
       "hybrid_recall": 1.0,
       "faithfulness": 1.0,
-      "correctness": 0.8,
+      "correctness": 1.0,
       "naive_top_filenames": [
         "DUI_Exclusion_Directive.txt",
         "Case_Study_Underinsured_Motorist.pdf",

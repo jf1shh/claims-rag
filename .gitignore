@@ -49,6 +49,10 @@ stored_documents/
 *.sln
 *.sw?
 
+# Unrelated projects living in this working directory -- must never be
+# committed to this (public) portfolio repo
+Restaurant App/
+
 # OS Files
 .DS_Store
 Thumbs.db

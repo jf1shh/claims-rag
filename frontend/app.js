@@ -108,19 +108,28 @@ function setupEngineSelection() {
 }
 
 // Check Backend Status (LM Studio, DB)
+// Tracks the last observed LM Studio state so the 10-second poll only
+// switches engines / writes a trace log when availability actually changes.
+// Reacting on every poll spammed the trace log and silently stomped a
+// manually-selected engine every 10 seconds.
+let lastLmStudioActive = null;
+
 async function checkBackendStatus() {
     try {
         const response = await fetch('/api/status');
         if (!response.ok) throw new Error('Status endpoint failed');
-        
+
         backendStatus = await response.json();
-        
-        const lmStudioActive = backendStatus && backendStatus.lm_studio && backendStatus.lm_studio.active;
+
+        const lmStudioActive = !!(backendStatus && backendStatus.lm_studio && backendStatus.lm_studio.active);
         const lmStudioModels = (backendStatus && backendStatus.lm_studio && backendStatus.lm_studio.models) || [];
-        
+
         updateStatusIndicator('lmstudio', lmStudioActive, lmStudioModels);
-        
-        // Auto select best available engine
+
+        if (lmStudioActive === lastLmStudioActive) return;
+        lastLmStudioActive = lmStudioActive;
+
+        // Auto select best available engine (on availability change only)
         if (lmStudioActive) {
             currentEngine = 'lm-studio';
             const radioEl = document.querySelector('input[name="llm-engine"][value="lm-studio"]');
@@ -134,8 +143,11 @@ async function checkBackendStatus() {
         }
     } catch (error) {
         console.error('Error fetching backend status:', error);
-        logSystemEvent('Error connecting to FastAPI backend API', 'error');
         updateStatusIndicator('lmstudio', false, []);
+        if (lastLmStudioActive !== false) {
+            lastLmStudioActive = false;
+            logSystemEvent('Error connecting to FastAPI backend API', 'error');
+        }
     }
 }
 
@@ -239,9 +251,7 @@ async function handleFileUpload(file) {
         uploadProgressStatus.innerText = 'Indexing complete!';
         
         logSystemEvent(`Document parsed successfully in ${result.steps.parsing_ms}ms`, 'success');
-        logSystemEvent(`Split into ${result.chunks_count} overlapping semantic chunks in ${result.steps.chunking_ms}ms`, 'success');
-        logSystemEvent(`Generated 384-dimensional embeddings via SentenceTransformers in ${result.steps.embedding_ms}ms`, 'success');
-        logSystemEvent(`Stored chunk mappings in SQLite vector store database in ${result.steps.db_storage_ms}ms`, 'success');
+        logSystemEvent(`Chunked, embedded, and stored ${result.chunks_count} parent chunk(s) in SQLite vector store in ${result.steps.db_storage_ms}ms`, 'success');
         logSystemEvent(`Ingestion complete for ${file.name}. Total time: ${result.total_time_ms}ms`, 'success');
         
         setTimeout(() => {

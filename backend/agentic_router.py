@@ -230,7 +230,7 @@ class AgenticRAGRouter:
         if claim_id:
             claim_chunks = vector_store.get_claim_chunks(claim_id)
             if claim_chunks:
-                logs.append(f"📁 [Tool Exec] Loaded {len(claim_chunks)} chunk(s) from claim #{claim_id}'s own documents (guaranteed, unranked).")
+                logs.append(f"📁 [Tool Exec] Loaded {len(claim_chunks)} chunk(s) from claim {claim_id}'s own documents (guaranteed, unranked).")
 
         # Step 3: Self-Correction / Query Translation Loop
         #
@@ -284,7 +284,7 @@ class AgenticRAGRouter:
             logs.append(f"✅ [Agentic Coordinator] Completed reasoning cycle in {elapsed:.1f}ms")
             return {
                 "answer": "I couldn't find any supporting documents for this question in the available guidelines"
-                           + (f" or claim #{claim_id} dossier" if claim_id else "") + ". "
+                           + (f" or claim {claim_id} dossier" if claim_id else "") + ". "
                            "Please rephrase the question or confirm the relevant policy/claim documents have been uploaded.",
                 "sources": [],
                 "claim_dossier": None,
@@ -337,7 +337,10 @@ class AgenticRAGRouter:
                 "max_tokens": 1000
             }
             
-            response = requests.post(url, json=payload, headers=headers, timeout=45)
+            # 14B-class models on consumer hardware routinely need 40-90s for
+            # a long claim-scoped synthesis; 45s was silently tripping the
+            # simulated-mode fallback on heavier prompts.
+            response = requests.post(url, json=payload, headers=headers, timeout=120)
             if response.status_code == 200:
                 answer = response.json()["choices"][0]["message"]["content"]
             else:
@@ -409,10 +412,25 @@ class AgenticRAGRouter:
                     text = text.split("```json")[1].split("```")[0].strip()
                 elif "```" in text:
                     text = text.split("```")[1].split("```")[0].strip()
-                return json.loads(text)
+                parsed = json.loads(text)
+                # The plan comes from a small local model -- valid JSON with
+                # missing/mistyped keys is common, and callers index the plan
+                # dict directly, so every field is coerced to the expected
+                # shape here (falling back per-field) rather than trusting it.
+                if isinstance(parsed, dict):
+                    sub_queries = parsed.get("sub_queries")
+                    if not (isinstance(sub_queries, list)
+                            and sub_queries
+                            and all(isinstance(q, str) and q.strip() for q in sub_queries)):
+                        sub_queries = [query_text]
+                    return {
+                        "needs_global_policies": bool(parsed.get("needs_global_policies", True)),
+                        "needs_claim_dossier": bool(parsed.get("needs_claim_dossier", bool(claim_id))),
+                        "sub_queries": sub_queries[:3],
+                    }
         except Exception:
             pass
-            
+
         return fallback_plan
 
     def _run_simulated_agent(
@@ -793,8 +811,7 @@ class AgenticRAGRouter:
                 answer_parts.append(f"- **{m['filename']}**: \"{m['content'][:300]}...\"\n")
                 
         answer = "\n".join(answer_parts)
-        
-        time.sleep(1.0) # Simulate planning cycles
+
         elapsed = (time.time() - start_time) * 1000
         logs.append(f"✅ [Agentic Coordinator] Completed reasoning cycle in {elapsed:.1f}ms")
         
