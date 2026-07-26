@@ -50,6 +50,15 @@ class TestSafeFilename:
         with pytest.raises(ValueError):
             safe_filename(bad)
 
+    # A path that is nothing but separators has no filename component at all:
+    # basename() returns "" rather than a dot-name, so it exercises a
+    # different branch of the guard than the cases above. Platform-neutral --
+    # "/" is a separator everywhere.
+    @pytest.mark.parametrize("bad", ["/", "/etc/", "   /   "])
+    def test_rejects_paths_with_no_filename_component(self, bad):
+        with pytest.raises(ValueError):
+            safe_filename(bad)
+
 
 # ---------------------------------------------------------------------------
 # TextChunker -- regression tests for the duplicate-tail bug (Phase 10) and
