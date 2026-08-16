@@ -725,16 +725,28 @@ function setupClaimsCases() {
         const li = document.createElement('li');
         li.className = `claims-list-item ${c.id === activeCase.id ? 'active' : ''}`;
         li.setAttribute('data-id', c.id);
-        
+
         li.innerHTML = `
             <div class="case-meta">
-                <span class="case-id">${c.id}</span>
-                <span class="case-status ${c.statusClass}">${c.status}</span>
+                <span class="case-id"></span>
+                <span class="case-status"></span>
             </div>
-            <span class="case-name">${c.insured}</span>
-            <span class="case-vehicle">${c.vehicle}</span>
+            <span class="case-name"></span>
+            <span class="case-vehicle"></span>
         `;
-        
+
+        // Claim fields come from a fetched API response (/api/claims), not a
+        // string template literal -- set via textContent/classList, never
+        // interpolated into innerHTML, so a future claim source that isn't a
+        // hardcoded backend constant can't inject markup here (same fix
+        // already applied to document filenames elsewhere in this file).
+        li.querySelector('.case-id').textContent = c.id;
+        const statusEl = li.querySelector('.case-status');
+        statusEl.textContent = c.status;
+        statusEl.classList.add(c.statusClass);
+        li.querySelector('.case-name').textContent = c.insured;
+        li.querySelector('.case-vehicle').textContent = c.vehicle;
+
         li.addEventListener('click', () => {
             document.querySelectorAll('.claims-list-item').forEach(el => el.classList.remove('active'));
             li.classList.add('active');
@@ -783,17 +795,34 @@ function loadCaseFolder(c) {
         claimPolicyEndorsements.appendChild(span);
     });
     
-    // Update Estimate Table Items
+    // Update Estimate Table Items. Built as real DOM nodes with textContent
+    // (not a string-interpolated innerHTML template) for the same reason as
+    // the claim list cards above -- these fields come from a fetched API
+    // response, not a trusted literal.
     claimEstimateBody.innerHTML = '';
     c.estimate.forEach(row => {
         const tr = document.createElement('tr');
-        tr.innerHTML = `
-            <td><strong>${row.cat}</strong></td>
-            <td>${row.op}</td>
-            <td>${row.rate}</td>
-            <td>${row.qty}</td>
-            <td><strong>${row.total}</strong></td>
-        `;
+
+        const catCell = document.createElement('td');
+        const catStrong = document.createElement('strong');
+        catStrong.textContent = row.cat;
+        catCell.appendChild(catStrong);
+
+        const opCell = document.createElement('td');
+        opCell.textContent = row.op;
+
+        const rateCell = document.createElement('td');
+        rateCell.textContent = row.rate;
+
+        const qtyCell = document.createElement('td');
+        qtyCell.textContent = row.qty;
+
+        const totalCell = document.createElement('td');
+        const totalStrong = document.createElement('strong');
+        totalStrong.textContent = row.total;
+        totalCell.appendChild(totalStrong);
+
+        tr.append(catCell, opCell, rateCell, qtyCell, totalCell);
         claimEstimateBody.appendChild(tr);
     });
 

@@ -296,14 +296,30 @@ class SQLiteVectorStore:
         conn.close()
 
     def add_document(self, filename, file_type, file_size, text, embedding_engine, claim_id=None, file_path=None):
-        """Inserts document, parent chunks, FTS index, child chunks and their embeddings; copies physical file to disk."""
+        """Inserts document, parent chunks, FTS index, child chunks and their embeddings; copies physical file to disk.
+
+        Physical-file writes are deferred until after the DB transaction commits
+        successfully -- previously the old file was deleted (and, on the
+        no-file_path fallback path, the new text was written) *inside* the same
+        try block as the chunk/embedding inserts. If anything failed after that
+        point (e.g. embedding generation raised), conn.rollback() restored the
+        DB to describe the OLD document, but the physical file on disk had
+        already been overwritten with the NEW (failed, partial) content --
+        permanently desyncing what's indexed/searchable from what a handler
+        sees when they open the file. Verified empirically with a mid-overwrite
+        embedding failure. Deferring the file write also fixes a second latent
+        bug: the old fallback-text-write path only wrote `if not
+        os.path.exists(dest_path)`, so overwriting a document added without a
+        file_path (no physical source) silently kept serving the OLD file
+        content forever while the DB/search index moved on to the NEW text.
+        """
         import shutil
         filename = safe_filename(filename)
         os.makedirs("stored_documents", exist_ok=True)
 
         conn = self._connect()
         cursor = conn.cursor()
-        
+
         try:
             # Delete if exists (to overwrite)
             cursor.execute("SELECT id FROM documents WHERE filename = ?", (filename,))
@@ -312,15 +328,9 @@ class SQLiteVectorStore:
                 doc_id = existing[0]
                 # Delete FTS index
                 cursor.execute("DELETE FROM parent_chunks_fts WHERE rowid IN (SELECT id FROM parent_chunks WHERE document_id = ?)", (doc_id,))
-                # Delete document
+                # Delete document (physical file is handled after commit, below)
                 cursor.execute("DELETE FROM documents WHERE id = ?", (doc_id,))
-                
-                # Delete old stored document file if exists
-                old_file = os.path.abspath(os.path.join("stored_documents", filename))
-                if os.path.exists(old_file):
-                    if not file_path or os.path.abspath(file_path) != old_file:
-                        os.remove(old_file)
-            
+
             # Insert document
             uploaded_at = time.strftime("%Y-%m-%d %H:%M:%S")
             cursor.execute(
@@ -328,21 +338,10 @@ class SQLiteVectorStore:
                 (filename, file_type, file_size, uploaded_at, claim_id)
             )
             doc_id = cursor.lastrowid
-            
-            # Save physical file on disk
-            dest_path = os.path.abspath(os.path.join("stored_documents", filename))
-            if file_path and os.path.exists(file_path):
-                src_abs = os.path.abspath(file_path)
-                if src_abs != dest_path:
-                    shutil.copy2(file_path, dest_path)
-            else:
-                if not os.path.exists(dest_path):
-                    with open(dest_path, "w", encoding="utf-8", errors="ignore") as f:
-                        f.write(text)
-            
+
             # 1. Generate Parent Chunks
             parent_chunks = TextChunker.chunk(text, chunk_size=1200, chunk_overlap=200)
-            
+
             # 2. Process each Parent Chunk
             for p_idx, p_text in enumerate(parent_chunks):
                 # Insert parent
@@ -351,21 +350,21 @@ class SQLiteVectorStore:
                     (doc_id, p_idx, p_text)
                 )
                 p_id = cursor.lastrowid
-                
+
                 # Insert parent into FTS5
                 cursor.execute(
                     "INSERT INTO parent_chunks_fts (rowid, content) VALUES (?, ?)",
                     (p_id, p_text)
                 )
-                
+
                 # Generate Child Chunks for this parent
                 child_chunks = TextChunker.chunk(p_text, chunk_size=250, chunk_overlap=50)
                 if not child_chunks:
                     continue
-                
+
                 # Generate embeddings for children
                 embeddings = embedding_engine.embed_chunks(child_chunks)
-                
+
                 # Insert children and embeddings
                 for c_text, embedding in zip(child_chunks, embeddings):
                     emb_bytes = np.array(embedding, dtype=np.float32).tobytes()
@@ -373,49 +372,69 @@ class SQLiteVectorStore:
                         "INSERT INTO child_chunks (parent_id, content, embedding) VALUES (?, ?, ?)",
                         (p_id, c_text, emb_bytes)
                     )
-            
+
             conn.commit()
             self._invalidate_vector_cache()
-            return doc_id, len(parent_chunks)
         except Exception as e:
             conn.rollback()
             raise e
         finally:
             conn.close()
 
+        # Only touch the filesystem once the DB write has durably committed --
+        # see the docstring above for why this ordering matters.
+        dest_path = os.path.abspath(os.path.join("stored_documents", filename))
+        if file_path and os.path.exists(file_path):
+            src_abs = os.path.abspath(file_path)
+            if src_abs != dest_path:
+                shutil.copy2(file_path, dest_path)
+        else:
+            with open(dest_path, "w", encoding="utf-8", errors="ignore") as f:
+                f.write(text)
+
+        return doc_id, len(parent_chunks)
+
     def delete_document(self, filename):
-        """Deletes a document and cascade deletes its chunks and FTS index."""
+        """Deletes a document and cascade deletes its chunks and FTS index.
+
+        The physical file is removed only after the DB delete has durably
+        committed -- the mirror image of the add_document ordering fix (see
+        its docstring): a failed/rolled-back DB delete must never leave the
+        physical file gone while the document is still indexed and
+        searchable.
+        """
         filename = safe_filename(filename)
         conn = self._connect()
         cursor = conn.cursor()
         try:
             cursor.execute("SELECT id FROM documents WHERE filename = ?", (filename,))
             row = cursor.fetchone()
-            if row:
-                doc_id = row[0]
-                # Delete FTS index first
-                cursor.execute("""
-                    DELETE FROM parent_chunks_fts 
-                    WHERE rowid IN (SELECT id FROM parent_chunks WHERE document_id = ?)
-                """, (doc_id,))
-                
-                # Delete document (cascade will clean up parent_chunks and child_chunks)
-                cursor.execute("DELETE FROM documents WHERE id = ?", (doc_id,))
-                
-                # Delete physical file from stored_documents
-                stored_path = os.path.join("stored_documents", filename)
-                if os.path.exists(stored_path):
-                    os.remove(stored_path)
+            if not row:
+                return False
+            doc_id = row[0]
+            # Delete FTS index first
+            cursor.execute("""
+                DELETE FROM parent_chunks_fts
+                WHERE rowid IN (SELECT id FROM parent_chunks WHERE document_id = ?)
+            """, (doc_id,))
 
-                conn.commit()
-                self._invalidate_vector_cache()
-                return True
-            return False
+            # Delete document (cascade will clean up parent_chunks and child_chunks)
+            cursor.execute("DELETE FROM documents WHERE id = ?", (doc_id,))
+
+            conn.commit()
+            self._invalidate_vector_cache()
         except Exception as e:
             conn.rollback()
             raise e
         finally:
             conn.close()
+
+        # Delete physical file from stored_documents only now that the DB
+        # is guaranteed to no longer reference it.
+        stored_path = os.path.join("stored_documents", filename)
+        if os.path.exists(stored_path):
+            os.remove(stored_path)
+        return True
 
     def get_all_documents(self):
         """Returns list of all uploaded global reference documents (claim_id is NULL)."""

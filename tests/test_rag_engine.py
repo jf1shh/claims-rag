@@ -247,3 +247,42 @@ class TestSQLiteVectorStore:
         assert chunks
         assert all(ch["score"] == 1.0 for ch in chunks)
         assert store.get_claim_chunks("#2026-nope") == []
+
+    def test_failed_overwrite_leaves_disk_matching_rolled_back_db(self, store, embedder):
+        # Regression: physical-file writes used to happen *inside* the same
+        # try block as chunk/embedding inserts. A failure after the file was
+        # already replaced (e.g. embedding generation raising) rolled the DB
+        # back to the OLD document while disk permanently kept the NEW
+        # (failed, partial) content -- a silent desync between what's
+        # indexed/searchable and what a handler sees opening the file.
+        store.add_document("labor.txt", "txt", 100, LABOR_TEXT, embedder)
+        stored_path = os.path.join("stored_documents", "labor.txt")
+        with open(stored_path) as f:
+            assert f.read() == LABOR_TEXT
+
+        class FailingEmbedder:
+            def embed_chunks(self, chunks):
+                raise RuntimeError("simulated embedding failure mid-overwrite")
+
+        with pytest.raises(RuntimeError):
+            store.add_document("labor.txt", "txt", 100, "REPLACED CONTENT", FailingEmbedder())
+
+        # DB rolled back to the original document...
+        docs = store.get_all_documents()
+        assert len(docs) == 1
+        c = _counts(store.db_path)
+        assert c["docs"] == 1
+        # ...so the physical file must still match it, not the failed write.
+        with open(stored_path) as f:
+            assert f.read() == LABOR_TEXT
+
+    def test_overwrite_without_file_path_always_refreshes_disk_content(self, store, embedder):
+        # Regression: the fallback (no file_path) write only fired
+        # `if not os.path.exists(dest_path)`, so overwriting a document added
+        # without a physical source silently kept serving the OLD file
+        # content forever while the DB/search index moved on to the NEW text.
+        store.add_document("notes.txt", "txt", 100, "first version", embedder)
+        store.add_document("notes.txt", "txt", 100, "second version", embedder)
+        stored_path = os.path.join("stored_documents", "notes.txt")
+        with open(stored_path) as f:
+            assert f.read() == "second version"
