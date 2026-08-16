@@ -143,12 +143,21 @@ def generate_excel(filename, data_rows, columns):
     return file_path
 
 def copy_seeded_images():
+    """Copies the generated claim inspection photos into stored_documents/.
+
+    Looks in a repo-relative seed_photos/ directory (override with the
+    SEED_PHOTOS_DIR env var). This used to be a hardcoded absolute path into
+    a different AI tool's local working directory on one developer's
+    machine (C:/Users/.../.gemini/antigravity/brain/<conversation-id>) --
+    dead on any other machine, and it silently no-ops via the existing
+    "not found" warning below rather than failing loudly, so a fresh clone
+    would quietly skip seeding these 4 photos with no indication why.
+    """
     import os
     import glob
     import shutil
-    conv_id = "e0b77ff9-d43c-47a9-b39b-68f932a3e451"
-    artifacts_dir = f"C:/Users/shino/.gemini/antigravity/brain/{conv_id}"
-    
+    artifacts_dir = os.environ.get("SEED_PHOTOS_DIR", os.path.join(os.path.dirname(__file__), "seed_photos"))
+
     image_mappings = {
         "tesla_rear_collision": "tesla_rear_collision.png",
         "f150_hail_damage": "f150_hail_damage.png",
