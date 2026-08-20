@@ -7,6 +7,7 @@ os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 import sqlite3
 import time
 import json
+from abc import ABC, abstractmethod
 import numpy as np
 import pypdf
 import docx
@@ -15,7 +16,17 @@ import pandas as pd
 # and RerankingEngine so that the pure-numpy SQLiteVectorStore (and document
 # parsing) can be imported and exercised without loading the heavy ML stack.
 
-DB_PATH = "rag_store.db"
+# ---------------------------------------------------------------------------
+# Storage paths. Anchored to the repository root so the server behaves the
+# same regardless of the working directory it is started from (a CWD-relative
+# default silently created a fresh, empty rag_store.db when uvicorn was
+# launched elsewhere). Both are overridable via env vars -- Phase 1 of the
+# enterprise migration (docs/enterprise-migration.md) replaces this SQLite
+# backend behind the VectorStore interface.
+# ---------------------------------------------------------------------------
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DB_PATH = os.environ.get("RAG_DB_PATH") or os.path.join(REPO_ROOT, "rag_store.db")
+STORED_DOCUMENTS_DIR = os.environ.get("STORED_DOCUMENTS_DIR") or os.path.join(REPO_ROOT, "stored_documents")
 
 
 def safe_filename(filename):
@@ -177,9 +188,52 @@ class RerankingEngine:
         return passages[:top_k]
 
 
-class SQLiteVectorStore:
-    def __init__(self, db_path=DB_PATH):
+class VectorStore(ABC):
+    """Contract every storage backend must implement.
+
+    Callers (backend/app.py, backend/agentic_router.py, ingest_all.py, the
+    eval harness, and the parity runner) depend only on this interface, so a
+    backend can be swapped without touching them. SQLiteVectorStore is the
+    current implementation; PostgresVectorStore (pgvector + Postgres FTS,
+    tenant scoping) lands in Phase 1 of docs/enterprise-migration.md.
+
+    File-backed backends copy source documents to a storage directory; the
+    DB keeps the metadata + chunks + embeddings, and the two stay consistent
+    (writes to disk happen only after a successful DB commit).
+    """
+
+    @abstractmethod
+    def add_document(self, filename, file_type, file_size, text, embedding_engine, claim_id=None, file_path=None):
+        """Indexes a document (chunk + embed + physical copy) and returns (doc_id, parent_chunk_count)."""
+
+    @abstractmethod
+    def delete_document(self, filename) -> bool:
+        """Removes a document and its chunks/embeddings/FTS rows; False if absent."""
+
+    @abstractmethod
+    def get_all_documents(self):
+        """Global (claim_id IS NULL) documents, newest first."""
+
+    @abstractmethod
+    def get_claim_documents(self, claim_id):
+        """Documents attached to one claim, newest first."""
+
+    @abstractmethod
+    def get_claim_chunks(self, claim_id):
+        """Every parent chunk of a claim's own documents, unranked (score=1.0 sentinel)."""
+
+    @abstractmethod
+    def search_similarity(self, query_embedding, query_text, claim_id=None, reranking_engine=None, top_k=15, use_fts=True):
+        """Hybrid retrieval (vector + keyword + RRF), optionally reranked."""
+
+
+class SQLiteVectorStore(VectorStore):
+    def __init__(self, db_path=DB_PATH, storage_dir=STORED_DOCUMENTS_DIR):
         self.db_path = db_path
+        # Directory for physical copies of source documents. Defaults to the
+        # repo-root-anchored stored_documents/; tests pass an explicit temp
+        # dir to stay hermetic.
+        self.storage_dir = storage_dir
         # In-memory, pre-normalized embedding index. Built lazily on first
         # search and invalidated whenever documents are added/removed. This
         # avoids re-reading every embedding BLOB and recomputing corpus norms
@@ -315,16 +369,31 @@ class SQLiteVectorStore:
         """
         import shutil
         filename = safe_filename(filename)
-        os.makedirs("stored_documents", exist_ok=True)
+        os.makedirs(self.storage_dir, exist_ok=True)
 
         conn = self._connect()
         cursor = conn.cursor()
 
         try:
-            # Delete if exists (to overwrite)
-            cursor.execute("SELECT id FROM documents WHERE filename = ?", (filename,))
+            # Delete if exists (to overwrite). Scope guard: the documents table
+            # keys on filename alone, so an overwrite must only be allowed when
+            # the existing row belongs to the SAME scope (same claim, or both
+            # global). Otherwise uploading "report.pdf" to claim B would
+            # silently delete claim A's "report.pdf" -- cross-claim data loss
+            # (verified empirically: the row, its chunks, and the physical
+            # file are all replaced).
+            cursor.execute("SELECT id, claim_id FROM documents WHERE filename = ?", (filename,))
             existing = cursor.fetchone()
             if existing:
+                existing_claim = existing[1]
+                if existing_claim != claim_id:
+                    existing_scope = f"claim {existing_claim}" if existing_claim else "global guidelines"
+                    new_scope = f"claim {claim_id}" if claim_id else "global guidelines"
+                    raise ValueError(
+                        f"'{filename}' already exists in {existing_scope}; refusing to overwrite it "
+                        f"from {new_scope}. Rename the uploaded file (or delete the existing one) first "
+                        "-- claim folders and global guidelines must not overwrite each other."
+                    )
                 doc_id = existing[0]
                 # Delete FTS index
                 cursor.execute("DELETE FROM parent_chunks_fts WHERE rowid IN (SELECT id FROM parent_chunks WHERE document_id = ?)", (doc_id,))
@@ -382,15 +451,22 @@ class SQLiteVectorStore:
             conn.close()
 
         # Only touch the filesystem once the DB write has durably committed --
-        # see the docstring above for why this ordering matters.
-        dest_path = os.path.abspath(os.path.join("stored_documents", filename))
+        # see the docstring above for why this ordering matters. The write is
+        # staged to a sibling temp file and atomically renamed into place, so
+        # a failure mid-copy (disk full, permission) can never leave a
+        # half-written file at the final path: the old file survives intact,
+        # and only a stray *.part file is left behind.
+        dest_path = os.path.abspath(os.path.join(self.storage_dir, filename))
+        tmp_path = dest_path + ".part"
         if file_path and os.path.exists(file_path):
             src_abs = os.path.abspath(file_path)
             if src_abs != dest_path:
-                shutil.copy2(file_path, dest_path)
+                shutil.copy2(file_path, tmp_path)
+                os.replace(tmp_path, dest_path)
         else:
-            with open(dest_path, "w", encoding="utf-8", errors="ignore") as f:
+            with open(tmp_path, "w", encoding="utf-8", errors="ignore") as f:
                 f.write(text)
+            os.replace(tmp_path, dest_path)
 
         return doc_id, len(parent_chunks)
 
@@ -429,9 +505,9 @@ class SQLiteVectorStore:
         finally:
             conn.close()
 
-        # Delete physical file from stored_documents only now that the DB
-        # is guaranteed to no longer reference it.
-        stored_path = os.path.join("stored_documents", filename)
+        # Delete physical file from storage only now that the DB is
+        # guaranteed to no longer reference it.
+        stored_path = os.path.join(self.storage_dir, filename)
         if os.path.exists(stored_path):
             os.remove(stored_path)
         return True
@@ -563,7 +639,13 @@ class SQLiteVectorStore:
 
         # --- 2. Keyword Search (FTS5 on Parent Chunks) Scoped by claim_id ---
         fts_ranked = []
-        clean_query = " ".join([t for t in query_text.split() if t.isalnum()])
+        # Quote every token: FTS5 reserved words (AND, OR, NOT, NEAR, etc.)
+        # passed bare are parsed as operators, which raises a syntax error the
+        # except below swallows -- silently dropping the entire keyword leg
+        # for queries like "deductible or not covered". Quoting forces each
+        # token to be a literal term, preserving the implicit-AND semantics.
+        tokens = [t for t in query_text.split() if t.isalnum()]
+        clean_query = " ".join(f'"{t}"' for t in tokens)
         if use_fts and clean_query:
             try:
                 # ORDER BY rank (bm25) is load-bearing: RRF below scores each

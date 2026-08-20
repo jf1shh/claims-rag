@@ -5,7 +5,13 @@ import time
 # Add parent directory to path so we can import from backend
 sys.path.append(os.path.abspath(os.path.dirname(__file__)))
 
-from backend.rag_engine import DocumentParser, TextChunker, EmbeddingEngine, SQLiteVectorStore
+from backend.rag_engine import (
+    DocumentParser,
+    TextChunker,
+    EmbeddingEngine,
+    SQLiteVectorStore,
+    STORED_DOCUMENTS_DIR,
+)
 
 def ingest_all():
     print("=== Local RAG Batch Ingestion Script ===")
@@ -96,8 +102,8 @@ def ingest_all():
 
 def generate_pdf(filename, title, content):
     import os
-    os.makedirs("stored_documents", exist_ok=True)
-    file_path = os.path.join("stored_documents", filename)
+    os.makedirs(STORED_DOCUMENTS_DIR, exist_ok=True)
+    file_path = os.path.join(STORED_DOCUMENTS_DIR, filename)
     
     from reportlab.lib.pagesizes import letter
     from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
@@ -136,8 +142,8 @@ def generate_pdf(filename, title, content):
 def generate_excel(filename, data_rows, columns):
     import os
     import pandas as pd
-    os.makedirs("stored_documents", exist_ok=True)
-    file_path = os.path.join("stored_documents", filename)
+    os.makedirs(STORED_DOCUMENTS_DIR, exist_ok=True)
+    file_path = os.path.join(STORED_DOCUMENTS_DIR, filename)
     df = pd.DataFrame(data_rows, columns=columns)
     df.to_excel(file_path, index=False)
     return file_path
@@ -165,14 +171,14 @@ def copy_seeded_images():
         "bmw_water_damage": "bmw_water_damage.png"
     }
     
-    os.makedirs("stored_documents", exist_ok=True)
+    os.makedirs(STORED_DOCUMENTS_DIR, exist_ok=True)
     
     for prefix, target_name in image_mappings.items():
         pattern = os.path.join(artifacts_dir, f"{prefix}_*.png")
         matches = glob.glob(pattern)
         if matches:
             src = matches[0]
-            dest = os.path.join("stored_documents", target_name)
+            dest = os.path.join(STORED_DOCUMENTS_DIR, target_name)
             shutil.copy2(src, dest)
             print(f"   Copied seed photo {src} -> {dest}")
         else:
@@ -279,7 +285,7 @@ def seed_claim_documents(vector_store, embedding_engine):
         elif s["type"] == "excel":
             file_path = generate_excel(s["filename"], s["rows"], s["columns"])
         elif s["type"] == "image":
-            file_path = os.path.join("stored_documents", s["filename"])
+            file_path = os.path.join(STORED_DOCUMENTS_DIR, s["filename"])
             
         file_size = os.path.getsize(file_path) if file_path and os.path.exists(file_path) else len(s["content"])
         file_ext = s["filename"].split(".")[-1].lower()
