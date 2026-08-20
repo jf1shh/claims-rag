@@ -341,6 +341,7 @@ http://localhost:8000
 ## What's Next
 
 1. **Production Builds**: Package the application or prepare dockerized configs if distribution is desired.
+2. **Enterprise multi-tenant scaling (DEFERRED — tabled 2026-08-16)**: User asked "how can we make this scale for an entire insurance company" and agreed to table the topic for a later date. Direction sketched, nothing started: managed Postgres + pgvector (`tenant_id`/RLS on every row) replacing SQLite's brute-force vector search and single-writer model; S3 for source documents; async ingest workers with incremental indexing; hosted/self-hosted LLM + reranker serving; SSO/RBAC + immutable audit trail; eval harness promoted to drift monitoring. Revisit before writing any code.
 
 ---
 
@@ -454,6 +455,16 @@ http://localhost:8000
 * **Verification**: converted the scratch repro into two permanent pytest regressions; full suite (45 tests, 1 platform-skip) passes; `node --check` on the edited `app.js` confirms no syntax break from the DOM-construction rewrite.
 * **New constraints discovered**: added to Critical Constraints -- physical-file mutations in the store must happen strictly after DB commit, not inside the same try block; dynamic content rendered into the claims queue/estimate table must use `.textContent`, never `innerHTML` string interpolation, matching the rest of the frontend.
 * **Plan changes**: Added Build Plan Phase 16. No open items changed in What's Next (still just optional Docker packaging) -- this was a defect-finding pass, not new feature work.
+### 2026-08-16 (session 7 — Freebuff preview setup; enterprise-scaling discussion tabled)
+* **Phase**: None (workspace/tooling session -- no new Build Plan phase added).
+* **Context**: User connected the repo to a Freebuff Cloud workspace and asked to configure (not start) the preview's install/dev/build commands, then asked how the app would scale to an entire insurance company. The full architecture direction was discussed, and the user explicitly chose to table it ("we will table this and hit it at a later date") -- recorded as a DEFERRED item under What's Next rather than built.
+* **Attempted & succeeded**:
+  * Configured Freebuff preview commands (stored, nothing started): install = `uv venv --python 3.12 .venv && uv pip install --python .venv/bin/python -r requirements.txt && .venv/bin/python scripts/precache_models.py`; dev/preview (port 8000) = `.venv/bin/python -m uvicorn backend.app:app --host 0.0.0.0 --port ${PORT:-8000}`; build = `.venv/bin/python -m compileall -q backend`.
+  * Why: the sandbox only has Python 3.10, but the pinned deps (pandas 3.0.3, numpy 2.5.1) require >=3.11, so install provisions Python 3.12 via `uv` (provisioning + dependency resolution both verified in-sandbox). The app hardcodes `HF_HUB_OFFLINE=1`, so install also pre-caches both HF models via a new committed `scripts/precache_models.py` -- a quote-free helper script, because the preview config layer mangled quoted install commands -- without the pre-cache the server would crash on first boot.
+  * Verified network access to PyPI/HuggingFace, then `freebuff-preview status` confirms all three commands stored cleanly with nothing running.
+  * Enterprise-scaling discussion (tabled, not built): grounded in the README's existing "Scaling considerations" and the actual code -- brute-force non-ANN vector search, full-cache-rebuild-on-every-write, single-process/single-SQLite-file ceiling, no auth/tenancy/audit trail. Direction recorded: managed Postgres + pgvector (HNSW) with `tenant_id`/RLS on every row + Postgres FTS; S3 for source documents; async ingest queue with incremental indexing; stateless autoscaled API; SSO/RBAC + immutable audit log; hosted/self-hosted LLM (vLLM/TGI) + batch reranker; eval harness promoted to drift monitoring. Phased migration sketched: A data plane -> B ingestion -> C tenancy/security -> D serving -> E load-test/prove/compliance.
+* **Verification**: `freebuff-preview status` shows install/dev/build set with `running: false`; the install steps themselves (uv venv, pip resolve, model pre-cache) were exercised directly in the sandbox and succeeded.
+* **Plan changes**: None -- no Build Plan phase added. What's Next gained the DEFERRED enterprise-scaling item with an explicit "revisit before writing any code" note.
 
 ---
 
