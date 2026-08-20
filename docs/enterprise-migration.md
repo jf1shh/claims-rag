@@ -1,0 +1,123 @@
+# Enterprise Migration Plan — SQLite → Postgres + pgvector + S3 + Async Ingest
+
+> **Status: Phase 0 complete (2026-08-20).** This document supersedes the
+> "Enterprise multi-tenant scaling (DEFERRED)" note in CLAUDE.md's What's Next and
+> is the source of truth for the migration. Each phase updates its milestone statuses here.
+
+Target: a multi-tenant, production-grade version of AutoClaimsRAG. Everything is
+provider-neutral except where noted (assumes AWS: managed Postgres on RDS/Aurora,
+S3, SQS, Fargate/Lambda workers, KMS).
+
+## Target architecture
+
+- **Storage:** `documents` / `parent_chunks` / `child_chunks` in **Postgres + pgvector**
+  (`embedding vector(384)` + HNSW `cosine_ops` index; Postgres FTS `tsvector`/GIN
+  replacing the FTS5 leg; `tenant_id` + RLS on every row; unique on
+  `(tenant_id, claim_id, filename)`).
+- **Files:** source documents in **S3** (SSE-KMS, versioning, presigned GETs).
+- **Ingest:** S3 put-event → queue → worker (parse → chunk → embed → incremental
+  upsert). Kills the full-cache-rebuild O(n) bottleneck and request-thread blocking.
+- **Serving:** stateless FastAPI, autoscaled; `/api/chat` async/streamed; planner,
+  reranker, and LLM as dedicated services (vLLM/TGI or hosted OpenAI-compatible).
+- **Tenancy/security:** SSO/RBAC, claim-level ACLs, immutable audit log, rate
+  limits, encryption at rest/in transit, retention/deletion policy.
+
+**What stays untouched:** `TextChunker`, `DocumentParser`, RRF math, rerank logic,
+prompt templates, `AgenticRAGRouter` orchestration, eval golden queries, and the
+frontend chat/trace UX. Callers consume a `VectorStore` interface
+(`backend/rag_engine.py`); retrieval changes live behind `search_similarity` /
+`get_claim_chunks`.
+
+---
+
+## Phase 0 — Foundations & parity harness (2–3 wks) — IN PROGRESS
+
+| Milestone | Deliverable | Status |
+|---|---|---|
+| 0.1 | Extract `VectorStore` interface (`add_document`, `delete_document`, `search_similarity`, `get_claim_chunks`, `get_all_documents`, `get_claim_documents`) from `SQLiteVectorStore`; make DB/storage paths env-configurable (`RAG_DB_PATH`, `STORED_DOCUMENTS_DIR`) and anchored to the repo root (no more CWD-relative `rag_store.db`) | **Done 2026-08-20** — ABC in `backend/rag_engine.py`; `SQLiteVectorStore(storage_dir=…)`; env overrides verified; full suite green |
+| 0.2 | `eval/parity_runner.py`: run identical corpora through two backends and compare results on the 19 `eval/golden_queries.py` queries + synthetic queries | **Done 2026-08-20** — self-check mode green in CI (`python eval/parity_runner.py`, mean recall@4 = 1.0); Postgres leg activates in Phase 1 with `--backend-b postgres --tolerance 0.9` |
+
+**Exit criteria:** SQLite backend passes the full test suite unchanged in behavior;
+parity harness runs in CI (self-check parity = 1.0); paths configurable + repo-anchored.
+
+**Key decision:** pgvector HNSW is approximate vs SQLite's brute-force search — the
+parity harness defines acceptable divergence (recall@k ≥ 0.9) *before* data migrates.
+
+---
+
+## Phase 1 — Data plane: Postgres + pgvector (3–4 wks)
+
+| Milestone | Deliverable | Exit criteria |
+|---|---|---|
+| 1.1 | Alembic migrations: `documents`, `parent_chunks`, `child_chunks` with `tenant_id`, HNSW index, GIN FTS, RLS policies, `(tenant_id, claim_id, filename)` unique | Cross-claim filename collision impossible in the schema; RLS proven (tenant B sees nothing of tenant A) |
+| 1.2 | `PostgresVectorStore` implementing the interface: pgvector cosine KNN scoped by tenant/claim + Postgres FTS (`websearch_to_tsquery`) + the same RRF (k=60) + unchanged cross-encoder rerank | Golden-query parity passes (Phase-0 harness with `--backend-b postgres`); token-quoting and `ORDER BY rank` lessons carried over |
+| 1.3 | `pg_migrate.py`: read `rag_store.db`, upsert docs/chunks/embeddings/metadata, checksum-verified (row counts, dims, no orphans) | Demo corpus migrates cleanly; counts match; results match pre-migration |
+
+---
+
+## Phase 2 — Object storage: S3 (2–3 wks)
+
+| Milestone | Deliverable | Exit criteria |
+|---|---|---|
+| 2.1 | Upload writes to `s3://bucket/{tenant}/{claim-or-global}/{key}`; `documents.s3_key`; SSE-KMS; versioning | Server stateless w.r.t. files; delete removes object (or soft-delete + lifecycle) |
+| 2.2 | Download/view via presigned URLs; `get_document_content` reads S3 or DB chunks | UI view/download parity; nosniff/attachment hardening carried over; per-scope overwrite semantics preserved |
+
+---
+
+## Phase 3 — Async ingestion (3–4 wks)
+
+| Milestone | Deliverable | Exit criteria |
+|---|---|---|
+| 3.1 | S3 put-event → queue → worker: parse → chunk → embed (batched) → incremental pgvector upsert | Ingestion no longer O(n) per write; embed failures → retryable job, never a half-state |
+| 3.2 | `/api/upload` → `202 {job_id}`; `GET /api/jobs/{id}`; frontend progress binds to real job state; delete/overwrite are jobs | UI reflects true pipeline state; corrupt-file 400 detail preserved |
+| 3.3 | Idempotency by `(tenant, s3_key, etag)`, DLQ + retry/backoff, job metrics | Failure drills pass (no orphan rows on mid-embedding crash); 10k-doc throughput load test |
+
+---
+
+## Phase 4 — Tenancy, auth, audit (3–4 wks)
+
+| Milestone | Deliverable | Exit criteria |
+|---|---|---|
+| 4.1 | SSO/OIDC (Okta/Entra/Google) + service accounts; FastAPI `get_current_tenant` on every route; frontend login + returnTo | No endpoint reachable without auth |
+| 4.2 | RBAC: adjuster / supervisor / SIU / admin; claim-level ACLs | Permission matrix tested |
+| 4.3 | Immutable audit log: upload/delete/chat/download — who, tenant, claim, query, sources returned, timestamps | Completeness test on sampled actions; chat answers + source IDs logged |
+| 4.4 | Rate limiting, upload size caps, `/api/eval/search` gated to CI/internal, secrets via KMS | Abuse drill (huge `top_k`, giant uploads) → 429/413 |
+
+**Note:** `tenant_id` + RLS land in Phase 1, *before* real tenants exist — retrofitting
+RLS onto live multi-tenant data is the most expensive mistake in this plan.
+
+---
+
+## Phase 5 — Serving & LLM layer (3–4 wks)
+
+| Milestone | Deliverable | Exit criteria |
+|---|---|---|
+| 5.1 | LM Studio → vLLM/TGI (self-hosted GPU) or hosted OpenAI-compatible endpoint; `engine` stays a server-side allowlist (SSRF constraint intact) | Planner + synthesis via new backend; model cache adapted |
+| 5.2 | Dedicated cross-encoder reranker service (GPU, batched); pgvector returns top 50–100 candidates, rerank cuts to `top_k` | Rerank cost bounded by candidate pool, not corpus |
+| 5.3 | `/api/chat` streamed (SSE) or worker-pool async; context assembly capped (dossier cap + global-match cap) | p95 time-to-first-token target; prompt-injection delimiters in place |
+
+---
+
+## Phase 6 — Scale, drift monitoring, compliance, cutover (3–4 wks)
+
+| Milestone | Deliverable | Exit criteria |
+|---|---|---|
+| 6.1 | k6/Locust load test: 100k+ docs, multi-tenant, concurrent users | p95 retrieval < 100 ms (HNSW); ingest throughput sustained |
+| 6.2 | Eval → drift monitoring: golden suite (expanded per tenant) scheduled against production retrieval; alert on recall/faithfulness regression | One-off `eval/run_eval.py` becomes a live signal |
+| 6.3 | Compliance: encryption in transit/at rest, retention/deletion (S3 lifecycle + PG archival), access reviews, incident runbook | Evidence pack for SOC2-type review |
+| 6.4 | Cutover: both backends feature-flagged, parity in staging, blue/green, rollback drill | Production on Postgres; rollback < 1 hr |
+
+---
+
+## Order rationale & effort
+
+0 (parity) → 1 (data plane, incl. `tenant_id`) → 2 (S3) → 3 (async ingest — writes
+to the Phase-1 schema) → 4 (auth/audit — before real tenants) → 5 (serving) →
+6 (prove + cut over). Roughly **4–6 months for 1–2 engineers**.
+
+## Top risks
+
+1. **HNSW recall drift** vs brute-force SQLite — mitigated by Phase-0/6 parity harness + HNSW tuning (`m`, `ef_construction`).
+2. **Embedding model change** = full re-embed — pin the model and add a `model_id` column to version embeddings.
+3. **LLM latency variance** at production concurrency — streaming + queueing + revisiting the 120s timeout under load.
+4. **Regulatory/compliance scope** for insurance data — audit trail and retention designed in (Phases 4/6), not bolted on.

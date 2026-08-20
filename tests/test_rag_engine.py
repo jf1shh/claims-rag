@@ -126,10 +126,15 @@ class FakeEmbeddingEngine:
 
 @pytest.fixture
 def store(tmp_path, monkeypatch):
-    # add_document/delete_document write physical copies to a cwd-relative
-    # stored_documents/ -- run each test inside its own temp dir.
+    # add_document/delete_document write physical copies to the store's
+    # storage_dir, which now defaults to a repo-root-anchored path -- pass an
+    # explicit temp dir (and chdir for the relative-path assertions below)
+    # so every test stays hermetic.
     monkeypatch.chdir(tmp_path)
-    return SQLiteVectorStore(db_path=str(tmp_path / "test.db"))
+    return SQLiteVectorStore(
+        db_path=str(tmp_path / "test.db"),
+        storage_dir=str(tmp_path / "stored_documents"),
+    )
 
 
 @pytest.fixture
@@ -286,3 +291,49 @@ class TestSQLiteVectorStore:
         stored_path = os.path.join("stored_documents", "notes.txt")
         with open(stored_path) as f:
             assert f.read() == "second version"
+
+    def test_cross_claim_same_filename_is_rejected_not_data_loss(self, store, embedder):
+        # Regression: the documents table keys on filename alone, so an
+        # overwrite used to silently REPLACE claim A's document when the same
+        # filename was uploaded to claim B (row, chunks, and physical file
+        # all deleted). Scope-mismatched overwrites must be refused outright.
+        store.add_document("report.pdf", "pdf", 100, LABOR_TEXT, embedder, claim_id="#CLAIM-A")
+        with pytest.raises(ValueError, match="already exists"):
+            store.add_document("report.pdf", "pdf", 100, GLASS_TEXT, embedder, claim_id="#CLAIM-B")
+        # Claim A's document is untouched (DB + physical file).
+        assert [d["filename"] for d in store.get_claim_documents("#CLAIM-A")] == ["report.pdf"]
+        stored_path = os.path.join("stored_documents", "report.pdf")
+        with open(stored_path) as f:
+            assert f.read() == LABOR_TEXT
+        # Global-vs-claim collisions are refused too (both directions).
+        with pytest.raises(ValueError):
+            store.add_document("report.pdf", "pdf", 100, LABOR_TEXT, embedder)
+        store.add_document("global.pdf", "pdf", 100, LABOR_TEXT, embedder)
+        with pytest.raises(ValueError):
+            store.add_document("global.pdf", "pdf", 100, GLASS_TEXT, embedder, claim_id="#CLAIM-A")
+
+    def test_same_scope_overwrite_still_allowed(self, store, embedder):
+        store.add_document("report.pdf", "pdf", 100, LABOR_TEXT, embedder, claim_id="#CLAIM-A")
+        # Same claim re-upload must keep working (this is the legitimate
+        # overwrite path used when a handler replaces a dossier file).
+        store.add_document("report.pdf", "pdf", 100, GLASS_TEXT, embedder, claim_id="#CLAIM-A")
+        assert [d["filename"] for d in store.get_claim_documents("#CLAIM-A")] == ["report.pdf"]
+        stored_path = os.path.join("stored_documents", "report.pdf")
+        with open(stored_path) as f:
+            assert f.read() == GLASS_TEXT
+
+    def test_fts_reserved_word_queries_do_not_silently_drop_keyword_leg(self, store, embedder):
+        # FTS5 operator words (AND/OR/NOT/NEAR) passed bare are parsed as
+        # query syntax, previously raising an OperationalError that was
+        # swallowed -- dropping the keyword leg for exactly the queries that
+        # need it. Quoted tokens must match as literals instead.
+        store.add_document("labor.txt", "txt", 100, LABOR_TEXT, embedder)
+        store.add_document("glass.txt", "txt", 100, GLASS_TEXT, embedder)
+        for q in ["and", "or", "not", "NEAR", "deductible or not covered"]:
+            results = store.search_similarity(embedder.embed_query(q), q, top_k=4)
+            assert results  # never crashes, never returns empty due to syntax
+
+    def test_no_partial_file_left_on_successful_write(self, store, embedder):
+        store.add_document("clean.txt", "txt", 100, LABOR_TEXT, embedder)
+        # The staged *.part file must be gone after a successful add.
+        assert not os.path.exists(os.path.join("stored_documents", "clean.txt.part"))

@@ -27,3 +27,11 @@ jobs:
 
       - name: Run unit tests
         run: pytest tests/ -v
+
+      # Phase 0.2 of docs/enterprise-migration.md: retrieval parity harness.
+      # Self-check mode (sqlite vs sqlite on two independent DBs) must report
+      # parity of exactly 1.0 -- it proves the harness itself is sound before
+      # any second backend exists. Phase 1 adds a postgres service + a
+      # --backend-b postgres comparison.
+      - name: Retrieval parity self-check
+        run: python eval/parity_runner.py

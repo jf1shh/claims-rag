@@ -98,6 +98,8 @@ def list_claims():
 @app.post("/api/upload")
 async def upload_document(file: UploadFile = File(...)):
     """Uploads and processes a claim reference document."""
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="Missing filename.")
     file_ext = file.filename.split(".")[-1].lower()
     if file_ext not in ["pdf", "docx", "xlsx", "xls", "txt"]:
         raise HTTPException(
@@ -115,7 +117,18 @@ async def upload_document(file: UploadFile = File(...)):
     try:
         # Step 1: Text extraction
         parse_start = time.time()
-        text = DocumentParser.parse(tmp_path, file_ext)
+        try:
+            text = DocumentParser.parse(tmp_path, file_ext)
+        except Exception:
+            # A corrupt/truncated/password-protected file raises deep inside
+            # pypdf/python-docx/pandas. That's a client error, not a server
+            # failure -- a 500 with the internal exception text (what the
+            # generic handler would return) leaks internals and misleads the
+            # user into retrying an unreadable file.
+            raise HTTPException(
+                status_code=400,
+                detail="Could not read the uploaded file -- it may be corrupt, truncated, or password-protected."
+            )
         parse_time = (time.time() - parse_start) * 1000
         
         if not text.strip():
@@ -146,9 +159,13 @@ async def upload_document(file: UploadFile = File(...)):
             }
         }
     except HTTPException:
-        # Deliberate 4xx responses (empty document, etc.) must not be
-        # re-wrapped by the generic handler below into a 500.
+        # Deliberate 4xx responses (empty document, corrupt file, scope
+        # conflict) must not be re-wrapped by the generic handler into a 500.
         raise
+    except ValueError as e:
+        # safe_filename() rejections and the per-scope filename-conflict guard
+        # in add_document() are client errors, not server failures.
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -161,6 +178,8 @@ async def upload_document(file: UploadFile = File(...)):
 @app.post("/api/upload-claim-file")
 async def upload_claim_document(claim_id: str = Form(...), file: UploadFile = File(...)):
     """Uploads and processes a document specifically for a given claim ID."""
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="Missing filename.")
     file_ext = file.filename.split(".")[-1].lower()
     if file_ext not in ["pdf", "docx", "xlsx", "xls", "txt"]:
         raise HTTPException(
@@ -175,7 +194,13 @@ async def upload_claim_document(claim_id: str = Form(...), file: UploadFile = Fi
         
     try:
         parse_start = time.time()
-        text = DocumentParser.parse(tmp_path, file_ext)
+        try:
+            text = DocumentParser.parse(tmp_path, file_ext)
+        except Exception:
+            raise HTTPException(
+                status_code=400,
+                detail="Could not read the uploaded file -- it may be corrupt, truncated, or password-protected."
+            )
         parse_time = (time.time() - parse_start) * 1000
         
         if not text.strip():
@@ -207,6 +232,8 @@ async def upload_claim_document(claim_id: str = Form(...), file: UploadFile = Fi
         }
     except HTTPException:
         raise
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         import traceback
         traceback.print_exc()
@@ -244,12 +271,12 @@ def get_document_content(filename: str):
 
 @app.get("/api/documents/download/{filename}")
 def download_document(filename: str):
-    """Serves the physical document from stored_documents/."""
+    """Serves the physical document from the store's storage directory."""
     try:
         filename = safe_filename(filename)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid filename.")
-    file_path = os.path.join("stored_documents", filename)
+    file_path = os.path.join(vector_store.storage_dir, filename)
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="File not found.")
     return FileResponse(file_path)
