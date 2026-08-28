@@ -141,6 +141,18 @@ python -m venv .venv
 
 Without an LM Studio server running, the app falls back to a rule-based simulation mode so the UI and retrieval pipeline are still fully explorable.
 
+### Verify locally
+
+Run these commands from the repository root and report their actual output:
+
+```bash
+.venv/bin/python -m pytest tests/ -q
+.venv/bin/python scripts/run_foundation_gates.py --mode gate
+.venv/bin/python eval/parity_runner.py
+```
+
+`GET /health/live` checks process liveness; `GET /health/ready` checks configured dependencies. A green local check does not claim remote CI or production readiness.
+
 ## Known limitations
 
 - **Faithfulness measures groundedness, not correctness** — an answer can be fully faithful to partial context and still be wrong. Factual Correctness closes this by scoring against a verified reference instead.
