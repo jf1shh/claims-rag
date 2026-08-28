@@ -207,7 +207,7 @@ Replace hardcoded paths, LM Studio URL, limits, CORS origins, and timeouts with 
 
 - [ ] **Step 8: Run focused tests plus current suite**
 
-Run: `pytest tests/test_config.py tests/test_app_factory.py -q`  
+Run: `pytest tests/test_config.py tests/test_app_factory.py -q`
 Run: `pytest tests/ -q`
 
 Expected: focused tests and the existing suite pass.
@@ -367,7 +367,7 @@ Record actor, tenant, claim, request ID, document ID, operation, outcome, and er
 
 - [ ] **Step 7: Run focused tests and current suite**
 
-Run: `pytest tests/test_blob_store.py tests/test_audit.py tests/test_rag_engine.py -q`  
+Run: `pytest tests/test_blob_store.py tests/test_audit.py tests/test_rag_engine.py -q`
 Run: `pytest tests/ -q`
 
 Expected: PASS.
@@ -453,8 +453,8 @@ Make the evaluation harness score evidence and structured claims, while preservi
 
 - [ ] **Step 7: Run focused and regression tests**
 
-Run: `pytest tests/test_contracts.py tests/test_agentic_router.py -q`  
-Run: `pytest tests/ -q`  
+Run: `pytest tests/test_contracts.py tests/test_agentic_router.py -q`
+Run: `pytest tests/ -q`
 Run: `python eval/parity_runner.py`
 
 Expected: PASS and parity remains at the existing baseline.
@@ -517,7 +517,7 @@ Apply upload byte limits before parsing where possible, extracted-text limits af
 
 - [ ] **Step 6: Run focused, API, and security tests**
 
-Run: `pytest tests/test_health.py tests/test_api_limits.py tests/test_api_security.py -q`  
+Run: `pytest tests/test_health.py tests/test_api_limits.py tests/test_api_security.py -q`
 Run: `pytest tests/ -q`
 
 Expected: PASS.
@@ -589,7 +589,7 @@ Use a fake embedding engine that fails mid-document. Assert rollback, `failed` s
 
 - [ ] **Step 6: Run focused and current tests**
 
-Run: `pytest tests/test_ingestion_contract.py tests/test_rag_engine.py -q`  
+Run: `pytest tests/test_ingestion_contract.py tests/test_rag_engine.py -q`
 Run: `pytest tests/ -q`
 
 Expected: PASS.
@@ -671,8 +671,8 @@ Add a Python foundation workflow that runs unit tests, the harness self-tests, s
 
 - [ ] **Step 8: Run the complete foundation gate**
 
-Run: `python scripts/run_foundation_gates.py --mode gate`  
-Run: `pytest tests/ -q`  
+Run: `python scripts/run_foundation_gates.py --mode gate`
+Run: `pytest tests/ -q`
 Run: `python eval/parity_runner.py`
 
 Expected: all blocking gates pass; advisory findings are printed with evidence and do not mask failures.
@@ -728,8 +728,8 @@ Include actual commands for tests, parity, evaluation, secret scan, dependency a
 
 - [ ] **Step 5: Run documentation tests and complete suite**
 
-Run: `pytest tests/test_documentation_contract.py -q`  
-Run: `pytest tests/ -q`  
+Run: `pytest tests/test_documentation_contract.py -q`
+Run: `pytest tests/ -q`
 Run: `python scripts/run_foundation_gates.py --mode gate`
 
 Expected: PASS with no undocumented required settings or commands.

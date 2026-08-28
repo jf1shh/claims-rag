@@ -1,7 +1,7 @@
 # AutoClaimsRAG Enterprise Foundation Design
 
-**Date:** 2026-08-28  
-**Status:** Draft for review  
+**Date:** 2026-08-28
+**Status:** Draft for review
 **Scope:** Production foundation and phased roadmap for an open-source, large-scale deployment
 
 ## Goal
