@@ -336,6 +336,7 @@ http://localhost:8000
 * `add_document`/`delete_document` physical-file writes are ordered strictly after DB commit (Phase 16) — a failed/rolled-back write can no longer leave the file on disk out of sync with what's indexed and searchable. Verified via a scratch repro and two new regression tests.
 * All claim-queue/estimate-table rendering in `frontend/app.js` uses `.textContent`/`.classList` rather than `innerHTML` string interpolation (Phase 16 closed the one remaining gap in the Phase 10 XSS-prevention pattern) — no dynamic field anywhere in the frontend is interpolated into HTML unescaped.
 * CI now includes an advisory Claude Opus PR review (`.github/workflows/claude-review.yml`, posts a sticky review comment, never auto-merges) alongside the existing pytest matrix.
+* **Enterprise foundation (Phase 0 of `docs/enterprise-migration.md`, close-out verified 2026-08-28)**: typed env-backed `config.py` + `create_app` factory; explicit `PrincipalContext` with tenant/role checks; `DocumentBlobStore` (local adapter, traversal-safe) + append-only `JsonlAuditSink`; `GroundedResponse` Evidence/Interpretation/Decision contract (defaults to `not_a_decision`, cross-validated evidence IDs); `/health/live` + `/health/ready`; request-ID middleware, bounded upload/query/`top_k` inputs; idempotent `IngestionService` jobs; deterministic foundation gates (`scripts/run_foundation_gates.py` — secrets/specs/docs, 0 findings) and 90-test suite (90 passed / 1 skipped). Next: Phase 1 Postgres + pgvector.
 
 ### Known Issues
 * `eval/results.json`'s Context Precision/Recall numbers reflect single-shot retrieval via `/api/eval/search` only — they do **not** include the guaranteed claim-chunk inclusion described below, since that's a property of the full agentic pipeline (`/api/chat`), not of raw `search_similarity`. Re-scoring those two metrics against the real pipeline is unscoped work, not a bug; the eval harness deliberately isolates retrieval-strategy comparison from full-pipeline behavior. Factual Correctness (Phase 11) *is* scored against the real `/api/chat` pipeline, so it's the metric that actually reflects the guaranteed-dossier fix.
@@ -345,8 +346,8 @@ http://localhost:8000
 
 ## What's Next
 
-1. **Production Builds**: Package the application or prepare dockerized configs if distribution is desired.
-2. **Enterprise multi-tenant scaling (DEFERRED — tabled 2026-08-16)**: User asked "how can we make this scale for an entire insurance company" and agreed to table the topic for a later date. Direction sketched, nothing started: managed Postgres + pgvector (`tenant_id`/RLS on every row) replacing SQLite's brute-force vector search and single-writer model; S3 for source documents; async ingest workers with incremental indexing; hosted/self-hosted LLM + reranker serving; SSO/RBAC + immutable audit trail; eval harness promoted to drift monitoring. Revisit before writing any code.
+1. **Production Builds**: Package the application or prepare dockerized configs if distribution is desired (still optional).
+2. **Enterprise multi-tenant scaling — Phase 1 of `docs/enterprise-migration.md`**: The DEFERRED item is superseded by the migration plan, whose **Phase 0 (foundations & parity harness) is complete (close-out verified 2026-08-28)**. Next work: Phase 1 — Postgres + pgvector data plane (Alembic migrations with `tenant_id`/RLS, `PostgresVectorStore`, `pg_migrate.py`), per the migration doc and foundation spec. Deferred-findings record (dependency audit, bandit sensor, Docker packaging, live golden eval) lives in the migration doc's close-out section.
 
 ---
 
@@ -470,6 +471,12 @@ http://localhost:8000
   * Enterprise-scaling discussion (tabled, not built): grounded in the README's existing "Scaling considerations" and the actual code -- brute-force non-ANN vector search, full-cache-rebuild-on-every-write, single-process/single-SQLite-file ceiling, no auth/tenancy/audit trail. Direction recorded: managed Postgres + pgvector (HNSW) with `tenant_id`/RLS on every row + Postgres FTS; S3 for source documents; async ingest queue with incremental indexing; stateless autoscaled API; SSO/RBAC + immutable audit log; hosted/self-hosted LLM (vLLM/TGI) + batch reranker; eval harness promoted to drift monitoring. Phased migration sketched: A data plane -> B ingestion -> C tenancy/security -> D serving -> E load-test/prove/compliance.
 * **Verification**: `freebuff-preview status` shows install/dev/build set with `running: false`; the install steps themselves (uv venv, pip resolve, model pre-cache) were exercised directly in the sandbox and succeeded.
 * **Plan changes**: None -- no Build Plan phase added. What's Next gained the DEFERRED enterprise-scaling item with an explicit "revisit before writing any code" note.
+
+### 2026-08-28 (session 8 — enterprise foundation delivered; Phase 0 close-out)
+* **Phase**: Enterprise foundation (ICM tasks 1–9 of `docs/superpowers/plans/2026-08-28-enterprise-foundation-plan.md`), then Phase 0 close-out.
+* **Context**: Across commits on `feat/enterprise-foundation` (13 ahead of `main`), the foundation landed: ICM navigation layer, typed `config.py` + `app_factory.py`, `tenant_context.py`, `blob_store.py` + `audit.py`, the `contracts.py` Evidence/Interpretation/Decision response model, health/request-ID/API limits, idempotent `ingestion.py` jobs, the deterministic foundation harness (`backend/harness.py` + `scripts/run_foundation_gates.py`), and release/operations docs. This session closed out Phase 0: ticked the plan's 82 completed checkboxes (golden eval + human diff review left as the two manual steps), marked Phase 0 COMPLETE in `docs/enterprise-migration.md` with verification evidence, and added the deferred-findings record (dependency audit, bandit sensor, Docker packaging, live golden eval — each with owner/reason/review date).
+* **Verification (recorded, exit 0 on all)**: `pytest tests/ -q` → 90 passed / 1 skipped; `python scripts/run_foundation_gates.py --mode gate` → 0 findings / 0 blocking; `python eval/parity_runner.py` → mean recall@4 = 1.0; `python -m compileall -q backend app_factory.py config.py` → clean; `git ls-files` → no runtime artifacts committed.
+* **Plan changes**: What's Next's DEFERRED enterprise item replaced with the migration-plan pointer; next work is Phase 1 (Postgres + pgvector).
 
 ---
 
