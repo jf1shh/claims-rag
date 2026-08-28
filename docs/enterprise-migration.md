@@ -1,8 +1,9 @@
 # Enterprise Migration Plan — SQLite → Postgres + pgvector + S3 + Async Ingest
 
-> **Status: Phase 0 complete (2026-08-20).** This document supersedes the
-> "Enterprise multi-tenant scaling (DEFERRED)" note in CLAUDE.md's What's Next and
-> is the source of truth for the migration. Each phase updates its milestone statuses here.
+> **Status: Phase 0 complete (2026-08-20; close-out verified 2026-08-28).** This
+> document supersedes the "Enterprise multi-tenant scaling (DEFERRED)" note in
+> CLAUDE.md's What's Next and is the source of truth for the migration. Each phase
+> updates its milestone statuses here.
 
 Target: a multi-tenant, production-grade version of AutoClaimsRAG. Everything is
 provider-neutral except where noted (assumes AWS: managed Postgres on RDS/Aurora,
@@ -30,7 +31,7 @@ frontend chat/trace UX. Callers consume a `VectorStore` interface
 
 ---
 
-## Phase 0 — Foundations & parity harness (2–3 wks) — IN PROGRESS
+## Phase 0 — Foundations & parity harness (2–3 wks) — COMPLETE
 
 | Milestone | Deliverable | Status |
 |---|---|---|
@@ -39,6 +40,19 @@ frontend chat/trace UX. Callers consume a `VectorStore` interface
 
 **Exit criteria:** SQLite backend passes the full test suite unchanged in behavior;
 parity harness runs in CI (self-check parity = 1.0); paths configurable + repo-anchored.
+
+**Close-out evidence (2026-08-28, on `feat/enterprise-foundation`):**
+
+- `pytest tests/ -q` → **90 passed, 1 skipped** (exit 0).
+- `python scripts/run_foundation_gates.py --mode gate` → **0 findings, 0 blocking** (exit 0).
+- `python eval/parity_runner.py` → **mean recall@4 = 1.0, mean exact-match@4 = 1.0** (exit 0).
+- `python -m compileall -q backend app_factory.py config.py` → clean (exit 0).
+- `git ls-files` → no runtime artifacts committed (no `rag_store.db`, `stored_documents/`,
+  logs, caches, or secrets).
+- The foundation implementation plan is marked complete with the two manual steps
+  (live golden evaluation, human diff review) explicitly remaining.
+
+Phase 0 is complete; the next work is **Phase 1 — Data plane: Postgres + pgvector**.
 
 **Key decision:** pgvector HNSW is approximate vs SQLite's brute-force search — the
 parity harness defines acceptable divergence (recall@k ≥ 0.9) *before* data migrates.
@@ -108,6 +122,16 @@ RLS onto live multi-tenant data is the most expensive mistake in this plan.
 | 6.4 | Cutover: both backends feature-flagged, parity in staging, blue/green, rollback drill | Production on Postgres; rollback < 1 hr |
 
 ---
+
+## Deferred findings (close-out record, 2026-08-28)
+
+| Finding | Owner | Reason | Review date |
+|---|---|---|---|
+| Phases 1–6 (Postgres data plane, S3, async ingest, auth/audit, serving, scale) | Repository maintainer (Jared Fisher) | Sequenced roadmap; each phase must land and stabilize before the next | Start of each phase (next: Phase 1) |
+| Dependency audit (`pip-audit`) wired into the harness | Repository maintainer (Jared Fisher) | Plan Task 8 listed it as a P0 gate; the shipped harness runs secrets/specs/docs gates, and CI runs the isolation/grounding tests — the audit remains advisory until wired | Phase 1 planning |
+| Static security analysis (bandit) as a harness sensor | Repository maintainer (Jared Fisher) | Plan Task 8 listed it as a P1 sensor; not yet invoked by the harness | Phase 1 planning |
+| Docker packaging | Repository maintainer (Jared Fisher) | Optional distribution work; revisit at Phase 5 (serving) | Phase 5 |
+| Golden evaluation with a live LM Studio judge | Repository maintainer (Jared Fisher) | Requires a running local model server; automated suite covers the remaining release checks | Before first production release |
 
 ## Order rationale & effort
 

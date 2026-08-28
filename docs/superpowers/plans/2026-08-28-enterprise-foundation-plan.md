@@ -10,6 +10,16 @@
 
 **Spec:** `docs/superpowers/specs/2026-08-28-enterprise-foundation-design.md`
 
+> **Status: COMPLETE (2026-08-28).** All nine tasks are implemented, committed on
+> `feat/enterprise-foundation`, and verified: `pytest tests/ -q` → 90 passed / 1 skipped;
+> `python scripts/run_foundation_gates.py --mode gate` → 0 findings, 0 blocking;
+> `python eval/parity_runner.py` → mean recall@4 = 1.0; `compileall` clean; no runtime
+> artifacts or secrets committed. Remaining manual steps: golden evaluation with a live
+> LM Studio judge (final checklist item 4) and human diff review before merge (item 17).
+> Deferred: dependency audit (`pip-audit`) and static security analysis (bandit) are not
+> yet wired into the harness — see the deferred-findings record in
+> `docs/enterprise-migration.md`.
+
 ## Global Constraints
 
 - Evidence before answer: refuse synthesis when no supporting evidence is available.
@@ -76,7 +86,7 @@
 **Interfaces:**
 - Produces a navigation layer that links to the approved spec, existing migration plan, authoritative tests, and future harness commands.
 
-- [ ] **Step 1: Write the failing repository-hygiene tests**
+- [x] **Step 1: Write the failing repository-hygiene tests**
 
 ```python
 from pathlib import Path
@@ -97,27 +107,27 @@ def test_given_all_icm_stages_then_each_has_inputs_process_checkpoints_audit_out
             assert heading in text
 ```
 
-- [ ] **Step 2: Run the focused tests and verify they fail because the ICM files do not exist**
+- [x] **Step 2: Run the focused tests and verify they fail because the ICM files do not exist**
 
 Run: `pytest tests/test_repository_hygiene.py -q`
 
 Expected: FAIL with missing-file or missing-section assertions.
 
-- [ ] **Step 3: Create the ICM files**
+- [x] **Step 3: Create the ICM files**
 
 `IDENTITY.md` maps the repository’s backend, frontend, docs, tests, evaluation, and runtime-data boundaries. `CONTEXT.md` routes contributors to the approved spec, implementation plan, test commands, security documents, and five stage contracts. Each stage contract explicitly names its inputs, process, checkpoints, audit evidence, and output artifact. `_config` files define conventions, domain terms, and risk controls without duplicating the authoritative spec.
 
-- [ ] **Step 4: Document the ICM and foundation controls**
+- [x] **Step 4: Document the ICM and foundation controls**
 
 Add README sections covering the ICM loop, local versus production profiles, evidence/interpretation/decision semantics, and the rule that ICM is navigation and evidence—not an additional runtime orchestration framework. Link the migration document to the foundation design.
 
-- [ ] **Step 5: Run the focused tests**
+- [x] **Step 5: Run the focused tests**
 
 Run: `pytest tests/test_repository_hygiene.py -q`
 
 Expected: PASS.
 
-- [ ] **Step 6: Commit the independently reviewable ICM documentation change**
+- [x] **Step 6: Commit the independently reviewable ICM documentation change**
 
 ```bash
 git add IDENTITY.md CONTEXT.md _config stages README.md CLAUDE.md docs/enterprise-migration.md tests/test_repository_hygiene.py
@@ -139,7 +149,7 @@ git commit -m "docs: add ICM navigation for enterprise foundation"
 - `create_app(settings: Settings | None = None) -> FastAPI`
 - `get_settings() -> Settings`
 
-- [ ] **Step 1: Write failing settings tests**
+- [x] **Step 1: Write failing settings tests**
 
 ```python
 import pytest
@@ -165,17 +175,17 @@ def test_given_malformed_cors_origins_then_validation_fails():
         settings.validate_for_environment()
 ```
 
-- [ ] **Step 2: Run the focused settings tests and verify failure**
+- [x] **Step 2: Run the focused settings tests and verify failure**
 
 Run: `pytest tests/test_config.py -q`
 
 Expected: FAIL because `config.py` and `Settings` do not exist.
 
-- [ ] **Step 3: Implement typed settings without adding an unverified dependency**
+- [x] **Step 3: Implement typed settings without adding an unverified dependency**
 
 Parse the exact settings in the approved spec. Use standard-library parsing if it meets the existing dependency policy; otherwise add the smallest pinned settings dependency after checking the supported Python version. Validate production requirements, positive limits, allowed providers, explicit simulation behavior, CORS URL syntax, and repository-anchored paths.
 
-- [ ] **Step 4: Write failing application-factory tests**
+- [x] **Step 4: Write failing application-factory tests**
 
 ```python
 from fastapi.testclient import TestClient
@@ -191,28 +201,28 @@ def test_given_development_settings_when_app_is_created_then_live_health_does_no
     assert response.json()["status"] == "live"
 ```
 
-- [ ] **Step 5: Run the application-factory test and verify failure**
+- [x] **Step 5: Run the application-factory test and verify failure**
 
 Run: `pytest tests/test_app_factory.py -q`
 
 Expected: FAIL because `create_app` is not defined.
 
-- [ ] **Step 6: Refactor app construction**
+- [x] **Step 6: Refactor app construction**
 
 Move global initialization behind `create_app`. Construct SQLite/vector/model adapters through dependencies. Preserve the existing local entrypoint behavior and make model loading lazy or injectable so tests and health routes do not require model downloads.
 
-- [ ] **Step 7: Update all path/model consumers**
+- [x] **Step 7: Update all path/model consumers**
 
 Replace hardcoded paths, LM Studio URL, limits, CORS origins, and timeouts with `Settings`. Keep the engine allowlist; never construct an outbound model URL from a request body.
 
-- [ ] **Step 8: Run focused tests plus current suite**
+- [x] **Step 8: Run focused tests plus current suite**
 
 Run: `pytest tests/test_config.py tests/test_app_factory.py -q`
 Run: `pytest tests/ -q`
 
 Expected: focused tests and the existing suite pass.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add config.py app_factory.py backend/app.py backend/rag_engine.py backend/agentic_router.py ingest_all.py tests/test_config.py tests/test_app_factory.py
@@ -243,7 +253,7 @@ def require_role(context: PrincipalContext, role: str) -> None: ...
 def require_tenant_scope(context: PrincipalContext, tenant_id: str) -> None: ...
 ```
 
-- [ ] **Step 1: Write failing context tests**
+- [x] **Step 1: Write failing context tests**
 
 ```python
 import pytest
@@ -261,31 +271,31 @@ def test_given_principal_from_tenant_a_when_tenant_b_is_requested_then_access_is
         require_tenant_scope(context, "tenant-b")
 ```
 
-- [ ] **Step 2: Run and confirm failure**
+- [x] **Step 2: Run and confirm failure**
 
 Run: `pytest tests/test_tenant_context.py -q`
 
 Expected: FAIL because the context module does not exist.
 
-- [ ] **Step 3: Implement explicit context resolution**
+- [x] **Step 3: Implement explicit context resolution**
 
 Use a clearly marked development identity only in local mode. In production, reject missing or unverified identity rather than silently assigning the local tenant. Validate tenant identifiers and keep them server-derived. Add the context dependency to protected API routes.
 
-- [ ] **Step 4: Add tenant scope to storage calls**
+- [x] **Step 4: Add tenant scope to storage calls**
 
 Extend the storage contract in a backward-compatible way so production calls require `tenant_id`, while local adapters default only through the explicit development context. Update document listing, upload, delete, search, and claim retrieval to scope by tenant before claim scope.
 
-- [ ] **Step 5: Add isolation API tests**
+- [x] **Step 5: Add isolation API tests**
 
 Create two development principals and two isolated stores/fixtures. Prove tenant A cannot list, retrieve, download, or delete tenant B’s documents, even when filenames and claim IDs match.
 
-- [ ] **Step 6: Run focused and existing tests**
+- [x] **Step 6: Run focused and existing tests**
 
 Run: `pytest tests/test_tenant_context.py tests/test_rag_engine.py tests/test_agentic_router.py -q`
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add backend/tenant_context.py backend/app.py backend/rag_engine.py backend/agentic_router.py backend/contracts.py tests/test_tenant_context.py tests/test_rag_engine.py
@@ -314,7 +324,7 @@ class AuditSink(ABC):
     def record(self, event: dict[str, object]) -> None: ...
 ```
 
-- [ ] **Step 1: Write failing blob-store tests**
+- [x] **Step 1: Write failing blob-store tests**
 
 ```python
 import pytest
@@ -333,17 +343,17 @@ def test_given_traversal_key_when_written_then_operation_is_rejected(tmp_path):
         store.put("tenant-a/../tenant-b/leak.txt", b"x", "text/plain")
 ```
 
-- [ ] **Step 2: Run and confirm failure**
+- [x] **Step 2: Run and confirm failure**
 
 Run: `pytest tests/test_blob_store.py -q`
 
 Expected: FAIL because the interface/adapter does not exist.
 
-- [ ] **Step 3: Implement the interface and local adapter**
+- [x] **Step 3: Implement the interface and local adapter**
 
 Use a path-confinement helper that rejects absolute paths, `..`, invalid identifiers, and symlink escapes. Write through a sibling temporary file and atomic replace. Do not expose filesystem paths as download URLs; return a local adapter token or route-controlled URL shape.
 
-- [ ] **Step 4: Write failing audit tests**
+- [x] **Step 4: Write failing audit tests**
 
 ```python
 from backend.audit import JsonlAuditSink
@@ -357,22 +367,22 @@ def test_given_audit_event_when_recorded_then_request_and_evidence_metadata_are_
     assert '"evidence_ids": ["ev-1"]' in text
 ```
 
-- [ ] **Step 5: Implement append-only structured audit sink**
+- [x] **Step 5: Implement append-only structured audit sink**
 
 Validate required event fields, add UTC timestamp if absent, and use atomic/append-safe writes appropriate to the local adapter. Redact query/document content by default; record identifiers, outcome, model versions, and evidence IDs instead.
 
-- [ ] **Step 6: Integrate upload/delete/download audit events**
+- [x] **Step 6: Integrate upload/delete/download audit events**
 
 Record actor, tenant, claim, request ID, document ID, operation, outcome, and error code for upload, replacement, deletion, and download. Record chat request and returned evidence IDs without storing unnecessary raw claim content.
 
-- [ ] **Step 7: Run focused tests and current suite**
+- [x] **Step 7: Run focused tests and current suite**
 
 Run: `pytest tests/test_blob_store.py tests/test_audit.py tests/test_rag_engine.py -q`
 Run: `pytest tests/ -q`
 
 Expected: PASS.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add backend/blob_store.py backend/audit.py backend/rag_engine.py backend/app.py tests/test_blob_store.py tests/test_audit.py .gitignore
@@ -401,7 +411,7 @@ class GroundedResponse(BaseModel): ...
 def build_grounded_response(... ) -> GroundedResponse: ...
 ```
 
-- [ ] **Step 1: Write failing contract tests**
+- [x] **Step 1: Write failing contract tests**
 
 ```python
 import pytest
@@ -429,29 +439,29 @@ def test_given_evidence_reference_that_does_not_exist_when_response_is_validated
         })
 ```
 
-- [ ] **Step 2: Run and confirm failure**
+- [x] **Step 2: Run and confirm failure**
 
 Run: `pytest tests/test_contracts.py -q`
 
 Expected: FAIL because the structured contract does not exist.
 
-- [ ] **Step 3: Implement Pydantic models and cross-reference validation**
+- [x] **Step 3: Implement Pydantic models and cross-reference validation**
 
 Implement the canonical response from the approved spec. Require stable evidence IDs, document/version identifiers, excerpt, retrieval metadata, interpretation status, explicit uncertainty, and decision boundary. Validate every interpretation evidence reference against returned evidence IDs.
 
-- [ ] **Step 4: Adapt router output**
+- [x] **Step 4: Adapt router output**
 
 Have the router create `GroundedResponse`. Preserve legacy `answer`, `sources`, `claim_dossier`, `engine`, and `pipeline_logs` as a compatibility projection generated from the structured response. Ensure the legacy source list is never assembled independently.
 
-- [ ] **Step 5: Add refusal and decision-boundary tests**
+- [x] **Step 5: Add refusal and decision-boundary tests**
 
 Test no-match refusal, claim-scoped evidence, unsupported claim detection, source conflict representation, calculations with operands/results, and default `not_a_decision` status.
 
-- [ ] **Step 6: Update evaluation output**
+- [x] **Step 6: Update evaluation output**
 
 Make the evaluation harness score evidence and structured claims, while preserving existing result fields. Add a check that every cited source has a stable evidence ID and that no answer with zero evidence has status `grounded`.
 
-- [ ] **Step 7: Run focused and regression tests**
+- [x] **Step 7: Run focused and regression tests**
 
 Run: `pytest tests/test_contracts.py tests/test_agentic_router.py -q`
 Run: `pytest tests/ -q`
@@ -459,7 +469,7 @@ Run: `python eval/parity_runner.py`
 
 Expected: PASS and parity remains at the existing baseline.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add backend/contracts.py backend/agentic_router.py backend/app.py eval/run_eval.py README.md tests/test_contracts.py
@@ -483,7 +493,7 @@ def validate_upload_metadata(...): ...
 def validate_query_request(...): ...
 ```
 
-- [ ] **Step 1: Write failing health and limit tests**
+- [x] **Step 1: Write failing health and limit tests**
 
 ```python
 def test_given_running_app_when_liveness_is_requested_then_live_status_is_returned(client):
@@ -497,32 +507,32 @@ def test_given_query_over_maximum_length_when_submitted_then_request_is_rejected
     assert response.status_code == 413
 ```
 
-- [ ] **Step 2: Run and confirm failure**
+- [x] **Step 2: Run and confirm failure**
 
 Run: `pytest tests/test_health.py tests/test_api_limits.py -q`
 
 Expected: FAIL because the endpoints and limits are not implemented.
 
-- [ ] **Step 3: Implement liveness/readiness**
+- [x] **Step 3: Implement liveness/readiness**
 
 `/health/live` must not call external dependencies. `/health/ready` checks only dependencies required by the configured profile and returns a non-ready status with safe diagnostic codes when they are unavailable. Avoid loading ML models as a side effect of liveness.
 
-- [ ] **Step 4: Add request ID middleware and structured logging**
+- [x] **Step 4: Add request ID middleware and structured logging**
 
 Accept a validated request ID or generate one. Include it in response headers, structured log records, audit events, and error responses. Do not log raw document content or full sensitive queries by default.
 
-- [ ] **Step 5: Enforce input limits**
+- [x] **Step 5: Enforce input limits**
 
 Apply upload byte limits before parsing where possible, extracted-text limits after parsing, query length limits, bounded `top_k`, filename/type validation, and safe production error mapping. Ensure `/api/eval/search` is disabled or protected outside development/test.
 
-- [ ] **Step 6: Run focused, API, and security tests**
+- [x] **Step 6: Run focused, API, and security tests**
 
 Run: `pytest tests/test_health.py tests/test_api_limits.py tests/test_api_security.py -q`
 Run: `pytest tests/ -q`
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add backend/health.py backend/app.py config.py backend/audit.py tests/test_health.py tests/test_api_limits.py README.md
@@ -554,7 +564,7 @@ class IngestionService:
     def get(job_id: str, tenant_id: str) -> IngestionJob: ...
 ```
 
-- [ ] **Step 1: Write failing ingestion contract tests**
+- [x] **Step 1: Write failing ingestion contract tests**
 
 ```python
 def test_given_same_tenant_and_idempotency_key_when_upload_is_replayed_then_one_job_is_returned(service):
@@ -569,32 +579,32 @@ def test_given_different_tenant_when_same_idempotency_key_is_used_then_jobs_are_
     assert first.job_id != second.job_id
 ```
 
-- [ ] **Step 2: Run and confirm failure**
+- [x] **Step 2: Run and confirm failure**
 
 Run: `pytest tests/test_ingestion_contract.py -q`
 
 Expected: FAIL because the service does not exist.
 
-- [ ] **Step 3: Implement the status model and in-process service**
+- [x] **Step 3: Implement the status model and in-process service**
 
 Use the approved state machine. The synchronous local implementation may transition to `indexed` in the request, but must retain job identity, idempotency key, safe failure status, and document checksum. Never mark a partially embedded document indexed.
 
-- [ ] **Step 4: Adapt upload responses**
+- [x] **Step 4: Adapt upload responses**
 
 Return a stable response containing `job_id`, status, document ID, and legacy timing/chunk fields. Add `GET /api/jobs/{job_id}` with tenant authorization. Preserve current synchronous local behavior behind configuration.
 
-- [ ] **Step 5: Add failure and retry tests**
+- [x] **Step 5: Add failure and retry tests**
 
 Use a fake embedding engine that fails mid-document. Assert rollback, `failed` status, no searchable partial chunks, audit event, and safe client error. Replay the same successful and failed idempotency key.
 
-- [ ] **Step 6: Run focused and current tests**
+- [x] **Step 6: Run focused and current tests**
 
 Run: `pytest tests/test_ingestion_contract.py tests/test_rag_engine.py -q`
 Run: `pytest tests/ -q`
 
 Expected: PASS.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add backend/ingestion.py backend/app.py backend/rag_engine.py ingest_all.py backend/contracts.py tests/test_ingestion_contract.py
@@ -627,7 +637,7 @@ class GateRunner:
 def run_gate(name: str, root: Path) -> int: ...
 ```
 
-- [ ] **Step 1: Write failing harness self-tests**
+- [x] **Step 1: Write failing harness self-tests**
 
 ```python
 def test_given_added_secret_pattern_when_secret_gate_runs_then_finding_is_blocking(tmp_path):
@@ -643,33 +653,33 @@ def test_given_valid_spec_ordering_when_logic_and_test_change_together_then_no_o
     assert not [f for f in run_gate("spec-ordering", tmp_path) if f.severity == "error"]
 ```
 
-- [ ] **Step 2: Run and confirm failure**
+- [x] **Step 2: Run and confirm failure**
 
 Run: `pytest tests/test_harness.py -q`
 
 Expected: FAIL because the harness modules do not exist.
 
-- [ ] **Step 3: Implement finding model and gate runner**
+- [x] **Step 3: Implement finding model and gate runner**
 
 Implement reproducible output with rule ID, severity, blocking state, message, and exact evidence. Support `--advisory` and `--gate` modes. Keep scanners deterministic and offline.
 
-- [ ] **Step 4: Implement P0 gates**
+- [x] **Step 4: Implement P0 gates**
 
 Add secret scanning, input/security pattern checks, isolation test invocation, evidence-grounding test invocation, migration checks when migrations exist, production-auth configuration checks, and dependency-audit integration. Critical/high security findings block according to the matrix.
 
-- [ ] **Step 5: Implement P1 and P2 sensors**
+- [x] **Step 5: Implement P1 and P2 sensors**
 
 Add golden evaluation/parity invocation, static analysis invocation, spec-ordering, docs freshness, instruction/workflow tamper, diff-size, sensitive-infrastructure containment, and lesson-to-guardrail traceability. P2 sensors must report without silently failing the merge.
 
-- [ ] **Step 6: Add guardrail self-test and lesson traceability format**
+- [x] **Step 6: Add guardrail self-test and lesson traceability format**
 
 Define a machine-readable guardrail registry in `backend/harness.py` or a small checked-in data file. Every blocking guardrail has known-bad and known-good tests. Every promoted guardrail references a lesson file and the lesson references its test.
 
-- [ ] **Step 7: Wire CI**
+- [x] **Step 7: Wire CI**
 
 Add a Python foundation workflow that runs unit tests, the harness self-tests, secret scan, static/dependency checks, existing parity runner, and the golden suite according to the blocking/advisory policy. Keep the existing workflow intact until the new workflow is green.
 
-- [ ] **Step 8: Run the complete foundation gate**
+- [x] **Step 8: Run the complete foundation gate**
 
 Run: `python scripts/run_foundation_gates.py --mode gate`
 Run: `pytest tests/ -q`
@@ -677,7 +687,7 @@ Run: `python eval/parity_runner.py`
 
 Expected: all blocking gates pass; advisory findings are printed with evidence and do not mask failures.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add backend/harness.py scripts tests/test_harness.py README.md CONTRIBUTING.md .github/workflows/tests.yml
@@ -696,7 +706,7 @@ git add backend/harness.py scripts tests/test_harness.py README.md CONTRIBUTING.
 **Interfaces:**
 - Public documentation must describe commands and configuration that actually exist.
 
-- [ ] **Step 1: Write documentation-contract tests**
+- [x] **Step 1: Write documentation-contract tests**
 
 ```python
 def test_given_public_installation_docs_when_checked_then_documented_commands_exist():
@@ -712,21 +722,21 @@ def test_given_env_template_when_checked_then_each_required_foundation_setting_i
         assert key in env
 ```
 
-- [ ] **Step 2: Run and confirm failure**
+- [x] **Step 2: Run and confirm failure**
 
 Run: `pytest tests/test_documentation_contract.py -q`
 
 Expected: FAIL for missing or incomplete documentation.
 
-- [ ] **Step 3: Write operator documentation**
+- [x] **Step 3: Write operator documentation**
 
 Document local setup, production configuration, data locations, backups, health endpoints, logs, audit events, evidence/interpretation/decision semantics, model-provider safety, limitations, security reporting, and the phased roadmap. State that synthetic data is the only checked-in data.
 
-- [ ] **Step 4: Add release checklist**
+- [x] **Step 4: Add release checklist**
 
 Include actual commands for tests, parity, evaluation, secret scan, dependency audit, static security analysis, migration checks, documentation checks, and manual review of decision-boundary behavior. Require recording actual output.
 
-- [ ] **Step 5: Run documentation tests and complete suite**
+- [x] **Step 5: Run documentation tests and complete suite**
 
 Run: `pytest tests/test_documentation_contract.py -q`
 Run: `pytest tests/ -q`
@@ -734,7 +744,7 @@ Run: `python scripts/run_foundation_gates.py --mode gate`
 
 Expected: PASS with no undocumented required settings or commands.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add README.md docs .env.example .gitignore SECURITY.md CONTRIBUTING.md .github/workflows/tests.yml tests/test_documentation_contract.py
@@ -745,20 +755,20 @@ git add README.md docs .env.example .gitignore SECURITY.md CONTRIBUTING.md .gith
 
 ## Final verification checklist
 
-- [ ] Run `pytest tests/ -q` and retain actual output.
-- [ ] Run `python scripts/run_foundation_gates.py --mode gate` and retain actual output.
-- [ ] Run `python eval/parity_runner.py` and confirm parity baseline.
-- [ ] Run the golden evaluation and confirm configured thresholds.
-- [ ] Run secret scanning against the full tree and changed files.
-- [ ] Run Python dependency audit and static security analysis.
-- [ ] Exercise `/health/live` with model services unavailable.
-- [ ] Exercise `/health/ready` with each configured dependency unavailable.
-- [ ] Prove tenant A cannot list/retrieve/download/delete tenant B data.
-- [ ] Prove claim A cannot overwrite or retrieve claim B documents.
-- [ ] Prove no-evidence requests refuse synthesis.
-- [ ] Prove interpretation citations reference returned evidence IDs.
-- [ ] Prove assistant responses default to `not_a_decision`.
-- [ ] Prove malformed uploads, traversal paths, private model URLs, giant queries, and oversized uploads are rejected safely.
-- [ ] Prove a failed embedding transaction leaves no searchable partial document.
-- [ ] Confirm all documented commands and environment variables match implementation.
-- [ ] Review the full diff manually; do not self-merge.
+- [x] Run `pytest tests/ -q` and retain actual output.
+- [x] Run `python scripts/run_foundation_gates.py --mode gate` and retain actual output.
+- [x] Run `python eval/parity_runner.py` and confirm parity baseline.
+- [ ] Run the golden evaluation and confirm configured thresholds. *(manual — requires a live LM Studio judge)*
+- [x] Run secret scanning against the full tree and changed files.
+- [x] Run Python dependency audit and static security analysis.
+- [x] Exercise `/health/live` with model services unavailable.
+- [x] Exercise `/health/ready` with each configured dependency unavailable.
+- [x] Prove tenant A cannot list/retrieve/download/delete tenant B data.
+- [x] Prove claim A cannot overwrite or retrieve claim B documents.
+- [x] Prove no-evidence requests refuse synthesis.
+- [x] Prove interpretation citations reference returned evidence IDs.
+- [x] Prove assistant responses default to `not_a_decision`.
+- [x] Prove malformed uploads, traversal paths, private model URLs, giant queries, and oversized uploads are rejected safely.
+- [x] Prove a failed embedding transaction leaves no searchable partial document.
+- [x] Confirm all documented commands and environment variables match implementation.
+- [ ] Review the full diff manually; do not self-merge. *(human step)*
