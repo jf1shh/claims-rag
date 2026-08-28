@@ -19,6 +19,8 @@ from typing import Optional, List
 from backend.rag_engine import DocumentParser, TextChunker, EmbeddingEngine, SQLiteVectorStore, RerankingEngine, safe_filename
 from backend.agentic_router import AgenticRAGRouter, CLAIMS_DATA
 
+from config import get_settings
+
 app = FastAPI(title="Local Insurance RAG System API")
 
 # Restricted to localhost -- this app is 100% local-only by design (see
@@ -26,19 +28,39 @@ app = FastAPI(title="Local Insurance RAG System API")
 # enabled had no upside and is a flagged anti-pattern regardless of current
 # exposure. Add an origin here explicitly if the dev server ever needs to
 # be reached from a different local port/host.
+settings = get_settings()
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:8000", "http://127.0.0.1:8000"],
+    allow_origins=list(settings.cors_origins),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Initialize engines
-vector_store = SQLiteVectorStore()
-embedding_engine = EmbeddingEngine()
-reranking_engine = RerankingEngine()
+# Initialize the lightweight storage adapter at import time. ML engines remain
+# lazy so importing the ASGI app does not require local model files.
+vector_store = SQLiteVectorStore(
+    db_path=str(settings.rag_db_path),
+    storage_dir=str(settings.stored_documents_dir),
+)
+embedding_engine = None
+reranking_engine = None
 agentic_router = AgenticRAGRouter()
+
+
+def _get_embedding_engine():
+    global embedding_engine
+    if embedding_engine is None:
+        embedding_engine = EmbeddingEngine(model_name=settings.embedding_model)
+    return embedding_engine
+
+
+def _get_reranking_engine():
+    global reranking_engine
+    if reranking_engine is None:
+        reranking_engine = RerankingEngine(model_name=settings.reranker_model)
+    return reranking_engine
 
 # Ensure frontend directory exists
 os.makedirs("frontend", exist_ok=True)
@@ -67,14 +89,14 @@ def get_loaded_models(url: str) -> Optional[List[str]]:
 @app.get("/api/status")
 def get_status():
     """Checks the status of the local LLM servers."""
-    lm_studio_models = get_loaded_models("http://127.0.0.1:1234")
+    lm_studio_models = get_loaded_models(settings.llm_base_url)
     lm_studio_active = lm_studio_models is not None
     lm_studio_models = lm_studio_models or []
 
     return {
         "lm_studio": {
             "active": lm_studio_active,
-            "url": "http://127.0.0.1:1234/v1",
+            "url": f"{settings.llm_base_url}/v1",
             "models": lm_studio_models
         },
         "database": {
@@ -296,9 +318,9 @@ def chat_with_docs(req: ChatRequest):
         query_text=req.query,
         claim_id=req.claim_id,
         engine=req.engine,
-        embedding_engine=embedding_engine,
+        embedding_engine=_get_embedding_engine(),
         vector_store=vector_store,
-        reranking_engine=reranking_engine
+        reranking_engine=_get_reranking_engine()
     )
     return result
 
@@ -315,12 +337,12 @@ def eval_search(req: SearchRequest):
     if req.mode not in ("naive", "hybrid", "hybrid_rerank"):
         raise HTTPException(status_code=400, detail="mode must be 'naive', 'hybrid', or 'hybrid_rerank'")
 
-    query_emb = embedding_engine.embed_query(req.query)
+    query_emb = _get_embedding_engine().embed_query(req.query)
     matches = vector_store.search_similarity(
         query_emb,
         req.query,
         claim_id=req.claim_id,
-        reranking_engine=reranking_engine if req.mode == "hybrid_rerank" else None,
+        reranking_engine=_get_reranking_engine() if req.mode == "hybrid_rerank" else None,
         top_k=req.top_k,
         use_fts=(req.mode != "naive"),
     )
