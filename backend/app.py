@@ -8,7 +8,9 @@ import shutil
 import tempfile
 import requests
 import time
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+import uuid
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request
+from fastapi.responses import JSONResponse
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -20,8 +22,18 @@ from backend.rag_engine import DocumentParser, TextChunker, EmbeddingEngine, SQL
 from backend.agentic_router import AgenticRAGRouter, CLAIMS_DATA
 
 from config import get_settings
+from backend.health import live_status, ready_status
 
 app = FastAPI(title="Local Insurance RAG System API")
+
+
+@app.middleware("http")
+async def request_id_middleware(request: Request, call_next):
+    request_id = request.headers.get("X-Request-ID") or f"req_{uuid.uuid4().hex}"
+    request.state.request_id = request_id
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = request_id
+    return response
 
 # Restricted to localhost -- this app is 100% local-only by design (see
 # CLAUDE.md's Critical Constraints), so a wildcard origin with credentials
@@ -85,6 +97,17 @@ def get_loaded_models(url: str) -> Optional[List[str]]:
     except requests.RequestException:
         pass
     return None
+
+@app.get("/health/live")
+def health_live():
+    return live_status()
+
+
+@app.get("/health/ready")
+def health_ready():
+    payload, status_code = ready_status({"database": lambda: vector_store._connect().close()})
+    return JSONResponse(content=payload, status_code=status_code)
+
 
 @app.get("/api/status")
 def get_status():
@@ -329,6 +352,15 @@ class SearchRequest(BaseModel):
     claim_id: Optional[str] = None
     mode: str  # 'naive' (vector-only) | 'hybrid' (vector+FTS+RRF) | 'hybrid_rerank' (+ cross-encoder)
     top_k: int = 4
+
+    def validate_limits(self, settings):
+        if len(self.query) > settings.max_query_chars:
+            raise ValueError("query exceeds configured maximum")
+        if self.top_k > settings.max_top_k:
+            raise ValueError("top_k exceeds configured maximum")
+        if self.top_k <= 0:
+            raise ValueError("top_k must be positive")
+        return self
 
 @app.post("/api/eval/search")
 def eval_search(req: SearchRequest):
