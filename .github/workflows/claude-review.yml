@@ -1,8 +1,10 @@
 name: Claude Opus PR Review
 
+# Disabled for this local-only project: the hosted review action requires
+# external credentials. Human review and repository-native checks remain the
+# authoritative review path.
 on:
-  pull_request:
-    types: [opened, synchronize, reopened]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -19,7 +21,7 @@ permissions:
 
 jobs:
   review:
-    if: github.event.pull_request.draft == false
+    if: ${{ false }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code

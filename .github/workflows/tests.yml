@@ -19,11 +19,11 @@ jobs:
         with:
           python-version: "3.12"
 
-      # The unit tests are deliberately torch-free (EmbeddingEngine and
-      # RerankingEngine import sentence-transformers lazily), so CI installs
-      # only the light dependencies rather than the full ML stack.
+      # Install the pinned runtime/test dependencies needed by the API,
+      # contracts, parsers, and tests. Model engines import lazily, so CI does
+      # not contact hosted model services or require keys/tokens.
       - name: Install test dependencies
-        run: pip install numpy pypdf python-docx pandas openpyxl requests pytest
+        run: pip install -r requirements.txt
 
       - name: Run unit tests
         run: pytest tests/ -v
