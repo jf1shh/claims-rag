@@ -10,7 +10,7 @@ A local-first, agentic RAG system for auto insurance claims handling — built t
 
 *Live demo: selecting a theft claim, then running an "OEM Parts Rider" audit. The agentic router plans sub-queries, retrieves from both global policy documents and the claim's own dossier (police report, parts receipts), and a fully local 14B model synthesizes a grounded, per-line-item answer with clickable source citations.*
 
-**Jump to:** [Why this exists](#why-this-exists) · [What it does](#what-it-does) · [FAQ (plain English)](#faq-plain-english) · [Architecture](#architecture) · [Evaluation](#evaluation--because-it-looks-right-isnt-good-enough) · [Try it locally](#try-it-locally) · [Known limitations](#known-limitations) · [Tech stack](#tech-stack)
+**Jump to:** [Why this exists](#why-this-exists) · [What it does](#what-it-does) · [FAQ (plain English)](#faq-plain-english) · [Architecture](#architecture) · [Evaluation](#evaluation--because-it-looks-right-isnt-good-enough) · [Try it locally](#try-it-locally) · [ICM workflow](#icm-workflow) · [Security posture](#security-posture) · [Known limitations](#known-limitations) · [Tech stack](#tech-stack)
 
 ## Why this exists
 
@@ -105,6 +105,20 @@ This architecture is built for one adjuster's local corpus — hundreds of docum
 4. **Multi-hop retrieval gap**: a claim's own documents were competing semantically for a slot against global policy docs and losing. Fixed by always including them directly — which then exposed a *second* bug (the LLM only reasoned about one of two line items despite having both). Both fixed and verified.
 5. **The eval harness's own default metric config penalized correct answers**: Ragas's default `mode="f1"` docked well-cited, correct answers for true elaboration not in the terse reference text. Switched to `mode="recall"`.
 
+## ICM workflow
+
+AutoClaimsRAG uses an additive **Interpretable Context Methodology (ICM)** layer to make engineering context and evidence visible. `IDENTITY.md` maps the repository, `CONTEXT.md` routes work, and `stages/{sense,propose,act,verify,learn}/` define the workflow contracts. ICM does not replace the approved specifications, tests, or CI; it points contributors to them.
+
+Claims-facing responses follow the same separation:
+
+- **Evidence:** exact authorized excerpts, document versions, chunk IDs, and locators.
+- **Interpretation:** grounded explanation, calculations, assumptions, conflicts, and uncertainty.
+- **Decision boundary:** explicit human ownership of coverage, fraud, payment, denial, or referral decisions.
+
+## Security posture
+
+This repository contains synthetic data only. Review [`SECURITY.md`](SECURITY.md) before handling uploaded content or changing routes, storage, providers, or authentication. The production foundation is designed around tenant isolation, bounded inputs, safe paths and URLs, evidence-required synthesis, auditability, and non-leaking errors.
+
 ## Try it locally
 
 ```powershell
@@ -126,6 +140,18 @@ python -m venv .venv
 ```
 
 Without an LM Studio server running, the app falls back to a rule-based simulation mode so the UI and retrieval pipeline are still fully explorable.
+
+### Verify locally
+
+Run these commands from the repository root and report their actual output:
+
+```bash
+.venv/bin/python -m pytest tests/ -q
+.venv/bin/python scripts/run_foundation_gates.py --mode gate
+.venv/bin/python eval/parity_runner.py
+```
+
+`GET /health/live` checks process liveness; `GET /health/ready` checks configured dependencies. A green local check does not claim remote CI or production readiness.
 
 ## Known limitations
 
