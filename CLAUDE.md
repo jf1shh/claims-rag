@@ -15,6 +15,9 @@ Retrieval is **hybrid**: dense vector search over child chunks is fused with FTS
 
 ## Always Read First
 
+Read `IDENTITY.md` and `CONTEXT.md` before exploring the repository. They provide the ICM navigation layer and route to the approved foundation spec, implementation plan, stage contracts, and verification commands; they supplement this engineering guide rather than replacing it.
+
+
 1. This file — architecture, constraints, and current state.
 2. [backend/rag_engine.py](file:///C:/PERSONAL/backend/rag_engine.py) — Document parsing, parent/child chunking, embedding, cross-encoder reranking, and the hybrid (vector + FTS5 + RRF) vector store with an in-memory normalized embedding cache.
 3. [backend/agentic_router.py](file:///C:/PERSONAL/backend/agentic_router.py) — Stateful agentic RAG router: query planning/decomposition, multi-sub-query retrieval, self-correction fallback, LLM synthesis, and the rule-based simulation engine (with demo `CLAIMS_DATA`).

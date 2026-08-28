@@ -34,6 +34,13 @@ pip-delete-this-directory.txt
 *.db
 *.sqlite
 *.sqlite3
+.env
+.venv/
+stored_documents/
+.superpowers/
+
+*.sqlite
+*.sqlite3
 sample_guidelines/
 stored_documents/
 
