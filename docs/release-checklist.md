@@ -29,4 +29,4 @@ Record the actual output and exit code for every command. Do not state that CI i
 
 ## Production-readiness boundary
 
-This foundation is not a production authorization for autonomous claims adjudication. Before a company loads real claim data, it must complete the later Postgres/RLS, durable object storage, authentication, authorization, audit, asynchronous ingestion, operational, and compliance phases described in the enterprise migration plan.
+This foundation is not a production authorization for autonomous claims adjudication. Phases 1–2 of the enterprise migration plan (Postgres + pgvector data plane with tenant RLS, and S3-compatible durable object storage) are implemented and verified as of 2026-08-29, but before a company loads real claim data it must still complete the remaining phases: authentication, authorization, audit, asynchronous ingestion, operational, and compliance (see `docs/enterprise-migration.md`). The default development profile remains SQLite + local filesystem.
