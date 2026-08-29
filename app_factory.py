@@ -18,6 +18,7 @@ class AppDependencies:
     queue: Any | None = None
     job_store: Any | None = None
     authenticator: Any | None = None
+    claim_access_policy: Any | None = None
 
 
 def _build_blob_store(settings: Settings):
@@ -82,6 +83,17 @@ def _build_authenticator(settings: Settings):
     return build_authenticator(settings)
 
 
+def _build_claim_access_policy(settings: Settings):
+    """Claim-level ACLs (Phase 4.2): loads claim_id -> [subjects] from
+    CLAIM_ACLS_FILE when configured. With no file (dev/test default) the
+    policy is open within the tenant, preserving pre-4.2 behavior."""
+    from backend.rbac import ClaimAccessPolicy
+
+    if settings.claim_acls_file:
+        return ClaimAccessPolicy.from_file(settings.claim_acls_file)
+    return ClaimAccessPolicy()
+
+
 def build_dependencies(settings: Settings) -> AppDependencies:
     from backend.rag_engine import SQLiteVectorStore
 
@@ -109,6 +121,7 @@ def build_dependencies(settings: Settings) -> AppDependencies:
         )
 
     authenticator = _build_authenticator(settings)
+    claim_access_policy = _build_claim_access_policy(settings)
 
     return AppDependencies(
         settings=settings,
@@ -116,6 +129,7 @@ def build_dependencies(settings: Settings) -> AppDependencies:
         queue=queue,
         job_store=job_store,
         authenticator=authenticator,
+        claim_access_policy=claim_access_policy,
     )
 
 

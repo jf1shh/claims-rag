@@ -90,6 +90,7 @@ class Settings:
     oidc_tenant_claim: str = "tenant_id"
     oidc_cache_ttl_seconds: int = 300
     service_accounts_file: Path | None = None
+    claim_acls_file: Path | None = None  # Phase 4.2 RBAC: claim_id -> [subjects]
 
     @classmethod
     def from_env(cls, environ: Mapping[str, str] | None = None) -> "Settings":
@@ -147,6 +148,7 @@ class Settings:
             oidc_tenant_claim=env.get("OIDC_TENANT_CLAIM", "tenant_id").strip(),
             oidc_cache_ttl_seconds=_int(env.get("OIDC_CACHE_TTL_SECONDS"), 300, "OIDC_CACHE_TTL_SECONDS"),
             service_accounts_file=Path(env["SERVICE_ACCOUNTS_FILE"]).expanduser() if env.get("SERVICE_ACCOUNTS_FILE") else None,
+            claim_acls_file=Path(env["CLAIM_ACLS_FILE"]).expanduser() if env.get("CLAIM_ACLS_FILE") else None,
         )
 
     def validate_for_environment(self) -> None:

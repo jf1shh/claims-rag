@@ -205,7 +205,7 @@ parity harness defines acceptable divergence (recall@k ≥ 0.9) *before* data mi
 | Milestone | Deliverable | Exit criteria | Status |
 |---|---|---|---|
 | 4.1 | SSO/OIDC (Okta/Entra/Google) + service accounts; FastAPI `get_current_tenant` on every route; frontend login + returnTo | No endpoint reachable without auth | **Done 2026-08-29** — provider-neutral `Authenticator` seam (dev / OIDC / service accounts / chain), `get_current_tenant` on every `/api/*` route, `/api/auth/me`, frontend login gate (see status below) |
-| 4.2 | RBAC: adjuster / supervisor / SIU / admin; claim-level ACLs | Permission matrix tested | |
+| 4.2 | RBAC: adjuster / supervisor / SIU / admin; claim-level ACLs | Permission matrix tested | **Done 2026-08-29** — `backend/rbac.py` permission matrix + `ClaimAccessPolicy` (claim-level ACLs from `CLAIM_ACLS_FILE`); enforced on every route (see status below) |
 | 4.3 | Immutable audit log: upload/delete/chat/download — who, tenant, claim, query, sources returned, timestamps | Completeness test on sampled actions; chat answers + source IDs logged | |
 | 4.4 | Rate limiting, upload size caps, `/api/eval/search` gated to CI/internal, secrets via KMS | Abuse drill (huge `top_k`, giant uploads) → 429/413 | |
 
@@ -233,6 +233,26 @@ parity harness defines acceptable divergence (recall@k ≥ 0.9) *before* data mi
 > bad-signature/unknown-kid all exercised against the real verification logic
 > (moto-style, no live IdP needed). Full suite 238 passed / 12 skipped, ruff
 > clean, gates 0 blocking. Next: 4.2 RBAC.
+
+> **Phase 4 status (2026-08-29, milestone 4.2):** RBAC is enforced across the
+> API. `backend/rbac.py` defines the role→permission matrix (roles: adjuster /
+> supervisor / siu / admin; permissions: `documents:read|upload|delete`,
+> `claims:read|write`, `eval:search`; hierarchy so admin inherits everything and
+> supervisor inherits adjuster) plus `ClaimAccessPolicy`, which loads claim-level
+> assignments from `CLAIM_ACLS_FILE` (JSON: `{claim_id: [role or subject, ...]}`).
+> admin / supervisor / siu hold all-claims access; an adjuster can only touch
+> claims explicitly assigned to them. Routes now enforce: `documents:*`
+> permissions on upload / delete / list / content / download; `claims:read` +
+> claim access on claim-scoped document listing and chat claims; `claims:write`
+> + claim access on claim-file upload; `GET /api/claims` returns **only the
+> claims the principal may see** (`filter_claims`) so the queue itself is
+> ACL-filtered; `/api/eval/search` is gated to `eval:search` (siu/admin).
+> `require_role` / `require_tenant_scope` remain the low-level primitives.
+> Permissions map to 403 with the role name in the detail. Verified hermetically:
+> 39 new tests — matrix/hierarchy/ACL-file unit tests plus an API-level matrix
+> (OIDC principals minted for each role; assigned vs unassigned adjuster both
+> directions; dev default untouched). Full suite 279 passed / 12 skipped, ruff
+> clean, gates 0 blocking. Next: 4.3 audit.
 
 **Note:** `tenant_id` + RLS land in Phase 1, *before* real tenants exist — retrofitting
 RLS onto live multi-tenant data is the most expensive mistake in this plan.
