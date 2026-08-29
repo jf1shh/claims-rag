@@ -13,13 +13,17 @@ import hashlib
 import pytest
 
 from backend.blob_store import LocalDocumentBlobStore
+from backend.ingestion import IngestionStatus
 from backend.ingestion_worker import (
     DEAD_LETTERED,
+    DELETED,
+    DUPLICATE,
     INDEXED,
     MALFORMED,
     REJECTED,
     IngestionWorker,
 )
+from backend.job_store import SqliteJobStore
 from backend.queue import InProcessQueue
 from backend.rag_engine import SQLiteVectorStore
 
@@ -51,14 +55,28 @@ class _FailingEmbedder:
         raise RuntimeError("embedding engine down")
 
 
-def _job_message(filename: str, blob_key: str, claim_id=None, job_id="job_1"):
+class _FlakyEmbedder:
+    """Fails the first N embed calls, then succeeds -- the recoverable case."""
+
+    def __init__(self, failures: int = 2):
+        self.failures = failures
+        self.calls = 0
+
+    def embed_chunks(self, chunks):
+        self.calls += 1
+        if self.calls <= self.failures:
+            raise RuntimeError("transient embedding engine failure")
+        return _FakeEmbedder().embed_chunks(chunks)
+
+
+def _job_message(filename: str, blob_key: str, claim_id=None, job_id="job_1", etag="abc123"):
     return {
         "job_id": job_id,
         "tenant_id": "tenant-a",
         "filename": filename,
         "claim_id": claim_id,
         "blob_key": blob_key,
-        "etag": "abc123",
+        "etag": etag,
     }
 
 
@@ -241,3 +259,168 @@ def test_given_no_blob_store_then_worker_is_rejected(harness):
             blob_store=None,
             embedding_engine_factory=_FakeEmbedder,
         )
+
+
+# ---------------------------------------------------------------------------
+# Phase 3.2/3.3 -- delete messages, etag idempotency, retry drills, metrics
+# ---------------------------------------------------------------------------
+
+def _delete_message(filename, job_id="job_del1"):
+    return {"job_id": job_id, "action": "delete", "tenant_id": "tenant-a", "filename": filename, "claim_id": None}
+
+
+def test_given_delete_message_when_processed_then_document_removed_and_job_deleted(harness, tmp_path):
+    queue, blob, store = harness
+    job_store = SqliteJobStore(str(tmp_path / "jobs.db"))
+    worker = _worker(harness, job_store=job_store)
+    store.add_document("labor.txt", "txt", 100, LABOR_TEXT, _FakeEmbedder())
+
+    queue.enqueue(_delete_message("labor.txt"))
+    assert worker.process_message(queue.dequeue()) == DELETED
+
+    assert store.get_all_documents() == []
+    job = job_store.get("job_del1", "tenant-a")
+    assert job.status is IngestionStatus.deleted
+    assert job.progress == 100
+    assert worker.stats()["deleted"] == 1
+    assert worker.stats()["processed"] == 1
+
+
+def test_given_delete_message_for_missing_document_then_dead_lettered(harness, tmp_path):
+    queue, blob, store = harness
+    job_store = SqliteJobStore(str(tmp_path / "jobs.db"))
+    worker = _worker(harness, job_store=job_store)
+
+    queue.enqueue(_delete_message("ghost.txt"))
+    assert worker.process_message(queue.dequeue()) == DEAD_LETTERED
+
+    job = job_store.get("job_del1", "tenant-a")
+    assert job.status is IngestionStatus.failed
+    assert job.error_code == "DOCUMENT_NOT_FOUND"
+    assert worker.stats()["dead_lettered"] == 1
+
+
+def test_given_delete_message_with_unsafe_filename_then_dead_lettered(harness, tmp_path):
+    queue, blob, store = harness
+    job_store = SqliteJobStore(str(tmp_path / "jobs.db"))
+    worker = _worker(harness, job_store=job_store)
+
+    queue.enqueue(_delete_message("."))
+    assert worker.process_message(queue.dequeue()) == DEAD_LETTERED
+    job = job_store.get("job_del1", "tenant-a")
+    assert job.error_code == "REJECTED_BY_STORE"
+
+
+def test_given_duplicate_s3_event_then_acked_without_reindexing(harness, tmp_path):
+    queue, blob, store = harness
+    job_store = SqliteJobStore(str(tmp_path / "jobs.db"))
+    worker = _worker(harness, job_store=job_store)
+    blob.put("global/labor.txt", LABOR_TEXT.encode(), "text/plain")
+
+    queue.enqueue(_job_message("labor.txt", "global/labor.txt", job_id="job_a", etag="e1"))
+    assert worker.process_message(queue.dequeue()) == INDEXED
+
+    # Same object version re-delivered (same etag, new event job_id).
+    queue.enqueue(_job_message("labor.txt", "global/labor.txt", job_id="job_b", etag="e1"))
+    assert worker.process_message(queue.dequeue()) == DUPLICATE
+    assert len(store.get_all_documents()) == 1  # not re-indexed
+    with pytest.raises(KeyError):
+        job_store.get("job_b", "tenant-a")  # no duplicate job record either
+    assert worker.stats()["duplicates"] == 1
+
+
+def test_given_same_object_with_new_etag_then_reindexed(harness, tmp_path):
+    queue, blob, store = harness
+    job_store = SqliteJobStore(str(tmp_path / "jobs.db"))
+    worker = _worker(harness, job_store=job_store)
+    blob.put("global/labor.txt", LABOR_TEXT.encode(), "text/plain")
+
+    queue.enqueue(_job_message("labor.txt", "global/labor.txt", job_id="job_a", etag="e1"))
+    assert worker.process_message(queue.dequeue()) == INDEXED
+    # Same object, new version: re-index (overwrite-in-place).
+    queue.enqueue(_job_message("labor.txt", "global/labor.txt", job_id="job_c", etag="e2"))
+    assert worker.process_message(queue.dequeue()) == INDEXED
+    assert len(store.get_all_documents()) == 1
+    job = job_store.get("job_c", "tenant-a")
+    assert job.status is IngestionStatus.indexed
+
+
+def test_given_transient_embed_failure_then_retry_recovers_and_job_indexed(harness, tmp_path):
+    queue, blob, store = harness
+    job_store = SqliteJobStore(str(tmp_path / "jobs.db"))
+    worker = _worker(harness, embedder=_FlakyEmbedder(failures=2), job_store=job_store)
+    blob.put("global/labor.txt", LABOR_TEXT.encode(), "text/plain")
+    queue.enqueue(_job_message("labor.txt", "global/labor.txt", job_id="job_1", etag="e1"))
+
+    assert worker.process_message(queue.dequeue()) == REJECTED
+    assert worker.process_message(queue.dequeue()) == REJECTED
+    assert worker.process_message(queue.dequeue()) == INDEXED
+
+    job = job_store.get("job_1", "tenant-a")
+    assert job.status is IngestionStatus.indexed
+    assert job.retry_count == 2
+    assert store.get_document_content("labor.txt") == LABOR_TEXT
+    assert worker.stats()["rejected"] == 2
+    assert worker.stats()["indexed"] == 1
+
+
+def test_given_mixed_outcomes_then_stats_reflect_each(harness, tmp_path):
+    queue, blob, store = harness
+    job_store = SqliteJobStore(str(tmp_path / "jobs.db"))
+    worker = _worker(harness, job_store=job_store)
+    blob.put("global/good.txt", b"good document text", "text/plain")
+    blob.put("global/bad.pdf", b"%PDF-1.4 garbage", "application/pdf")
+    queue.enqueue(_job_message("good.txt", "global/good.txt", job_id="job_g"))
+    queue.enqueue(_job_message("bad.pdf", "global/bad.pdf", job_id="job_b"))
+    queue.enqueue(_delete_message("ghost.txt", job_id="job_d"))
+
+    worker.run_once()
+    stats = worker.stats()
+    assert stats["processed"] == 3
+    assert stats["indexed"] == 1
+    assert stats["dead_lettered"] == 2  # corrupt pdf + missing-doc delete
+    assert stats["malformed"] == 0
+    assert stats["rejected"] == 0
+
+
+def test_given_sqs_queue_when_retries_exhausted_then_message_lands_in_dlq(tmp_path):
+    """The SQS leg of the DLQ failure drill: a message that exhausts its retry
+    budget via visibility-timeout rejects must end up in the dead-letter queue,
+    not silently dropped."""
+    import boto3
+    from moto import mock_aws
+
+    from backend.queue import SQSQueue
+
+    with mock_aws():
+        client = boto3.client("sqs", region_name="us-east-1")
+        source_url = client.create_queue(QueueName="ingest")["QueueUrl"]
+        dlq_url = client.create_queue(QueueName="ingest-dlq")["QueueUrl"]
+        queue = SQSQueue(queue_url=source_url, region="us-east-1", dlq_url=dlq_url)
+        blob = LocalDocumentBlobStore(tmp_path / "blobs")
+        store = SQLiteVectorStore(db_path=str(tmp_path / "test.db"), storage_dir=str(tmp_path / "docs"), blob_store=blob)
+        worker = IngestionWorker(
+            queue=queue,
+            vector_store=store,
+            blob_store=blob,
+            embedding_engine_factory=_FailingEmbedder,
+            max_retries=3,
+            backoff_base_seconds=0.0,
+        )
+        blob.put("global/labor.txt", LABOR_TEXT.encode(), "text/plain")
+        queue.enqueue(_job_message("labor.txt", "global/labor.txt"))
+
+        outcomes = []
+        for _ in range(5):
+            message = queue.dequeue()
+            if message is None:
+                break
+            outcomes.append(worker.process_message(message))
+        assert outcomes == [REJECTED, REJECTED, DEAD_LETTERED]
+
+        # Source queue is empty; the message is in the DLQ, not dropped.
+        assert queue.dequeue() is None
+        dlq_message = client.receive_message(QueueUrl=dlq_url).get("Messages", [None])[0]
+        assert dlq_message is not None
+        assert '"job_id": "job_1"' in dlq_message["Body"]
+        assert store.get_all_documents() == []  # no half-state on the SQS path either

@@ -15,7 +15,7 @@ import backend.app as app_module
 from backend.app import app
 from backend.blob_store import LocalDocumentBlobStore
 from backend.ingestion import IngestionService
-from backend.ingestion_worker import DEAD_LETTERED, INDEXED, IngestionWorker
+from backend.ingestion_worker import DEAD_LETTERED, DELETED, INDEXED, IngestionWorker
 from backend.job_store import SqliteJobStore
 from backend.queue import InProcessQueue
 from backend.rag_engine import SQLiteVectorStore
@@ -182,3 +182,49 @@ def test_given_sync_mode_when_corrupt_file_then_400_preserved(harness):
 def test_given_missing_job_then_404(harness):
     client, _, _, _, _ = harness("async")
     assert client.get("/api/jobs/job_nope").status_code == 404
+
+
+def test_given_async_mode_when_delete_then_202_and_worker_deletes(harness):
+    client, store, blob, job_store, queue = harness("async")
+    store.add_document("labor.txt", "txt", 100, LABOR_TEXT, _FakeEmbedder())
+
+    response = client.post("/api/delete", json={"filename": "labor.txt"})
+    assert response.status_code == 202
+    body = response.json()
+    assert body["job_id"].startswith("job_")
+    assert body["status"] == "queued"
+
+    assert _worker(queue, store, blob, job_store).process_message(queue.dequeue()) == DELETED
+
+    job = client.get(f"/api/jobs/{body['job_id']}").json()
+    assert job["status"] == "deleted"
+    assert store.get_all_documents() == []
+
+
+def test_given_sync_mode_when_delete_then_200_with_job_id(harness):
+    client, store, blob, job_store, _ = harness("sync")
+    store.add_document("labor.txt", "txt", 100, LABOR_TEXT, _FakeEmbedder())
+
+    response = client.post("/api/delete", json={"filename": "labor.txt"})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["job_id"].startswith("job_")
+    assert body["status"] == "deleted"
+    job = client.get(f"/api/jobs/{body['job_id']}").json()
+    assert job["status"] == "deleted"
+    assert store.get_all_documents() == []
+
+
+def test_given_sync_mode_when_delete_missing_then_404(harness):
+    client, _, _, _, _ = harness("sync")
+    response = client.post("/api/delete", json={"filename": "ghost.txt"})
+    assert response.status_code == 404
+
+
+def test_given_async_mode_when_delete_invalid_filename_then_400(harness):
+    # safe_filename *sanitizes* traversal paths rather than rejecting them, but
+    # empty/dot names are invalid -- the async delete path must still 400 them
+    # instead of enqueueing a doomed job.
+    client, _, _, _, _ = harness("async")
+    assert client.post("/api/delete", json={"filename": "."}).status_code == 400
+    assert client.post("/api/delete", json={"filename": ""}).status_code == 400

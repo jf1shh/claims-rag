@@ -18,11 +18,24 @@ ALLOWED_FILE_TYPES = {"pdf", "docx", "xlsx", "xls", "txt"}
 
 # Outcomes of processing a single message.
 INDEXED = "indexed"  # parsed, embedded, and transactionally upserted; acked
+DELETED = "deleted"  # delete message executed; document removed; acked
 REJECTED = "rejected"  # retryable failure; message made visible again with backoff
 DEAD_LETTERED = "dead_lettered"  # permanent failure or retries exhausted
 MALFORMED = "malformed"  # message missing required fields; dropped to DLQ
+DUPLICATE = "duplicate"  # idempotent replay of an S3 event; acked without work
 
 _MAX_BACKOFF_SECONDS = 60.0
+
+
+STATS_FIELDS = ("processed", "indexed", "deleted", "rejected", "dead_lettered", "duplicates", "malformed")
+
+
+def _s3_dedupe_key(blob_key: str, etag: str) -> str:
+    """Idempotency key for the S3-event flow: (tenant, s3_key, etag). The
+    worker stores it on jobs it creates from events and checks it before
+    processing, so a re-delivered put-event for an already-handled object
+    version is acked without re-indexing."""
+    return f"s3:{blob_key}:{etag}"
 
 
 class IngestionWorker:
@@ -84,20 +97,51 @@ class IngestionWorker:
         self.poll_interval_seconds = poll_interval_seconds
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
+        self._lock = threading.Lock()
+        self._stats = {field: 0 for field in STATS_FIELDS}
 
     # ------------------------------------------------------------------ #
     # Processing
     # ------------------------------------------------------------------ #
 
     def process_message(self, message: QueueMessage) -> str:
-        """Processes one message; returns its outcome string."""
+        """Processes one message; returns its outcome string and tallies it."""
+        outcome = self._handle(message)
+        with self._lock:
+            self._stats["processed"] += 1
+            field = {
+                INDEXED: "indexed",
+                DELETED: "deleted",
+                REJECTED: "rejected",
+                DEAD_LETTERED: "dead_lettered",
+                DUPLICATE: "duplicates",
+                MALFORMED: "malformed",
+            }[outcome]
+            self._stats[field] += 1
+        return outcome
+
+    def stats(self) -> dict[str, int]:
+        """Snapshot of the worker's job-metrics counters (thread-safe)."""
+        with self._lock:
+            return dict(self._stats)
+
+    def _handle(self, message: QueueMessage) -> str:
         payload = message.payload
+        action = payload.get("action", "ingest")
+        if action == "delete":
+            return self._process_delete(message)
+
         blob_key = payload.get("blob_key")
         filename = payload.get("filename")
         claim_id = payload.get("claim_id")
         if not blob_key or not filename:
             self.queue.dead_letter(message)
             return MALFORMED
+
+        if self._is_duplicate_event(payload):
+            logger.info("duplicate S3 event for %s (etag %s); acking", blob_key, payload.get("etag"))
+            self.queue.ack(message)
+            return DUPLICATE
 
         job = self._ensure_job(message)
         content = self._fetch_or_dead_letter(message, blob_key)
@@ -109,6 +153,49 @@ class IngestionWorker:
         if outcome == INDEXED:
             self.queue.ack(message)
         return outcome
+
+    def _process_delete(self, message: QueueMessage) -> str:
+        """Executes a delete message: removes the document and marks its job
+        'deleted'. A missing document is permanent (dead-letter + failed job,
+        mirroring the sync endpoint's 404); store ValueError rejections
+        (unsafe filenames) are permanent too; anything else retries."""
+        payload = message.payload
+        filename = payload.get("filename")
+        if not filename:
+            self.queue.dead_letter(message)
+            return MALFORMED
+        job = self._ensure_job(message)
+        try:
+            deleted = self.vector_store.delete_document(filename)
+        except ValueError as exc:
+            self._mark_failed(job, "REJECTED_BY_STORE", str(exc))
+            self.queue.dead_letter(message)
+            return DEAD_LETTERED
+        except Exception as exc:
+            return self._retry_or_dead_letter(message, filename, exc, job)
+        if not deleted:
+            self._mark_failed(job, "DOCUMENT_NOT_FOUND", "document not found")
+            self.queue.dead_letter(message)
+            return DEAD_LETTERED
+        self._set_job(job, status=IngestionStatus.deleted, progress=100)
+        self.queue.ack(message)
+        logger.info("deleted %s", filename)
+        return DELETED
+
+    def _is_duplicate_event(self, payload: dict[str, Any]) -> bool:
+        """True when a job for the same (tenant, s3_key, etag) already exists
+        under a different job_id -- the S3 put-event was re-delivered for an
+        object version the worker already handled."""
+        if self.job_store is None:
+            return False
+        etag = payload.get("etag")
+        blob_key = payload.get("blob_key")
+        tenant_id = payload.get("tenant_id")
+        job_id = payload.get("job_id")
+        if not etag or not blob_key or not tenant_id or not job_id:
+            return False
+        existing = self.job_store.find_by_dedupe_key(tenant_id, _s3_dedupe_key(blob_key, etag))
+        return existing is not None and existing.job_id != job_id
 
     def _ensure_job(self, message: QueueMessage) -> IngestionJob | None:
         """Loads the job record for a message, creating it from the payload if
@@ -131,6 +218,13 @@ class IngestionWorker:
             claim_id=message.payload.get("claim_id"),
             filename=message.payload["filename"],
             checksum=message.payload.get("etag") or "",
+            # Jobs created from S3 events carry the (tenant, s3_key, etag)
+            # idempotency key so re-delivered events dedupe.
+            idempotency_key=(
+                _s3_dedupe_key(message.payload["blob_key"], message.payload["etag"])
+                if message.payload.get("etag") and message.payload.get("blob_key")
+                else None
+            ),
             status=IngestionStatus.queued,
             created_at=now,
             updated_at=now,

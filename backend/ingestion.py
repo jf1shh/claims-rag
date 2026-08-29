@@ -141,14 +141,15 @@ class IngestionService:
         content: bytes,
         claim_id: str | None = None,
         document_id: str | None = None,
+        status: IngestionStatus = IngestionStatus.indexed,
         error_code: str | None = None,
         error_message: str | None = None,
     ) -> IngestionJob:
-        """Records an already-finished ingestion (used by synchronous upload
-        endpoints whose parse/embed pipeline ran inline). Creates an indexed
-        job on success, a failed job on error -- so the endpoint's response
-        carries a job_id in either case, keeping the sync contract compatible
-        with the async 202 + job_id shape."""
+        """Records an already-finished operation (used by synchronous upload/
+        delete endpoints whose pipeline ran inline). Creates a job in the given
+        terminal status (indexed/deleted on success, failed on error) -- so the
+        endpoint's response carries a job_id in either case, keeping the sync
+        contract compatible with the async 202 + job_id shape."""
         now = datetime.now(timezone.utc)
         checksum = hashlib.sha256(content).hexdigest()
         dedupe_key = f"checksum:{checksum}:{filename}:{claim_id or ''}"
@@ -158,7 +159,8 @@ class IngestionService:
         if existing is not None:
             return existing
 
-        failed = error_code is not None
+        failed = error_code is not None or status is IngestionStatus.failed
+        terminal = IngestionStatus.failed if failed else status
         job = IngestionJob(
             job_id=f"job_{uuid.uuid4().hex}",
             tenant_id=tenant_id,
@@ -167,7 +169,7 @@ class IngestionService:
             filename=filename,
             checksum=f"sha256:{checksum}",
             idempotency_key=dedupe_key,
-            status=IngestionStatus.failed if failed else IngestionStatus.indexed,
+            status=terminal,
             progress=0 if failed else 100,
             error_code=error_code,
             error_message=error_message,
@@ -177,6 +179,56 @@ class IngestionService:
         with self._lock:
             self._jobs[key] = job
         self._persist(job)
+        return job
+
+    def submit_delete(
+        self,
+        *,
+        tenant_id: str,
+        filename: str,
+    ) -> IngestionJob:
+        """Async delete: creates a queued delete job and enqueues a delete
+        message for the worker. Dedupes only while a delete for this filename
+        is still in flight -- a completed delete job must not suppress a later
+        delete request (content-independent, so a naive checksum dedupe would
+        be wrong here)."""
+        dedupe_key = f"delete:{filename}"
+        key = (tenant_id, dedupe_key)
+        existing = self._find_existing(key)
+        if existing is not None and existing.status in (
+            IngestionStatus.queued,
+            IngestionStatus.parsing,
+            IngestionStatus.embedding,
+        ):
+            return existing
+
+        now = datetime.now(timezone.utc)
+        job = IngestionJob(
+            job_id=f"job_{uuid.uuid4().hex}",
+            tenant_id=tenant_id,
+            document_id="",
+            claim_id=None,
+            filename=filename,
+            checksum="",
+            idempotency_key=dedupe_key,
+            status=IngestionStatus.queued,
+            created_at=now,
+            updated_at=now,
+        )
+        with self._lock:
+            self._jobs[key] = job
+        self._persist(job)
+        if self._queue is None:
+            raise ValueError("submit_delete requires an ingestion queue (async mode)")
+        self._queue.enqueue(
+            {
+                "job_id": job.job_id,
+                "action": "delete",
+                "tenant_id": tenant_id,
+                "filename": filename,
+                "claim_id": None,
+            }
+        )
         return job
 
     # ------------------------------------------------------------------ #
