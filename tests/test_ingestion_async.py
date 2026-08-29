@@ -9,6 +9,8 @@ was indexed.
 
 import hashlib
 
+import pytest
+
 from backend.ingestion import IngestionService, IngestionStatus
 from backend.ingestion_worker import DEAD_LETTERED, INDEXED, REJECTED, IngestionWorker
 from backend.job_store import SqliteJobStore
@@ -178,3 +180,53 @@ def test_given_record_result_then_job_reflects_success(tmp_path):
     assert job.status is IngestionStatus.indexed
     assert job.progress == 100
     assert job_store.get(job.job_id, "tenant-a").document_id == "doc_7"
+
+
+def test_given_record_result_with_deleted_status_then_job_is_deleted(tmp_path):
+    job_store = SqliteJobStore(str(tmp_path / "jobs.db"))
+    service = IngestionService(job_store=job_store)
+    job = service.record_result(
+        tenant_id="tenant-a", filename="labor.txt", content=b"", status=IngestionStatus.deleted
+    )
+    assert job.status is IngestionStatus.deleted
+    assert job.progress == 100
+
+
+def test_given_submit_delete_then_queued_delete_job_and_message(tmp_path):
+    queue = InProcessQueue()
+    service = IngestionService(queue=queue, job_store=SqliteJobStore(str(tmp_path / "jobs.db")))
+    job = service.submit_delete(tenant_id="tenant-a", filename="labor.txt")
+
+    assert job.status is IngestionStatus.queued
+    message = queue.dequeue()
+    assert message.payload == {
+        "job_id": job.job_id,
+        "action": "delete",
+        "tenant_id": "tenant-a",
+        "filename": "labor.txt",
+        "claim_id": None,
+    }
+
+
+def test_given_submit_delete_without_queue_then_rejected(tmp_path):
+    service = IngestionService(job_store=SqliteJobStore(str(tmp_path / "jobs.db")))
+    with pytest.raises(ValueError):
+        service.submit_delete(tenant_id="tenant-a", filename="labor.txt")
+
+
+def test_given_inflight_delete_then_deduped_but_not_after_completion(tmp_path):
+    queue = InProcessQueue()
+    job_store = SqliteJobStore(str(tmp_path / "jobs.db"))
+    service = IngestionService(queue=queue, job_store=job_store)
+
+    first = service.submit_delete(tenant_id="tenant-a", filename="labor.txt")
+    second = service.submit_delete(tenant_id="tenant-a", filename="labor.txt")
+    assert first.job_id == second.job_id
+    assert queue.dequeue() is not None
+    assert queue.dequeue() is None  # one message for both submissions
+
+    # A delete is content-independent, so a COMPLETED delete job must not
+    # suppress a later delete request (it would be a no-op then).
+    job_store.update(first.job_id, "tenant-a", status=IngestionStatus.deleted, progress=100)
+    third = service.submit_delete(tenant_id="tenant-a", filename="labor.txt")
+    assert third.job_id != first.job_id

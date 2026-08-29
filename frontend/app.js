@@ -363,6 +363,12 @@ async function deleteDocument(filename) {
         
         if (!response.ok) throw new Error('Delete request failed');
         
+        // Async mode: the deletion is a job -- poll it to completion.
+        const result = await response.json();
+        if (result.job_id && result.status && result.status !== 'deleted') {
+            await pollIngestionJob(result.job_id, filename);
+        }
+        
         logSystemEvent(`Successfully removed and deleted vector chunks for '${filename}'`, 'success');
         await fetchDocuments();
         
@@ -1097,15 +1103,16 @@ async function uploadClaimFile(file, claimId) {
 // Polls GET /api/jobs/{id} until the ingestion job reaches a terminal state,
 // driving the upload progress bar from the real job record (Phase 3.2).
 async function pollIngestionJob(jobId, filename, claimId = null) {
-    const progressByStatus = { queued: 10, parsing: 30, embedding: 70, indexed: 100 };
+    const progressByStatus = { queued: 10, parsing: 30, embedding: 70, indexed: 100, deleted: 100 };
     const labelByStatus = {
         queued: 'Queued for async ingestion...',
         parsing: 'Parsing and extracting text...',
         embedding: 'Chunking and embedding...',
-        indexed: 'Indexing complete!'
+        indexed: 'Indexing complete!',
+        deleted: 'Delete complete!'
     };
     const scopeNote = claimId ? ` for claim ${claimId}` : '';
-    logSystemEvent(`Upload accepted; indexing '${filename}' asynchronously${scopeNote} (job ${jobId})`);
+    logSystemEvent(`Accepted as job ${jobId} (${filename}${scopeNote}); waiting for completion...`);
     
     while (true) {
         const response = await fetch(`/api/jobs/${encodeURIComponent(jobId)}`);
@@ -1124,11 +1131,14 @@ async function pollIngestionJob(jobId, filename, claimId = null) {
             logSystemEvent(`Ingestion complete for '${filename}'${scopeNote} (job ${jobId})`, 'success');
             return;
         }
-        if (job.status === 'failed') {
-            throw new Error(job.error_message || `Ingestion failed (${job.error_code || 'unknown error'})`);
-        }
         if (job.status === 'deleted') {
-            throw new Error('Ingestion job was deleted before completion.');
+            uploadProgressFill.style.width = '100%';
+            uploadProgressStatus.innerText = 'Delete complete!';
+            logSystemEvent(`Deletion complete for '${filename}'${scopeNote} (job ${jobId})`, 'success');
+            return;
+        }
+        if (job.status === 'failed') {
+            throw new Error(job.error_message || `Job failed (${job.error_code || 'unknown error'})`);
         }
         
         await new Promise(resolve => setTimeout(resolve, 800));
@@ -1146,6 +1156,12 @@ window.deleteClaimDocument = async function(filename) {
         });
         
         if (!response.ok) throw new Error('Delete request failed');
+        
+        // Async mode: the deletion is a job -- poll it to completion.
+        const result = await response.json();
+        if (result.job_id && result.status && result.status !== 'deleted') {
+            await pollIngestionJob(result.job_id, filename, activeCase.id);
+        }
         
         logSystemEvent(`Removed attachment vector chunks for '${filename}'`, 'success');
         await fetchClaimDocuments(activeCase.id);

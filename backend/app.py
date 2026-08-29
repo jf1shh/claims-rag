@@ -88,7 +88,7 @@ def _get_reranking_engine():
 # provider, or the S3 adapter) and an in-process worker consumes the queue so
 # local async dev works end-to-end; SQS deployments run the worker as its own
 # process via build_ingestion_worker().
-from backend.ingestion import IngestionService  # noqa: E402
+from backend.ingestion import IngestionService, IngestionStatus  # noqa: E402
 from backend.job_store import SqliteJobStore  # noqa: E402
 
 ingestion_job_store = SqliteJobStore(str(settings.jobs_db_path))
@@ -434,11 +434,42 @@ def download_document(filename: str):
 
 @app.post("/api/delete")
 def delete_document(req: DeleteRequest):
-    """Deletes a document from the store."""
+    """Deletes a document from the store.
+
+    Sync mode (default): deletes inline (404 when absent) and records a
+    'deleted' job so the response carries a job_id. Async mode: creates a
+    queued delete job and enqueues a delete message, returning 202 + job_id;
+    the worker performs the deletion and advances the job to 'deleted'."""
+    try:
+        safe_filename(req.filename)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid filename.") from None
+
+    if settings.ingestion_mode == "async":
+        job = ingestion_service.submit_delete(tenant_id=settings.tenant_id, filename=req.filename)
+        return JSONResponse(
+            status_code=202,
+            content={
+                "job_id": job.job_id,
+                "status": job.status.value,
+                "filename": req.filename,
+            },
+        )
+
     deleted = vector_store.delete_document(req.filename)
     if not deleted:
         raise HTTPException(status_code=404, detail="Document not found.")
-    return {"message": f"Successfully deleted '{req.filename}'."}
+    job = ingestion_service.record_result(
+        tenant_id=settings.tenant_id,
+        filename=req.filename,
+        content=b"",
+        status=IngestionStatus.deleted,
+    )
+    return {
+        "message": f"Successfully deleted '{req.filename}'.",
+        "job_id": job.job_id,
+        "status": job.status.value,
+    }
 
 @app.post("/api/chat")
 def chat_with_docs(req: ChatRequest):
