@@ -79,6 +79,8 @@ class Settings:
     llm_model: str | None = None
     max_upload_bytes: int = 25 * 1024 * 1024
     max_document_chars: int = 2_000_000
+    rate_limit_max_requests: int = 60  # Phase 4.4 per-principal rate limiting
+    rate_limit_window_seconds: float = 60.0
     max_query_chars: int = 10_000
     max_top_k: int = 50
     request_timeout_seconds: int = 120
@@ -134,6 +136,8 @@ class Settings:
             llm_model=env.get("LLM_MODEL") or None,
             max_upload_bytes=_int(env.get("MAX_UPLOAD_BYTES"), 25 * 1024 * 1024, "MAX_UPLOAD_BYTES"),
             max_document_chars=_int(env.get("MAX_DOCUMENT_CHARS"), 2_000_000, "MAX_DOCUMENT_CHARS"),
+            rate_limit_max_requests=_int(env.get("RATE_LIMIT_MAX_REQUESTS"), 60, "RATE_LIMIT_MAX_REQUESTS"),
+            rate_limit_window_seconds=_float(env.get("RATE_LIMIT_WINDOW_SECONDS"), 60.0, "RATE_LIMIT_WINDOW_SECONDS"),
             max_query_chars=_int(env.get("MAX_QUERY_CHARS"), 10_000, "MAX_QUERY_CHARS"),
             max_top_k=_int(env.get("MAX_TOP_K"), 50, "MAX_TOP_K"),
             request_timeout_seconds=_int(env.get("REQUEST_TIMEOUT_SECONDS"), 120, "REQUEST_TIMEOUT_SECONDS"),

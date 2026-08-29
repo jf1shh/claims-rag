@@ -117,7 +117,7 @@ Claims-facing responses follow the same separation:
 
 ## Security posture
 
-This repository contains synthetic data only. Review [`SECURITY.md`](SECURITY.md) before handling uploaded content or changing routes, storage, providers, or authentication. Every `/api/*` route requires authentication — a Bearer JWT verified against your OIDC issuer's JWKS, an `X-API-Key` from the service-accounts file, or (local dev only) the explicit development identity — and permissions are enforced per role and per claim (`docs/enterprise-migration.md` Phase 4). The production foundation is designed around tenant isolation, bounded inputs, safe paths and URLs, evidence-required synthesis, auditability, and non-leaking errors.
+This repository contains synthetic data only. Review [`SECURITY.md`](SECURITY.md) before handling uploaded content or changing routes, storage, providers, or authentication. Every `/api/*` route requires authentication — a Bearer JWT verified against your OIDC issuer's JWKS, an `X-API-Key` from the service-accounts file, or (local dev only) the explicit development identity — and permissions are enforced per role and per claim (`docs/enterprise-migration.md` Phase 4). The production foundation is designed around tenant isolation, per-principal rate limiting and enforced upload/query caps (429/413), safe paths and URLs, evidence-required synthesis, immutability-audited actions, and non-leaking errors.
 
 ## Try it locally
 

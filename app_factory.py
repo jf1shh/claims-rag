@@ -20,6 +20,7 @@ class AppDependencies:
     authenticator: Any | None = None
     claim_access_policy: Any | None = None
     audit_sink: Any | None = None
+    rate_limiter: Any | None = None
 
 
 def _build_blob_store(settings: Settings):
@@ -95,6 +96,20 @@ def _build_claim_access_policy(settings: Settings):
     return ClaimAccessPolicy()
 
 
+def _build_rate_limiter(settings: Settings):
+    """Per-principal request limiter for sensitive endpoints (Phase 4.4).
+    In-process sliding-window by default; distributed state (Redis) is
+    deployment wiring, mirroring how in-process vs SQS split the queue.
+    Mirrors the other builders: config selects the behavior, this returns
+    the adapter."""
+    from backend.rate_limit import SlidingWindowRateLimiter
+
+    return SlidingWindowRateLimiter(
+        max_requests=settings.rate_limit_max_requests,
+        window_seconds=settings.rate_limit_window_seconds,
+    )
+
+
 def _build_audit_sink(settings: Settings):
     """Immutable append-only audit sink (Phase 4.3). Writes JSONL events to
     AUDIT_LOG_PATH; every upload/delete/chat/download action records who, what,
@@ -134,6 +149,7 @@ def build_dependencies(settings: Settings) -> AppDependencies:
     authenticator = _build_authenticator(settings)
     claim_access_policy = _build_claim_access_policy(settings)
     audit_sink = _build_audit_sink(settings)
+    rate_limiter = _build_rate_limiter(settings)
 
     return AppDependencies(
         settings=settings,
@@ -143,6 +159,7 @@ def build_dependencies(settings: Settings) -> AppDependencies:
         authenticator=authenticator,
         claim_access_policy=claim_access_policy,
         audit_sink=audit_sink,
+        rate_limiter=rate_limiter,
     )
 
 

@@ -207,7 +207,7 @@ parity harness defines acceptable divergence (recall@k ≥ 0.9) *before* data mi
 | 4.1 | SSO/OIDC (Okta/Entra/Google) + service accounts; FastAPI `get_current_tenant` on every route; frontend login + returnTo | No endpoint reachable without auth | **Done 2026-08-29** — provider-neutral `Authenticator` seam (dev / OIDC / service accounts / chain), `get_current_tenant` on every `/api/*` route, `/api/auth/me`, frontend login gate (see status below) |
 | 4.2 | RBAC: adjuster / supervisor / SIU / admin; claim-level ACLs | Permission matrix tested | **Done 2026-08-29** — `backend/rbac.py` permission matrix + `ClaimAccessPolicy` (claim-level ACLs from `CLAIM_ACLS_FILE`); enforced on every route (see status below) |
 | 4.3 | Immutable audit log: upload/delete/chat/download — who, tenant, claim, query, sources returned, timestamps | Completeness test on sampled actions; chat answers + source IDs logged | **Done 2026-08-29** — the Phase-0 `JsonlAuditSink` seam is now wired to every action route (see status below) |
-| 4.4 | Rate limiting, upload size caps, `/api/eval/search` gated to CI/internal, secrets via KMS | Abuse drill (huge `top_k`, giant uploads) → 429/413 | |
+| 4.4 | Rate limiting, upload size caps, `/api/eval/search` gated to CI/internal, secrets via KMS | Abuse drill (huge `top_k`, giant uploads) → 429/413 | **Done 2026-08-29** — per-principal rate limiter + enforced upload/input caps (see status below); `/api/eval/search` role-gating landed in 4.2; KMS remains deployment wiring |
 
 > **Phase 4 status (2026-08-29, milestone 4.1):** every `/api/*` endpoint is now
 > behind a `get_current_tenant` FastAPI dependency that resolves the request to a
@@ -277,6 +277,37 @@ parity harness defines acceptable divergence (recall@k ≥ 0.9) *before* data mi
 > action, append-only ordering, no partial writes — plus `read_events()` on the
 > sink and 2 config cases. Full suite 292 passed / 12 skipped, ruff clean,
 > gates 0 blocking. Next: 4.4 rate limiting / upload caps / KMS.
+
+> **Phase 4 status (2026-08-29, milestone 4.4):** rate limiting and enforced
+> resource caps close Phase 4. `backend/rate_limit.py` adds a per-principal
+> `SlidingWindowRateLimiter` (injectable clock, mirroring the OIDC/queue clock
+> pattern; distributed state like Redis is deployment wiring on the same axis
+> as SQS-vs-loopback). It is applied via a `_rate_limit_429` guard on the
+> sensitive/costly endpoints — `/api/chat`, `/api/eval/search`, both upload
+> routes, `/api/delete`, and `/api/documents/content` — keyed by
+> `tenant_id:subject` (configurable `RATE_LIMIT_MAX_REQUESTS` /
+> `RATE_LIMIT_WINDOW_SECONDS`, defaults 60/60s), answering **429** with a
+> `Retry-After` header when a principal exceeds its sliding-window allowance.
+> Uploads now enforce the previously-unused `MAX_UPLOAD_BYTES`: each file is
+> read up to the cap + 1 byte and answered **413** when over, on both
+> `/api/upload` and `/api/upload-claim-file` in sync and async modes (an
+> oversized file is never staged or enqueued). `/api/eval/search` finally
+> calls the previously-dead `SearchRequest.validate_limits`, so a huge `top_k`
+> / oversized query answers **413** before any embedding work. `S3_SSE_KMS_KEY_ID`
+> covers secrets-at-rest for object storage; as with the OIDC redirect (4.1)
+> and the S3 bucket-notification hop (3.1), the general KMS integration is
+> deployment wiring and the milestone's "secrets via KMS" is scoped to that
+> SSE-KMS config already in place. The abuse drill passes hermetically: giant
+> uploads / huge `top_k` → **413**, an intra-window burst on chat/delete/eval
+> → **429** that recovers after the window elapses, and per-principal limits
+> stay isolated. 21 new tests: 8 sliding-window unit (window boundary,
+> partial-window pruning, burst-without-counting, multi-key isolation, reset,
+> construction), 7 API-level abuse (sync+async / claim upload 413, huge
+> `top_k`/query 413, in-limit top_k not falsely limited, burst → 429 +
+> `Retry-After`, window recovery, per-principal isolation), 3 config
+> parsing/validation cases (the existing 2 `validate_limits` unit tests
+> retained). Full suite **313 passed / 12 skipped**, ruff clean, gates 0
+> blocking. **Phase 4 is complete** — next is Phase 5 (serving & LLM layer).
 
 **Note:** `tenant_id` + RLS land in Phase 1, *before* real tenants exist — retrofitting
 RLS onto live multi-tenant data is the most expensive mistake in this plan.

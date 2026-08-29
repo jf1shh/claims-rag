@@ -144,3 +144,22 @@ def test_given_audit_log_path_when_parsed_then_path_is_configured():
 def test_given_no_audit_log_path_then_repo_root_default_is_used():
     settings = Settings.from_env({"APP_ENV": "development"})
     assert settings.audit_log_path.name == "audit.log.jsonl"
+
+
+def test_given_rate_limit_settings_when_parsed_then_values_are_configured():
+    settings = Settings.from_env({"RATE_LIMIT_MAX_REQUESTS": "25", "RATE_LIMIT_WINDOW_SECONDS": "5"})
+    assert settings.rate_limit_max_requests == 25
+    assert settings.rate_limit_window_seconds == 5.0
+
+
+def test_given_no_rate_limit_settings_then_sane_defaults_are_used():
+    settings = Settings.from_env({"APP_ENV": "development"})
+    assert settings.rate_limit_max_requests == 60
+    assert settings.rate_limit_window_seconds == 60.0
+
+
+def test_given_nonpositive_rate_limit_then_parsing_fails():
+    with pytest.raises(ValueError, match="RATE_LIMIT_MAX_REQUESTS"):
+        Settings.from_env({"RATE_LIMIT_MAX_REQUESTS": "0"})
+    with pytest.raises(ValueError, match="RATE_LIMIT_WINDOW_SECONDS"):
+        Settings.from_env({"RATE_LIMIT_WINDOW_SECONDS": "-1"})
