@@ -111,11 +111,65 @@ parity harness defines acceptable divergence (recall@k ≥ 0.9) *before* data mi
 
 ## Phase 3 — Async ingestion (3–4 wks)
 
-| Milestone | Deliverable | Exit criteria |
-|---|---|---|
-| 3.1 | S3 put-event → queue → worker: parse → chunk → embed (batched) → incremental pgvector upsert | Ingestion no longer O(n) per write; embed failures → retryable job, never a half-state |
-| 3.2 | `/api/upload` → `202 {job_id}`; `GET /api/jobs/{id}`; frontend progress binds to real job state; delete/overwrite are jobs | UI reflects true pipeline state; corrupt-file 400 detail preserved |
-| 3.3 | Idempotency by `(tenant, s3_key, etag)`, DLQ + retry/backoff, job metrics | Failure drills pass (no orphan rows on mid-embedding crash); 10k-doc throughput load test |
+| Milestone | Deliverable | Exit criteria | Status |
+|---|---|---|---|
+| 3.1 | S3 put-event → queue → worker: parse → chunk → embed (batched) → incremental pgvector upsert | Ingestion no longer O(n) per write; embed failures → retryable job, never a half-state | **In progress 2026-08-29** — queue seam, S3-event bridge, and worker implemented + tested (see status below) |
+| 3.2 | `/api/upload` → `202 {job_id}`; `GET /api/jobs/{id}`; frontend progress binds to real job state; delete/overwrite are jobs | UI reflects true pipeline state; corrupt-file 400 detail preserved | **In progress 2026-08-29** — 202 + jobs API + durable job records + frontend polling implemented (see status below); delete-as-job still open |
+| 3.3 | Idempotency by `(tenant, s3_key, etag)`, DLQ + retry/backoff, job metrics | Failure drills pass (no orphan rows on mid-embedding crash); 10k-doc throughput load test | |
+
+> **Phase 3 status (2026-08-29):** milestone 3.1 is implemented behind a
+> provider-neutral queue seam, mirroring how Phase 2's blob storage was done.
+> `Queue` ABC (`backend/queue.py`) with `InProcessQueue` (deterministic
+> dev/test loopback, injectable clock) and `SQSQueue` (boto3 adapter;
+> visibility-timeout retry via `change_message_visibility`; explicit DLQ
+> forwarding when `SQS_DLQ_URL` is set — moto-tested). `S3EventIngestBridge`
+> (`backend/s3_events.py`) converts S3 put-event records into tenant-validated
+> queue messages (skips wrong bucket / foreign-tenant / malformed / non-created
+> records; the bucket-notification → Lambda hop is deployment wiring, the
+> bridge is the tested unit). `IngestionWorker` (`backend/ingestion_worker.py`)
+> runs fetch-blob → parse → chunk → batch-embed → `vector_store.add_document`
+> (one transaction = the incremental upsert; replay overwrites in place) with
+> retryable-vs-permanent failure classification, exponential backoff, and DLQ
+> on budget exhaustion. The no-half-state guarantee is tested directly: a
+> mid-embedding failure rolls back and leaves nothing searchable, on both
+> SQLite and Postgres (PG-gated cases in `tests/test_postgres_store.py`).
+> Wiring: `_build_queue` in `app_factory.py` (mirrors `_build_blob_store`);
+> `QUEUE_PROVIDER`/`SQS_QUEUE_URL`/`SQS_DLQ_URL`/`SQS_REGION`/`SQS_ENDPOINT_URL`
+> + worker tuning (`WORKER_MAX_RETRIES`, `WORKER_BACKOFF_BASE_SECONDS`,
+> `WORKER_POLL_INTERVAL_SECONDS`) in `config.py`/`.env.example`. Test suite:
+> 35 new hermetic cases (queue semantics, bridge, worker incl. failure drill)
+> + 2 PG-gated; full suite 137 passed / 12 skipped (PG-gated, no local PG),
+> ruff clean, foundation gates 0 blocking.
+
+> **Phase 3 status (2026-08-29, milestone 3.2):** upload now has a real async
+> contract. `SqliteJobStore` (`backend/job_store.py`) makes job records durable
+> in their own SQLite file (`JOBS_DB_PATH`, default `jobs.db`) -- independent of
+> the vector-store backend, so `GET /api/jobs/{id}` stays truthful across
+> restarts and across processes (SQS + separate worker). `IngestionService`
+> (`backend/ingestion.py`) evolved from the in-memory Phase-0 form: with a queue
+> attached, `submit` persists a `queued` job and enqueues (dedupe by explicit
+> idempotency key or content checksum); without one it keeps the legacy inline
+> path; `record_result` lets the sync endpoint record an already-finished job so
+> both modes return a `job_id`. The worker (`backend/ingestion_worker.py`) now
+> advances the job record queued → parsing → embedding → indexed/failed,
+> bumps `retry_count` on each rejected attempt, and creates records for
+> S3-event messages that arrive without one. API: `GET /api/jobs/{job_id}`
+> (tenant-guarded, 404/403); `/api/upload` + `/api/upload-claim-file` return
+> **202 + job_id** in `INGESTION_MODE=async` (cheap 400s -- extension/empty --
+> preserved; corrupt files become `failed` jobs) and keep the legacy timing
+> response plus `job_id`/`status` in sync mode. Async mode stages bytes in the
+> blob store (`_async_blob_store`; local `ingest_queue` dir for the filesystem
+> provider) and starts an in-process worker so local async dev works end-to-end;
+> SQS deployments run the worker as its own process via `build_ingestion_worker`.
+> Frontend: `pollIngestionJob` drives the upload progress bar from the real job
+> record (`app.js?v=1.0.6`). Fixed en route: both upload endpoints passed the
+> raw `embedding_engine` module global (None until a chat call lazily loaded it)
+> -- a fresh server's first upload crashed with a 500; now `_get_embedding_engine()`.
+> Deferred within 3.2: delete-as-job (the delete endpoint stays synchronous).
+> Tests: `tests/test_job_store.py` (9), `tests/test_ingestion_async.py` (7),
+> `tests/test_api_jobs.py` (8) + config cases; full suite 164 passed / 12 skipped
+> (PG-gated, no local PG), ruff clean, foundation gates 0 blocking. Milestone 3.3
+> (etag idempotency, DLQ drills, 10k-doc load test) remains.
 
 ---
 
