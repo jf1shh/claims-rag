@@ -90,7 +90,7 @@ class TestTextChunker:
     def test_consecutive_chunks_overlap(self):
         text = " ".join(f"word{i}" for i in range(1000))
         chunks = TextChunker.chunk(text, chunk_size=200, chunk_overlap=50)
-        for a, b in zip(chunks, chunks[1:]):
+        for a, b in zip(chunks, chunks[1:], strict=False):
             # The start of each chunk repeats the tail of the previous one.
             assert b.split()[0] in a
 

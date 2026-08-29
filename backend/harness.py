@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -53,11 +54,35 @@ def check_documentation(root: Path) -> list[Finding]:
     return []
 
 
+def check_lint(root: Path) -> list[Finding]:
+    """Runs `ruff check` over the repo. Blocking on any rule violation so the
+    foundation gate enforces the same lint gate CI runs."""
+    import sys
+    ruff = "ruff"
+    venv_bin = Path(sys.executable).parent
+    if (venv_bin / "ruff").exists():
+        ruff = str(venv_bin / "ruff")
+    try:
+        proc = subprocess.run(
+            [ruff, "check", "."],
+            cwd=str(root),
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError:
+        return [Finding("lint", "error", True, "ruff is not installed (add it to requirements.txt)", ())]
+    if proc.returncode == 0:
+        return []
+    lines = [ln for ln in proc.stdout.splitlines() if ln.strip()] or ["ruff check failed"]
+    return [Finding("lint", "error", True, "ruff check found violations", tuple(lines[:3]))]
+
+
 def run_gate(name: str, root: Path) -> list[Finding]:
     scanners = {
         "secrets": scan_secrets,
         "specs": check_required_specs,
         "docs": check_documentation,
+        "lint": check_lint,
     }
     try:
         scanner = scanners[name]

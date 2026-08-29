@@ -46,7 +46,7 @@ def build_pdf(filename, title, sections):
     file_path = os.path.join(OUTPUT_DIR, filename)
     doc = SimpleDocTemplate(file_path, pagesize=letter, leftMargin=54, rightMargin=54, topMargin=54, bottomMargin=54)
     story = []
-    
+
     # Title
     story.append(Paragraph(title, title_style))
     story.append(Spacer(1, 10))
@@ -56,14 +56,14 @@ def build_pdf(filename, title, sections):
         ('BOTTOMPADDING', (0,0), (-1,-1), 0),
     ])))
     story.append(Spacer(1, 15))
-    
+
     # Sections
     for heading, text in sections:
         if heading:
             story.append(Paragraph(heading, heading_style))
         story.append(Paragraph(text, body_style))
         story.append(Spacer(1, 6))
-        
+
     doc.build(story)
     print(f"Created PDF: {file_path}")
 

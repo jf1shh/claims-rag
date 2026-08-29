@@ -37,9 +37,9 @@ def _install_vertexai_shim():
 
 _install_vertexai_shim()
 
-import instructor
-from openai import AsyncOpenAI
-from ragas.llms.base import InstructorLLM, InstructorModelArgs
+import instructor  # noqa: E402 - must run after the vertexai shim above
+from openai import AsyncOpenAI  # noqa: E402
+from ragas.llms.base import InstructorLLM, InstructorModelArgs  # noqa: E402
 
 
 def get_lm_studio_judge(model: str, base_url: str = "http://127.0.0.1:1234/v1", max_tokens: int = 4096) -> InstructorLLM:

@@ -18,7 +18,7 @@ from pydantic import BaseModel
 from typing import Optional, List
 
 # Import our RAG Engine classes
-from backend.rag_engine import DocumentParser, TextChunker, EmbeddingEngine, SQLiteVectorStore, RerankingEngine, safe_filename
+from backend.rag_engine import DocumentParser, EmbeddingEngine, SQLiteVectorStore, RerankingEngine, safe_filename
 from backend.agentic_router import AgenticRAGRouter, CLAIMS_DATA
 
 from config import get_settings
@@ -141,24 +141,25 @@ def list_claims():
     return CLAIMS_DATA
 
 @app.post("/api/upload")
-async def upload_document(file: UploadFile = File(...)):
+async def upload_document(file: UploadFile = File(...)):  # noqa: B008 - idiomatic FastAPI required form
+
     """Uploads and processes a claim reference document."""
     if not file.filename:
         raise HTTPException(status_code=400, detail="Missing filename.")
     file_ext = file.filename.split(".")[-1].lower()
     if file_ext not in ["pdf", "docx", "xlsx", "xls", "txt"]:
         raise HTTPException(
-            status_code=400, 
+            status_code=400,
             detail="Unsupported file format. Please upload PDF, DOCX, Excel, or Text documents."
         )
-        
+
     start_time = time.time()
-    
+
     # Create temp file to read from
     with tempfile.NamedTemporaryFile(delete=False, suffix=f".{file_ext}") as tmp:
         shutil.copyfileobj(file.file, tmp)
         tmp_path = tmp.name
-        
+
     try:
         # Step 1: Text extraction
         parse_start = time.time()
@@ -173,12 +174,12 @@ async def upload_document(file: UploadFile = File(...)):
             raise HTTPException(
                 status_code=400,
                 detail="Could not read the uploaded file -- it may be corrupt, truncated, or password-protected."
-            )
+            ) from None
         parse_time = (time.time() - parse_start) * 1000
-        
+
         if not text.strip():
             raise HTTPException(status_code=400, detail="Document appears to be empty or unreadable.")
-            
+
         # Step 2: Save to vector database (which chunks & embeds hierarchically)
         db_start = time.time()
         file_size = os.path.getsize(tmp_path)
@@ -191,9 +192,9 @@ async def upload_document(file: UploadFile = File(...)):
             file_path=tmp_path
         )
         db_time = (time.time() - db_start) * 1000
-        
+
         total_time = (time.time() - start_time) * 1000
-        
+
         return {
             "filename": file.filename,
             "chunks_count": parent_count,
@@ -210,33 +211,34 @@ async def upload_document(file: UploadFile = File(...)):
     except ValueError as e:
         # safe_filename() rejections and the per-scope filename-conflict guard
         # in add_document() are client errors, not server failures.
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from None
     except Exception as e:
         import traceback
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from None
     finally:
         # Clean up temp file
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
 
 @app.post("/api/upload-claim-file")
-async def upload_claim_document(claim_id: str = Form(...), file: UploadFile = File(...)):
+async def upload_claim_document(claim_id: str = Form(...), file: UploadFile = File(...)):  # noqa: B008 - idiomatic FastAPI required form
+
     """Uploads and processes a document specifically for a given claim ID."""
     if not file.filename:
         raise HTTPException(status_code=400, detail="Missing filename.")
     file_ext = file.filename.split(".")[-1].lower()
     if file_ext not in ["pdf", "docx", "xlsx", "xls", "txt"]:
         raise HTTPException(
-            status_code=400, 
+            status_code=400,
             detail="Unsupported format. Upload PDF, DOCX, Excel, or Text."
         )
-        
+
     start_time = time.time()
     with tempfile.NamedTemporaryFile(delete=False, suffix=f".{file_ext}") as tmp:
         shutil.copyfileobj(file.file, tmp)
         tmp_path = tmp.name
-        
+
     try:
         parse_start = time.time()
         try:
@@ -245,12 +247,12 @@ async def upload_claim_document(claim_id: str = Form(...), file: UploadFile = Fi
             raise HTTPException(
                 status_code=400,
                 detail="Could not read the uploaded file -- it may be corrupt, truncated, or password-protected."
-            )
+            ) from None
         parse_time = (time.time() - parse_start) * 1000
-        
+
         if not text.strip():
             raise HTTPException(status_code=400, detail="Document appears to be empty or unreadable.")
-            
+
         db_start = time.time()
         file_size = os.path.getsize(tmp_path)
         doc_id, parent_count = vector_store.add_document(
@@ -264,7 +266,7 @@ async def upload_claim_document(claim_id: str = Form(...), file: UploadFile = Fi
         )
         db_time = (time.time() - db_start) * 1000
         total_time = (time.time() - start_time) * 1000
-        
+
         return {
             "filename": file.filename,
             "claim_id": claim_id,
@@ -278,11 +280,11 @@ async def upload_claim_document(claim_id: str = Form(...), file: UploadFile = Fi
     except HTTPException:
         raise
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from None
     except Exception as e:
         import traceback
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from None
     finally:
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
@@ -295,23 +297,16 @@ def list_claim_documents(claim_id: str):
 @app.get("/api/documents/content/{filename}")
 def get_document_content(filename: str):
     """Fetches the full text content of a document by joining all its parent chunks."""
-    import sqlite3
-    conn = sqlite3.connect(vector_store.db_path)
-    cursor = conn.cursor()
-    cursor.execute("""
-        SELECT p.content 
-        FROM parent_chunks p
-        JOIN documents d ON p.document_id = d.id
-        WHERE d.filename = ?
-        ORDER BY p.chunk_index ASC
-    """, (filename,))
-    rows = cursor.fetchall()
-    conn.close()
-    
-    if not rows:
+    try:
+        filename = safe_filename(filename)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid filename.") from None
+    # Backend-neutral: the store joins its own parent chunks. (This previously
+    # opened an inline sqlite connection on vector_store.db_path, which could
+    # not work on a Postgres backend.)
+    full_text = vector_store.get_document_content(filename)
+    if not full_text:
         raise HTTPException(status_code=404, detail="Document content not found.")
-        
-    full_text = "\n\n".join([r[0] for r in rows])
     return {"filename": filename, "content": full_text}
 
 @app.get("/api/documents/download/{filename}")
@@ -320,7 +315,7 @@ def download_document(filename: str):
     try:
         filename = safe_filename(filename)
     except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid filename.")
+        raise HTTPException(status_code=400, detail="Invalid filename.") from None
     file_path = os.path.join(vector_store.storage_dir, filename)
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="File not found.")

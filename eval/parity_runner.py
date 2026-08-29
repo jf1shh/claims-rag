@@ -146,8 +146,29 @@ def _sqlite_factory(workdir):
         storage_dir=os.path.join(workdir, "docs"),
     )
 
+
+def _postgres_factory(workdir):
+    """Phase 1: PostgresVectorStore against the env-configured POSTGRES_DSN.
+
+    Both backends ingest the same corpus in one run, so each side gets its own
+    tenant label (derived from the temp workdir basename) to avoid one side
+    overwriting the other in the shared database."""
+    from backend.postgres_store import PostgresVectorStore
+
+    dsn = os.environ.get("POSTGRES_DSN")
+    if not dsn:
+        raise SystemExit("POSTGRES_DSN is required for the 'postgres' backend")
+    tenant = "parity-" + os.path.basename(workdir)
+    return PostgresVectorStore(
+        dsn=dsn,
+        tenant_id=tenant,
+        storage_dir=os.path.join(workdir, "docs"),
+    )
+
+
 BACKENDS = {
     "sqlite": _sqlite_factory,
+    "postgres": _postgres_factory,
 }
 
 
@@ -186,7 +207,7 @@ def _parity(backend_a, backend_b, corpus, queries, embedder, top_k, tolerance):
             recall = 1.0 if not key_b else 0.0
         else:
             recall = len([k for k in key_a if k in set_b]) / len(key_a)
-        exact = sum(1 for ka, kb in zip(key_a, key_b) if ka == kb) / top_k
+        exact = sum(1 for ka, kb in zip(key_a, key_b, strict=False) if ka == kb) / top_k
 
         recalls.append(recall)
         exacts.append(exact)
@@ -219,8 +240,7 @@ def main():
 
     for name in (args.backend_a, args.backend_b):
         if name not in BACKENDS:
-            sys.exit(f"Backend {name!r} is not registered. Registered: {sorted(BACKENDS)} "
-                     "(postgres lands in Phase 1 of docs/enterprise-migration.md).")
+            sys.exit(f"Backend {name!r} is not registered. Registered: {sorted(BACKENDS)}")
 
     embedder = _FakeEmbedder()
     corpus = _build_corpus()
@@ -233,9 +253,33 @@ def main():
         os.makedirs(workdir_b)
         backend_a = BACKENDS[args.backend_a](workdir_a)
         backend_b = BACKENDS[args.backend_b](workdir_b)
-        ok = _parity(backend_a, backend_b, corpus, queries, embedder, args.top_k, args.tolerance)
+        try:
+            ok = _parity(backend_a, backend_b, corpus, queries, embedder, args.top_k, args.tolerance)
+        finally:
+            # Postgres leaves the parity tenants behind in the shared database;
+            # drop them so a rerun is deterministic (and CI DBs stay clean).
+            _cleanup_postgres_tenants(["a", "b"])
 
     sys.exit(0 if ok else 1)
+
+
+def _cleanup_postgres_tenants(workdirs):
+    """Removes the parity-* tenants a postgres run creates, so re-running on the
+    same database is idempotent. No-op when no Postgres is configured."""
+    dsn = os.environ.get("POSTGRES_DSN")
+    if not dsn:
+        return
+    try:
+        import psycopg
+    except ImportError:
+        return
+    with psycopg.connect(dsn) as conn:
+        for base in workdirs:
+            conn.execute(
+                "DELETE FROM documents WHERE tenant_id = %s",
+                ("parity-" + base,),
+            )
+        conn.commit()
 
 
 if __name__ == "__main__":

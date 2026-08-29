@@ -26,3 +26,8 @@ def test_given_approved_spec_when_spec_gate_runs_then_no_finding_is_returned(tmp
 def test_given_unknown_gate_when_run_then_it_is_rejected(tmp_path: Path):
     with pytest.raises(ValueError, match="unknown gate"):
         run_gate("missing", tmp_path)
+
+
+def test_given_clean_tree_when_lint_gate_runs_then_no_finding_is_returned(tmp_path: Path):
+    (tmp_path / "ok.py").write_text("x = 1\n", encoding="utf-8")
+    assert run_gate("lint", tmp_path) == []

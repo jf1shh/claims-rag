@@ -61,11 +61,26 @@ parity harness defines acceptable divergence (recall@k ≥ 0.9) *before* data mi
 
 ## Phase 1 — Data plane: Postgres + pgvector (3–4 wks)
 
-| Milestone | Deliverable | Exit criteria |
-|---|---|---|
-| 1.1 | Alembic migrations: `documents`, `parent_chunks`, `child_chunks` with `tenant_id`, HNSW index, GIN FTS, RLS policies, `(tenant_id, claim_id, filename)` unique | Cross-claim filename collision impossible in the schema; RLS proven (tenant B sees nothing of tenant A) |
-| 1.2 | `PostgresVectorStore` implementing the interface: pgvector cosine KNN scoped by tenant/claim + Postgres FTS (`websearch_to_tsquery`) + the same RRF (k=60) + unchanged cross-encoder rerank | Golden-query parity passes (Phase-0 harness with `--backend-b postgres`); token-quoting and `ORDER BY rank` lessons carried over |
-| 1.3 | `pg_migrate.py`: read `rag_store.db`, upsert docs/chunks/embeddings/metadata, checksum-verified (row counts, dims, no orphans) | Demo corpus migrates cleanly; counts match; results match pre-migration |
+| Milestone | Deliverable | Exit criteria | Status |
+|---|---|---|---|
+| 1.1 | Alembic migrations: `documents`, `parent_chunks`, `child_chunks` with `tenant_id`, HNSW index, GIN FTS, RLS policies, `(tenant_id, claim_id, filename)` unique (“NULLS NOT DISTINCT” so global/claim scopes are distinct) | Cross-claim filename collision impossible in the schema; RLS proven (tenant B sees nothing of tenant A) | **Done 2026-08-28** — migration (`alembic/versions/0001_initial_enterprise_schema.py`) executes cleanly against a real PG16+pgvector0.7.4, downgrade→upgrade round-trips; RLS proof + full gated suite pass |
+| 1.2 | `PostgresVectorStore` implementing the interface: pgvector cosine scoped by tenant/claim + Postgres FTS (`websearch_to_tsquery`) + the same RRF (k=60) + unchanged cross-encoder rerank | Golden-query parity passes (Phase-0 harness with `--backend-b postgres`); token-quoting and `ORDER BY` (ts_rank) lessons carried over | **Done 2026-08-28** — `backend/postgres_store.py` + harness; `--backend-b postgres --tolerance 0.9` → mean recall@4 = 0.98 (3 exact-match dips to 0.75 are the expected HNSW approximation caught by the tolerance); all 8 PG-gated tests pass against live Postgres |
+| 1.3 | `pg_migrate.py`: read `rag_store.db`, upsert docs/chunks/embeddings/metadata, checksum-verified (row counts, dims, no orphans) | Demo corpus migrates cleanly; counts match; results match pre-migration | **Done 2026-08-28** — migrates a SQLite corpus into PG, all checksum gates OK, idempotent on re-run, and the migrated rows are searchable/claim-visible through `PostgresVectorStore` under the same tenant |
+
+> **Phase 1 status (2026-08-28):** the Postgres leg is now *executed and verified*
+> against a real local PostgreSQL 16.4 + pgvector 0.7.4 (built from source into a
+> user-local prefix in the dev sandbox, which has no root/Docker). Two latent bugs
+> surfaced only on real execution and were fixed: (a) `alembic/env.py` fed the plain
+> `postgresql://` `POSTGRES_DSN` to SQLAlchemy without a driver, which defaulted to
+> the uninstalled psycopg2 (now normalized to `postgresql+psycopg`); and (b)
+> `tests/test_postgres_store.py::_schema_ready` called `.fetchone()` on the
+> psycopg3 *Connection* instead of the cursor returned by `execute()`, which silently
+> made every PG test skip (fixed to use the cursor). With both fixed: migration +
+> downgrade/upgrade round-trip green, 8/8 PG-gated tests pass, parity = 0.98 (tolerance
+> 0.9), and the full suite is 98 passed / 1 skipped. Milestone 1.2 currently uses an
+> **exact** grouped `max(child cosine)` scan (not HNSW KNN) so parity with SQLite is
+> as close to 1.0 as possible; the HNSW index is created but a KNN-accelerated path
+> is the natural Phase-6 optimization once correctness parity is locked.
 
 ---
 

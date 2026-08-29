@@ -40,6 +40,9 @@ class Settings:
     cors_origins: tuple[str, ...] = ("http://localhost:8000", "http://127.0.0.1:8000")
     rag_db_path: Path = REPO_ROOT / "rag_store.db"
     stored_documents_dir: Path = REPO_ROOT / "stored_documents"
+    vector_store: str = "sqlite"  # "sqlite" | "postgres" (Phase 1 data plane)
+    postgres_dsn: str | None = None
+    tenant_id: str = "local-development"
     object_storage_provider: str = "filesystem"
     object_storage_bucket: str | None = None
     embedding_model: str = "all-MiniLM-L6-v2"
@@ -69,6 +72,9 @@ class Settings:
             cors_origins=origins,
             rag_db_path=Path(env.get("RAG_DB_PATH", str(REPO_ROOT / "rag_store.db"))).expanduser(),
             stored_documents_dir=Path(env.get("STORED_DOCUMENTS_DIR", str(REPO_ROOT / "stored_documents"))).expanduser(),
+            vector_store=env.get("VECTOR_STORE", "sqlite").strip().lower(),
+            postgres_dsn=env.get("POSTGRES_DSN") or None,
+            tenant_id=env.get("TENANT_ID", "local-development").strip(),
             object_storage_provider=env.get("OBJECT_STORAGE_PROVIDER", "filesystem").strip().lower(),
             object_storage_bucket=env.get("OBJECT_STORAGE_BUCKET") or None,
             embedding_model=env.get("EMBEDDING_MODEL", "all-MiniLM-L6-v2"),
@@ -94,6 +100,10 @@ class Settings:
             parsed = urlparse(origin)
             if parsed.scheme not in {"http", "https"} or not parsed.netloc:
                 raise ValueError(f"CORS_ORIGINS contains an invalid URL: {origin!r}")
+        if self.vector_store not in {"sqlite", "postgres"}:
+            raise ValueError("VECTOR_STORE must be sqlite or postgres")
+        if not self.tenant_id.strip():
+            raise ValueError("TENANT_ID must not be empty")
         if self.object_storage_provider not in {"filesystem", "s3"}:
             raise ValueError("OBJECT_STORAGE_PROVIDER must be filesystem or s3")
         if self.llm_provider not in {"lm-studio", "openai-compatible", "none"}:
@@ -101,6 +111,8 @@ class Settings:
         if self.app_env == "production":
             if self.simulation_mode:
                 raise ValueError("SIMULATION_MODE must be false in production")
+            if self.vector_store == "postgres" and not self.postgres_dsn:
+                raise ValueError("POSTGRES_DSN is required when VECTOR_STORE is postgres")
             if self.llm_provider == "openai-compatible" and not self.llm_base_url:
                 raise ValueError("LLM_BASE_URL is required for openai-compatible production")
             if self.object_storage_provider == "s3" and not self.object_storage_bucket:
