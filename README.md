@@ -37,7 +37,7 @@ Everything in this repo runs on synthetic, generated seed data — no proprietar
 
 **Is this connected to any real insurance company's systems or data?** No. Every document, claim, and policy number in this repo is synthetic — generated for this project, not pulled from any real claim file or company database. It was built independently, on personal time, using publicly available tools and made-up data, specifically to be shareable as a portfolio piece without touching anything confidential.
 
-**Could an insurance company actually use something like this?** As a proof of concept, yes — the retrieval and reasoning approach is sound and measured, not hand-waved. As-is, no: it's a single-user local tool with no login system, no support for multiple people editing the same database at once, and a small demo set of documents. See [Scaling considerations](#scaling-considerations) and [Known limitations](#known-limitations) for exactly what would need to change to go from "working demo" to "production system."
+**Could an insurance company actually use something like this?** As a proof of concept, yes — the retrieval and reasoning approach is sound and measured, not hand-waved. As-is, no: it's a single-machine tool with a small demo set of documents and no multi-tenant data plane (one tenant, no concurrent-editor support). It's no longer single-*user* though: every API route now requires authentication (OIDC/SSO or service-account keys), and role-based permissions with claim-level ACLs (adjuster / supervisor / SIU / admin) are enforced. See [Scaling considerations](#scaling-considerations) and [Known limitations](#known-limitations) for exactly what would still need to change to go from "working demo" to "production system."
 
 **Why build this instead of just pasting policy PDFs into ChatGPT?** Privacy is one reason — real claim files shouldn't go through a cloud chatbot. The bigger one: pasting one document at a time doesn't scale past a handful of files, can't scope a search to "just this claim's paperwork," doesn't cite which exact passage an answer came from, and is never *measured* for how often it's actually right (see [Evaluation](#evaluation--because-it-looks-right-isnt-good-enough)) — it just *looks* convincing.
 
@@ -117,7 +117,7 @@ Claims-facing responses follow the same separation:
 
 ## Security posture
 
-This repository contains synthetic data only. Review [`SECURITY.md`](SECURITY.md) before handling uploaded content or changing routes, storage, providers, or authentication. The production foundation is designed around tenant isolation, bounded inputs, safe paths and URLs, evidence-required synthesis, auditability, and non-leaking errors.
+This repository contains synthetic data only. Review [`SECURITY.md`](SECURITY.md) before handling uploaded content or changing routes, storage, providers, or authentication. Every `/api/*` route requires authentication — a Bearer JWT verified against your OIDC issuer's JWKS, an `X-API-Key` from the service-accounts file, or (local dev only) the explicit development identity — and permissions are enforced per role and per claim (`docs/enterprise-migration.md` Phase 4). The production foundation is designed around tenant isolation, bounded inputs, safe paths and URLs, evidence-required synthesis, auditability, and non-leaking errors.
 
 ## Try it locally
 
@@ -161,7 +161,7 @@ Run these commands from the repository root and report their actual output:
 
 ## Tech stack
 
-FastAPI · SQLite (custom hybrid vector + FTS5 store, default) with a Postgres + pgvector backend behind the same `VectorStore` interface · filesystem storage (default) with an S3-compatible `DocumentBlobStore` behind the same interface · sentence-transformers (`all-MiniLM-L6-v2`) · cross-encoder reranking (`ms-marco-MiniLM-L-6-v2`) · LM Studio (local OpenAI-compatible inference) · Ragas (local evaluation) · vanilla JS frontend
+FastAPI · SQLite (custom hybrid vector + FTS5 store, default) with a Postgres + pgvector backend behind the same `VectorStore` interface · filesystem storage (default) with an S3-compatible `DocumentBlobStore` behind the same interface · OIDC/JWT + service-account authentication (`PyJWT`) · role-based access control with claim-level ACLs · sentence-transformers (`all-MiniLM-L6-v2`) · cross-encoder reranking (`ms-marco-MiniLM-L-6-v2`) · LM Studio (local OpenAI-compatible inference) · Ragas (local evaluation) · vanilla JS frontend
 
 ## About
 

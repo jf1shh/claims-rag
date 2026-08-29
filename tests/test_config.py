@@ -122,3 +122,14 @@ def test_given_production_with_oidc_auth_then_validation_passes():
     )
     settings.validate_for_environment()
     assert settings.auth_providers == ("oidc",)
+
+
+def test_given_claim_acls_file_when_parsed_then_path_is_configured():
+    settings = Settings.from_env({"CLAIM_ACLS_FILE": "./claim-acls.json"})
+    assert settings.claim_acls_file is not None
+    assert settings.claim_acls_file.name == "claim-acls.json"
+
+
+def test_given_no_claim_acls_file_then_open_policy_is_the_default():
+    settings = Settings.from_env({"APP_ENV": "development"})
+    assert settings.claim_acls_file is None

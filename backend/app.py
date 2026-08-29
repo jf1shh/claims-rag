@@ -24,6 +24,7 @@ from backend.agentic_router import AgenticRAGRouter, CLAIMS_DATA
 from config import get_settings
 from backend.health import live_status, ready_status
 from backend.authn import AuthenticationError  # noqa: E402
+from backend.rbac import require_permission  # noqa: E402
 
 app = FastAPI(title="Local Insurance RAG System API")
 
@@ -55,10 +56,11 @@ app.add_middleware(
 # lazy so importing the ASGI app does not require local model files. When an
 # object store (S3) is configured, add/delete/serve route source bytes through
 # it; otherwise the legacy filesystem storage_dir path is used unchanged.
-from app_factory import _build_blob_store, _build_authenticator  # noqa: E402
+from app_factory import _build_blob_store, _build_authenticator, _build_claim_access_policy  # noqa: E402
 
 _vector_blob_store = _build_blob_store(settings)
 _authenticator = _build_authenticator(settings)
+_claim_access_policy = _build_claim_access_policy(settings)
 vector_store = SQLiteVectorStore(
     db_path=str(settings.rag_db_path),
     storage_dir=str(settings.stored_documents_dir),
@@ -142,6 +144,22 @@ def get_current_tenant(request: Request):
         ) from None
 
 
+def require_permission_403(principal, permission: str) -> None:
+    """Maps the RBAC PermissionError to a 403 for the request path."""
+    try:
+        require_permission(principal, permission)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from None
+
+
+def require_claim_access_403(principal, claim_id: str) -> None:
+    """Maps the claim-level ACL PermissionError to a 403 for the request path."""
+    try:
+        _claim_access_policy.require_claim_access(principal, claim_id)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from None
+
+
 def get_loaded_models(url: str) -> Optional[List[str]]:
     """Returns the loaded model ids, or None if LM Studio is unreachable.
     None-vs-empty-list distinguishes 'server down' from 'server up with no
@@ -202,16 +220,19 @@ def get_status():
     }
 
 @app.get("/api/documents", dependencies=[Depends(get_current_tenant)])
-def list_documents():
+def list_documents(principal=Depends(get_current_tenant)):  # noqa: B008 - idiomatic FastAPI dependency injection
     """Lists all processed documents."""
+    require_permission_403(principal, "documents:read")
     return vector_store.get_all_documents()
 
 @app.get("/api/claims", dependencies=[Depends(get_current_tenant)])
-def list_claims():
-    """Serves the demo claims queue -- the single source of truth CLAIMS_DATA
+def list_claims(principal=Depends(get_current_tenant)):  # noqa: B008 - idiomatic FastAPI dependency injection
+    """Serves the claims queue -- the single source of truth CLAIMS_DATA
     (backend/agentic_router.py) the agentic router already grounds claim-scoped
-    answers in, so the frontend's claim cards can't drift out of sync with it."""
-    return CLAIMS_DATA
+    answers in, so the frontend's claim cards can't drift out of sync with it.
+    Phase 4.2: filtered by the claim-level ACL -- adjusters see only claims
+    assigned to them; admin/supervisor/siu see all."""
+    return _claim_access_policy.filter_claims(principal, CLAIMS_DATA)
 
 @app.get("/api/jobs/{job_id}", dependencies=[Depends(get_current_tenant)])
 def get_ingestion_job(job_id: str):
@@ -227,7 +248,7 @@ def get_ingestion_job(job_id: str):
         raise HTTPException(status_code=403, detail="Forbidden.") from None
 
 @app.post("/api/upload", dependencies=[Depends(get_current_tenant)])
-async def upload_document(file: UploadFile = File(...)):  # noqa: B008 - idiomatic FastAPI required form
+async def upload_document(file: UploadFile = File(...), principal=Depends(get_current_tenant)):  # noqa: B008 - idiomatic FastAPI dependency injection
 
     """Uploads and processes a claim reference document.
 
@@ -239,6 +260,7 @@ async def upload_document(file: UploadFile = File(...)):  # noqa: B008 - idiomat
     the request thread -- the frontend polls GET /api/jobs/{job_id} for real
     pipeline state.
     """
+    require_permission_403(principal, "documents:upload")
     if not file.filename:
         raise HTTPException(status_code=400, detail="Missing filename.")
     file_ext = file.filename.split(".")[-1].lower()
@@ -335,10 +357,12 @@ async def upload_document(file: UploadFile = File(...)):  # noqa: B008 - idiomat
             os.remove(tmp_path)
 
 @app.post("/api/upload-claim-file", dependencies=[Depends(get_current_tenant)])
-async def upload_claim_document(claim_id: str = Form(...), file: UploadFile = File(...)):  # noqa: B008 - idiomatic FastAPI required form
+async def upload_claim_document(claim_id: str = Form(...), file: UploadFile = File(...), principal=Depends(get_current_tenant)):  # noqa: B008 - idiomatic FastAPI dependency injection
 
     """Uploads and processes a document specifically for a given claim ID.
     Same sync/async split as /api/upload (see its docstring)."""
+    require_permission_403(principal, "claims:write")
+    require_claim_access_403(principal, claim_id)
     if not file.filename:
         raise HTTPException(status_code=400, detail="Missing filename.")
     file_ext = file.filename.split(".")[-1].lower()
@@ -421,13 +445,16 @@ async def upload_claim_document(claim_id: str = Form(...), file: UploadFile = Fi
             os.remove(tmp_path)
 
 @app.get("/api/documents/claim/{claim_id}", dependencies=[Depends(get_current_tenant)])
-def list_claim_documents(claim_id: str):
+def list_claim_documents(claim_id: str, principal=Depends(get_current_tenant)):  # noqa: B008 - idiomatic FastAPI dependency injection
     """Lists all documents attached to a specific claim."""
+    require_permission_403(principal, "claims:read")
+    require_claim_access_403(principal, claim_id)
     return vector_store.get_claim_documents(claim_id)
 
 @app.get("/api/documents/content/{filename}", dependencies=[Depends(get_current_tenant)])
-def get_document_content(filename: str):
+def get_document_content(filename: str, principal=Depends(get_current_tenant)):  # noqa: B008 - idiomatic FastAPI dependency injection
     """Fetches the full text content of a document by joining all its parent chunks."""
+    require_permission_403(principal, "documents:read")
     try:
         filename = safe_filename(filename)
     except ValueError:
@@ -441,11 +468,12 @@ def get_document_content(filename: str):
     return {"filename": filename, "content": full_text}
 
 @app.get("/api/documents/download/{filename}", dependencies=[Depends(get_current_tenant)])
-def download_document(filename: str):
+def download_document(filename: str, principal=Depends(get_current_tenant)):  # noqa: B008 - idiomatic FastAPI dependency injection
     """Serves the physical document. With an object store configured this is a
     redirect to a presigned URL; otherwise the file streams from the local
     storage directory. Both paths keep the source bytes behind the store's
     serving abstraction rather than exposing a raw filesystem path."""
+    require_permission_403(principal, "documents:read")
     try:
         filename = safe_filename(filename)
     except ValueError:
@@ -465,13 +493,14 @@ def download_document(filename: str):
     return FileResponse(file_path)
 
 @app.post("/api/delete", dependencies=[Depends(get_current_tenant)])
-def delete_document(req: DeleteRequest):
+def delete_document(req: DeleteRequest, principal=Depends(get_current_tenant)):  # noqa: B008 - idiomatic FastAPI dependency injection
     """Deletes a document from the store.
 
     Sync mode (default): deletes inline (404 when absent) and records a
     'deleted' job so the response carries a job_id. Async mode: creates a
     queued delete job and enqueues a delete message, returning 202 + job_id;
     the worker performs the deletion and advances the job to 'deleted'."""
+    require_permission_403(principal, "documents:delete")
     try:
         safe_filename(req.filename)
     except ValueError:
@@ -504,8 +533,12 @@ def delete_document(req: DeleteRequest):
     }
 
 @app.post("/api/chat", dependencies=[Depends(get_current_tenant)])
-def chat_with_docs(req: ChatRequest):
+def chat_with_docs(req: ChatRequest, principal=Depends(get_current_tenant)):  # noqa: B008 - idiomatic FastAPI dependency injection
     """Answers a claims question using local Agentic RAG routing."""
+    require_permission_403(principal, "documents:read")
+    if req.claim_id:
+        require_permission_403(principal, "claims:read")
+        require_claim_access_403(principal, req.claim_id)
     result = agentic_router.run_query(
         query_text=req.query,
         claim_id=req.claim_id,
@@ -566,9 +599,11 @@ class SearchRequest(BaseModel):
         return self
 
 @app.post("/api/eval/search", dependencies=[Depends(get_current_tenant)])
-def eval_search(req: SearchRequest):
+def eval_search(req: SearchRequest, principal=Depends(get_current_tenant)):  # noqa: B008 - idiomatic FastAPI dependency injection
     """Raw retrieval endpoint (no LLM synthesis) for the eval harness to compare
-    retrieval strategies. Not used by the frontend."""
+    retrieval strategies. Not used by the frontend. Gated to roles with the
+    eval:search permission (siu/admin) per Phase 4.2/4.4."""
+    require_permission_403(principal, "eval:search")
     if req.mode not in ("naive", "hybrid", "hybrid_rerank"):
         raise HTTPException(status_code=400, detail="mode must be 'naive', 'hybrid', or 'hybrid_rerank'")
 
