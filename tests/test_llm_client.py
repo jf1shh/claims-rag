@@ -87,19 +87,22 @@ def test_model_for_stage_resolves_all_stages_and_fallback():
 
 
 def test_complete_sends_bearer_only_when_api_key_configured():
-    http = FakeHTTP(); http._post_resp = _completion_body("x")
+    http = FakeHTTP()
+    http._post_resp = _completion_body("x")
     client = OpenAICompatibleClient(base_url="http://x", default_model="M",
                                     api_key="secret", http=http)
     client.complete([{"role":"user","content":"q"}], model="M", temperature=0.1, max_tokens=10)
     assert http.posts[0]["headers"]["Authorization"] == "Bearer secret"
-    http2 = FakeHTTP(); http2._post_resp = _completion_body("x")
+    http2 = FakeHTTP()
+    http2._post_resp = _completion_body("x")
     client2 = OpenAICompatibleClient(base_url="http://x", default_model="M", http=http2)
     client2.complete([{"role":"user","content":"q"}], model="M", temperature=0.1, max_tokens=10)
     assert "Authorization" not in http2.posts[0]["headers"]
 
 
 def test_complete_raises_on_http_error_missing_content():
-    http = FakeHTTP(); http._post_resp = _FakeResponse({"choices": []}, status=200)
+    http = FakeHTTP()
+    http._post_resp = _FakeResponse({"choices": []}, status=200)
     client = OpenAICompatibleClient(base_url="http://x", default_model="M", http=http)
     with pytest.raises(ChatClientError):
         client.complete([{"role":"user","content":"q"}], model="M", temperature=0.1, max_tokens=10)
@@ -116,7 +119,8 @@ def test_models_returns_first_and_ttl_caches():
 
 
 def test_models_failure_returns_local_model_without_caching():
-    http = FakeHTTP(); http._models_resp = {"data": []}
+    http = FakeHTTP()
+    http._models_resp = {"data": []}
     client = OpenAICompatibleClient(base_url="http://x", default_model="M",
                                     models_ttl_seconds=600, http=http)
     assert client.models() == ["local-model"]

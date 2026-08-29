@@ -1,5 +1,5 @@
 from config import Settings
-from app_factory import _build_llm_client, AppDependencies
+from app_factory import _build_llm_client
 
 
 def test_build_llm_client_returns_none_for_none_provider():

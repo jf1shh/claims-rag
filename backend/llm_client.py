@@ -99,7 +99,7 @@ class OpenAICompatibleClient(ChatClient):
         except ChatClientError:
             raise
         except Exception as exc:
-            raise ChatClientError(f"LLM request failed") from exc
+            raise ChatClientError("LLM request failed") from exc
 
     def models(self) -> list[str]:
         now = self._clock()
