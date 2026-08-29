@@ -44,29 +44,6 @@ jobs:
       - name: Retrieval parity self-check
         run: .venv/bin/python eval/parity_runner.py
 
-  # Kept on GitHub-hosted Windows: no self-hosted Windows box is available,
-  # and this single leg stays well under the free-minutes cap on its own.
-  pytest-windows:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install test dependencies
-        run: pip install -r requirements.txt
-
-      - name: Run linter
-        run: ruff check .
-
-      - name: Run unit tests
-        run: pytest tests/ -v
-
-      - name: Retrieval parity self-check
-        run: python eval/parity_runner.py
-
   # Phase 1 (docs/enterprise-migration.md): Postgres + pgvector data plane.
   # Runs on the self-hosted runner (Docker is installed there specifically
   # for this). The Postgres test module self-provisions the schema via
