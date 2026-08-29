@@ -4,7 +4,6 @@ os.environ["HF_HUB_OFFLINE"] = "1"
 os.environ["TRANSFORMERS_OFFLINE"] = "1"
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 
-import shutil
 import tempfile
 import requests
 import time
@@ -19,7 +18,7 @@ from pydantic import BaseModel
 from typing import Optional, List
 
 # Import our RAG Engine classes
-from backend.rag_engine import DocumentParser, EmbeddingEngine, SQLiteVectorStore, RerankingEngine, safe_filename
+from backend.rag_engine import DocumentParser, EmbeddingEngine, SQLiteVectorStore, RerankingEngine, safe_filename, _blob_key
 from backend.agentic_router import AgenticRAGRouter, CLAIMS_DATA
 
 from config import get_settings
@@ -81,6 +80,38 @@ def _get_reranking_engine():
         reranking_engine = RerankingEngine(model_name=settings.reranker_model)
     return reranking_engine
 
+# Phase 3 async ingestion (milestone 3.2): durable job records + queue.
+# Sync mode (default) keeps the historical inline upload pipeline; async mode
+# returns 202 + job_id and the worker parses/embeds/indexes off the request
+# thread. In async mode the upload endpoint stages source bytes in the blob
+# store (a local ingest_queue under stored_documents for the filesystem
+# provider, or the S3 adapter) and an in-process worker consumes the queue so
+# local async dev works end-to-end; SQS deployments run the worker as its own
+# process via build_ingestion_worker().
+from backend.ingestion import IngestionService  # noqa: E402
+from backend.job_store import SqliteJobStore  # noqa: E402
+
+ingestion_job_store = SqliteJobStore(str(settings.jobs_db_path))
+_async_blob_store = None
+_ingestion_worker = None
+if settings.ingestion_mode == "async":
+    from app_factory import _build_queue  # noqa: E402
+    from backend.blob_store import LocalDocumentBlobStore  # noqa: E402
+    from backend.ingestion_worker import build_ingestion_worker  # noqa: E402
+
+    _async_blob_store = _vector_blob_store or LocalDocumentBlobStore(
+        os.path.join(str(settings.stored_documents_dir), "ingest_queue")
+    )
+    ingestion_service = IngestionService(
+        queue=_build_queue(settings), job_store=ingestion_job_store
+    )
+    _ingestion_worker = build_ingestion_worker(
+        settings, vector_store, _async_blob_store, _get_embedding_engine, job_store=ingestion_job_store
+    )
+    _ingestion_worker.start()
+else:
+    ingestion_service = IngestionService(job_store=ingestion_job_store)
+
 # Ensure frontend directory exists
 os.makedirs("frontend", exist_ok=True)
 
@@ -132,6 +163,9 @@ def get_status():
         "database": {
             "path": vector_store.db_path,
             "document_count": len(vector_store.get_all_documents())
+        },
+        "ingestion": {
+            "mode": settings.ingestion_mode
         }
     }
 
@@ -147,10 +181,32 @@ def list_claims():
     answers in, so the frontend's claim cards can't drift out of sync with it."""
     return CLAIMS_DATA
 
+@app.get("/api/jobs/{job_id}")
+def get_ingestion_job(job_id: str):
+    """Returns the durable ingestion job record for an upload (Phase 3.2).
+    The frontend polls this while an async upload runs, so the UI reflects
+    real pipeline state instead of a fake progress bar. Tenant-guarded: a job
+    whose tenant does not match the configured tenant is not readable."""
+    try:
+        return ingestion_service.get(job_id, settings.tenant_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Job not found.") from None
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="Forbidden.") from None
+
 @app.post("/api/upload")
 async def upload_document(file: UploadFile = File(...)):  # noqa: B008 - idiomatic FastAPI required form
 
-    """Uploads and processes a claim reference document."""
+    """Uploads and processes a claim reference document.
+
+    Sync mode (default): parses and indexes inline, returning the timing
+    payload plus job_id/status so the response contract is compatible with the
+    async shape (Phase 3.2). Async mode (INGESTION_MODE=async): validates
+    cheaply (filename/extension/empty), stages the bytes in the blob store,
+    returns 202 + job_id, and the ingestion worker parses/embeds/indexes off
+    the request thread -- the frontend polls GET /api/jobs/{job_id} for real
+    pipeline state.
+    """
     if not file.filename:
         raise HTTPException(status_code=400, detail="Missing filename.")
     file_ext = file.filename.split(".")[-1].lower()
@@ -160,11 +216,18 @@ async def upload_document(file: UploadFile = File(...)):  # noqa: B008 - idiomat
             detail="Unsupported file format. Please upload PDF, DOCX, Excel, or Text documents."
         )
 
+    content = await file.read()
+
+    if settings.ingestion_mode == "async":
+        if not content:
+            raise HTTPException(status_code=400, detail="Document appears to be empty or unreadable.")
+        return _enqueue_upload(content, file.filename, file_ext, claim_id=None)
+
     start_time = time.time()
 
     # Create temp file to read from
     with tempfile.NamedTemporaryFile(delete=False, suffix=f".{file_ext}") as tmp:
-        shutil.copyfileobj(file.file, tmp)
+        tmp.write(content)
         tmp_path = tmp.name
 
     try:
@@ -195,17 +258,28 @@ async def upload_document(file: UploadFile = File(...)):  # noqa: B008 - idiomat
             file_type=file_ext,
             file_size=file_size,
             text=text,
-            embedding_engine=embedding_engine,
+            embedding_engine=_get_embedding_engine(),
             file_path=tmp_path
         )
         db_time = (time.time() - db_start) * 1000
 
         total_time = (time.time() - start_time) * 1000
 
+        # Record the finished job so the response carries a job_id (the async
+        # contract), keeping sync and async response shapes compatible.
+        job = ingestion_service.record_result(
+            tenant_id=settings.tenant_id,
+            filename=file.filename,
+            content=content,
+            document_id=str(doc_id),
+        )
+
         return {
             "filename": file.filename,
             "chunks_count": parent_count,
             "total_time_ms": round(total_time, 1),
+            "job_id": job.job_id,
+            "status": job.status.value,
             "steps": {
                 "parsing_ms": round(parse_time, 1),
                 "db_storage_ms": round(db_time, 1)
@@ -231,7 +305,8 @@ async def upload_document(file: UploadFile = File(...)):  # noqa: B008 - idiomat
 @app.post("/api/upload-claim-file")
 async def upload_claim_document(claim_id: str = Form(...), file: UploadFile = File(...)):  # noqa: B008 - idiomatic FastAPI required form
 
-    """Uploads and processes a document specifically for a given claim ID."""
+    """Uploads and processes a document specifically for a given claim ID.
+    Same sync/async split as /api/upload (see its docstring)."""
     if not file.filename:
         raise HTTPException(status_code=400, detail="Missing filename.")
     file_ext = file.filename.split(".")[-1].lower()
@@ -241,9 +316,16 @@ async def upload_claim_document(claim_id: str = Form(...), file: UploadFile = Fi
             detail="Unsupported format. Upload PDF, DOCX, Excel, or Text."
         )
 
+    content = await file.read()
+
+    if settings.ingestion_mode == "async":
+        if not content:
+            raise HTTPException(status_code=400, detail="Document appears to be empty or unreadable.")
+        return _enqueue_upload(content, file.filename, file_ext, claim_id=claim_id)
+
     start_time = time.time()
     with tempfile.NamedTemporaryFile(delete=False, suffix=f".{file_ext}") as tmp:
-        shutil.copyfileobj(file.file, tmp)
+        tmp.write(content)
         tmp_path = tmp.name
 
     try:
@@ -267,18 +349,28 @@ async def upload_claim_document(claim_id: str = Form(...), file: UploadFile = Fi
             file_type=file_ext,
             file_size=file_size,
             text=text,
-            embedding_engine=embedding_engine,
+            embedding_engine=_get_embedding_engine(),
             claim_id=claim_id,
             file_path=tmp_path
         )
         db_time = (time.time() - db_start) * 1000
         total_time = (time.time() - start_time) * 1000
 
+        job = ingestion_service.record_result(
+            tenant_id=settings.tenant_id,
+            filename=file.filename,
+            content=content,
+            claim_id=claim_id,
+            document_id=str(doc_id),
+        )
+
         return {
             "filename": file.filename,
             "claim_id": claim_id,
             "chunks_count": parent_count,
             "total_time_ms": round(total_time, 1),
+            "job_id": job.job_id,
+            "status": job.status.value,
             "steps": {
                 "parsing_ms": round(parse_time, 1),
                 "db_storage_ms": round(db_time, 1)
@@ -360,6 +452,40 @@ def chat_with_docs(req: ChatRequest):
         reranking_engine=_get_reranking_engine()
     )
     return result
+
+def _enqueue_upload(content: bytes, filename: str, file_ext: str, claim_id: str | None) -> JSONResponse:
+    """Async-mode upload: stage the source bytes in the blob store, enqueue an
+    ingestion job, and return the 202 response the frontend polls against."""
+    _async_blob_store.put(_blob_key(claim_id, filename), content, _content_type(file_ext))
+    job = ingestion_service.submit(
+        tenant_id=settings.tenant_id,
+        filename=filename,
+        content=content,
+        claim_id=claim_id,
+    )
+    return JSONResponse(
+        status_code=202,
+        content={
+            "job_id": job.job_id,
+            "status": job.status.value,
+            "filename": filename,
+            "claim_id": claim_id,
+        },
+    )
+
+
+_CONTENT_TYPES = {
+    "pdf": "application/pdf",
+    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "xls": "application/vnd.ms-excel",
+    "txt": "text/plain",
+}
+
+
+def _content_type(file_ext: str) -> str:
+    return _CONTENT_TYPES.get(file_ext, "application/octet-stream")
+
 
 class SearchRequest(BaseModel):
     query: str
