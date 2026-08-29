@@ -6,6 +6,19 @@
 # `claim_id=None` means the query is scoped to global policy documents only;
 # otherwise it's scoped to that claim's dossier + global documents, matching
 # how the app itself scopes retrieval.
+#
+# Corpus note (2026-08-29): the live rag_store.db was rebuilt from a smaller
+# generator set (generate_auto_pdfs.py + create_sample_files.py) than the one
+# this set was originally verified against (generate_massive_dataset.py), which
+# left 7 `source` documents absent from the corpus. scripts/rebuild_golden_source_docs.py
+# regenerates 6 of them (DUI_Exclusion_Directive.txt, Endorsement_Windshield_Zero_Deductible.docx,
+# Endorsement_Rental_Car_Upgrade.docx, Adjuster_Guide_Rollover_Claims.docx,
+# Adjuster_Guide_Rear_Impact.docx, Case_Study_Engine_Hydro_Lock.pdf) and ingests
+# them non-destructively. The two custom-equipment queries instead point at the
+# corpus's own Endorsement_Custom_Equipment_Form402.pdf (which already covers
+# non-OEM sound systems at $5,000) -- a separate $3,500 custom-sound endorsement
+# was deliberately not rebuilt because it would be a contradictory duplicate.
+# All references below were re-verified against the rebuilt corpus on 2026-08-29.
 
 GOLDEN_QUERIES = [
     # ---- Global policy / guideline queries ----
@@ -48,11 +61,11 @@ GOLDEN_QUERIES = [
         "id": "custom-av-cap",
         "claim_id": None,
         "query": "What is the coverage cap for custom aftermarket stereo and navigation equipment?",
-        "reference": "The Custom Sound and Navigation Equipment endorsement caps coverage at $3,500 per occurrence "
-                      "for aftermarket stereos, amplifiers, subwoofers, and custom screens not installed by the "
-                      "factory. Depreciation is calculated at 10% per year, and original receipts, serial "
-                      "numbers, and photos are required before settling.",
-        "source": "Endorsement_Custom_Audio_Visual.docx",
+        "reference": "Under CPE Endorsement Form 402, the standard limit for custom equipment -- including non-OEM "
+                      "sound systems such as aftermarket stereos and navigation -- is capped at $5,000, with "
+                      "an option to increase the limit to $15,000 upon submitting invoices and photographs. "
+                      "Valuation is based on Actual Cash Value (depreciated cost), not replacement cost.",
+        "source": "Endorsement_Custom_Equipment_Form402.pdf",
     },
     {
         "id": "windshield-zero-deductible",
@@ -148,9 +161,9 @@ GOLDEN_QUERIES = [
         "claim_id": "#2026-30291",
         "query": "Does David Chen's stolen custom equipment exceed his endorsement's coverage cap, and by how much?",
         "reference": "Yes. The receipts show $2,400 for wheels and $3,500 for the infotainment console/amplifier, "
-                      "totaling $5,900. The Custom Audio/Visual endorsement caps coverage at $3,500 per "
-                      "occurrence, so the claimed value exceeds the cap by $2,400.",
-        "source": "Endorsement_Custom_Audio_Visual.docx",
+                      "totaling $5,900. Under CPE Endorsement Form 402, custom equipment is capped at $5,000 "
+                      "per occurrence, so the claimed value exceeds the cap by $900.",
+        "source": "Endorsement_Custom_Equipment_Form402.pdf",
     },
     {
         "id": "chen-theft-report-detail",
