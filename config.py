@@ -77,6 +77,13 @@ class Settings:
     llm_provider: str = "lm-studio"
     llm_base_url: str = "http://127.0.0.1:1234"
     llm_model: str | None = None
+    planning_model: str | None = None       # Phase 5.1 per-stage routing
+    synthesis_model: str | None = None
+    eval_model: str | None = None
+    llm_api_key: str | None = None           # injected from env/secrets; never client-supplied
+    llm_synthesis_timeout_seconds: int = 120
+    llm_plan_timeout_seconds: int = 5
+    model_cache_ttl_seconds: int = 10
     max_upload_bytes: int = 25 * 1024 * 1024
     max_document_chars: int = 2_000_000
     rate_limit_max_requests: int = 60  # Phase 4.4 per-principal rate limiting
@@ -134,6 +141,13 @@ class Settings:
             llm_provider=env.get("LLM_PROVIDER", "lm-studio").strip().lower(),
             llm_base_url=env.get("LLM_BASE_URL", "http://127.0.0.1:1234").rstrip("/"),
             llm_model=env.get("LLM_MODEL") or None,
+            planning_model=env.get("PLANNING_MODEL") or None,
+            synthesis_model=env.get("SYNTHESIS_MODEL") or None,
+            eval_model=env.get("EVAL_MODEL") or None,
+            llm_api_key=env.get("LLM_API_KEY") or None,
+            llm_synthesis_timeout_seconds=_int(env.get("LLM_SYNTHESIS_TIMEOUT_SECONDS"), 120, "LLM_SYNTHESIS_TIMEOUT_SECONDS"),
+            llm_plan_timeout_seconds=_int(env.get("LLM_PLAN_TIMEOUT_SECONDS"), 5, "LLM_PLAN_TIMEOUT_SECONDS"),
+            model_cache_ttl_seconds=_int(env.get("MODEL_CACHE_TTL_SECONDS"), 10, "MODEL_CACHE_TTL_SECONDS"),
             max_upload_bytes=_int(env.get("MAX_UPLOAD_BYTES"), 25 * 1024 * 1024, "MAX_UPLOAD_BYTES"),
             max_document_chars=_int(env.get("MAX_DOCUMENT_CHARS"), 2_000_000, "MAX_DOCUMENT_CHARS"),
             rate_limit_max_requests=_int(env.get("RATE_LIMIT_MAX_REQUESTS"), 60, "RATE_LIMIT_MAX_REQUESTS"),

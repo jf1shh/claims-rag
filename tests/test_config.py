@@ -163,3 +163,33 @@ def test_given_nonpositive_rate_limit_then_parsing_fails():
         Settings.from_env({"RATE_LIMIT_MAX_REQUESTS": "0"})
     with pytest.raises(ValueError, match="RATE_LIMIT_WINDOW_SECONDS"):
         Settings.from_env({"RATE_LIMIT_WINDOW_SECONDS": "-1"})
+
+
+def test_given_stage_models_when_parsed_then_catalog_is_configured():
+    s = Settings.from_env({
+        "PLANNING_MODEL": "fast-plan",
+        "SYNTHESIS_MODEL": "domain-v2",
+        "EVAL_MODEL": "judge-1",
+        "LLM_API_KEY": "sk-test",
+        "LLM_PLAN_TIMEOUT_SECONDS": "3",
+        "LLM_SYNTHESIS_TIMEOUT_SECONDS": "90",
+        "MODEL_CACHE_TTL_SECONDS": "20",
+    })
+    assert s.planning_model == "fast-plan"
+    assert s.synthesis_model == "domain-v2"
+    assert s.eval_model == "judge-1"
+    assert s.llm_api_key == "sk-test"
+    assert s.llm_plan_timeout_seconds == 3
+    assert s.llm_synthesis_timeout_seconds == 90
+    assert s.model_cache_ttl_seconds == 20
+
+
+def test_given_no_stage_models_then_defaults_fall_back_to_single_model():
+    s = Settings.from_env({"LLM_MODEL": "fallback-model"})
+    assert s.planning_model is None
+    assert s.synthesis_model is None
+    assert s.eval_model is None
+    assert s.llm_api_key is None
+    assert s.llm_synthesis_timeout_seconds == 120
+    assert s.llm_plan_timeout_seconds == 5
+    assert s.model_cache_ttl_seconds == 10

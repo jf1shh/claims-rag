@@ -1,6 +1,6 @@
 # Enterprise Migration Plan — SQLite → Postgres + pgvector + S3 + Async Ingest
 
-> **Status: Phase 0 complete (2026-08-20; close-out verified 2026-08-28).** This
+> **Status: Phase 4 complete / Phase 5 in progress (2026-08-29).** This
 > document supersedes the "Enterprise multi-tenant scaling (DEFERRED)" note in
 > CLAUDE.md's What's Next and is the source of truth for the migration. Each phase
 > updates its milestone statuses here.
@@ -316,11 +316,37 @@ RLS onto live multi-tenant data is the most expensive mistake in this plan.
 
 ## Phase 5 — Serving & LLM layer (3–4 wks)
 
-| Milestone | Deliverable | Exit criteria |
-|---|---|---|
-| 5.1 | LM Studio → vLLM/TGI (self-hosted GPU) or hosted OpenAI-compatible endpoint; `engine` stays a server-side allowlist (SSRF constraint intact) | Planner + synthesis via new backend; model cache adapted |
-| 5.2 | Dedicated cross-encoder reranker service (GPU, batched); pgvector returns top 50–100 candidates, rerank cuts to `top_k` | Rerank cost bounded by candidate pool, not corpus |
-| 5.3 | `/api/chat` streamed (SSE) or worker-pool async; context assembly capped (dossier cap + global-match cap) | p95 time-to-first-token target; prompt-injection delimiters in place |
+| Milestone | Deliverable | Exit criteria | Status |
+|---|---|---|---|
+| 5.1 | LM Studio → vLLM/TGI (self-hosted GPU) or hosted OpenAI-compatible endpoint; `engine` stays a server-side allowlist (SSRF constraint intact) | Planner + synthesis via new backend; model cache adapted | **Done 2026-08-29** — provider-neutral `ChatClient` seam (`backend/llm_client.py`), per-stage model catalog, wiring (see status below) |
+| 5.2 | Dedicated cross-encoder reranker service (GPU, batched); pgvector returns top 50–100 candidates, rerank cuts to `top_k` | Rerank cost bounded by candidate pool, not corpus | Planned (spec + plan merged in `docs/superpowers/specs|plans/2026-08-29-phase5-reranker-service*`) |
+| 5.3 | `/api/chat` streamed (SSE) or worker-pool async; context assembly capped (dossier cap + global-match cap) | p95 time-to-first-token target; prompt-injection delimiters in place | Planned (spec + plan merged in `docs/superpowers/specs|plans/2026-08-29-phase5-streaming-context-caps*`) |
+
+> **Phase 5 status (2026-08-29, milestone 5.1):** the LLM seam is now real.
+> `backend/llm_client.py` adds a provider-neutral `ChatClient` ABC (`models()`,
+> `complete()`) with one `OpenAICompatibleClient` that POSTs
+> `/v1/chat/completions` and GETs `/v1/models` against the allowlisted
+> `LLM_BASE_URL` (LM Studio locally; a private vLLM/TGI/SGLang gateway in
+> production), with **per-stage model routing** — `PLANNING_MODEL` /
+> `SYNTHESIS_MODEL` / optional `EVAL_MODEL`, each falling back to `LLM_MODEL` —
+> via `model_for_stage(stage)`. `LLM_API_KEY` (Bearer, injected from secrets)
+> is attached only when set; the 10s `MODEL_CACHE_TTL_SECONDS` model cache moved
+> out of the router into `client.models()`, and the router's hardcoded
+> `requests.post` / `engine_url` / in-router cache are gone. `engine` stays a
+> strict server-side allowlist (`simulated` | `lm-studio`) — a URL/unknown value
+> is rejected with zero outbound calls (SSRF regression tested). Config:
+> `planning_model`/`synthesis_model`/`eval_model`/`llm_api_key`/
+> `llm_synthesis_timeout_seconds`/`llm_plan_timeout_seconds`/
+> `model_cache_ttl_seconds` (`.env.example`), built by `_build_llm_client` in
+> `app_factory.py` (mirrors the other builders) and exposed on
+> `AppDependencies`; `/api/status` probes via `client.models()` and `/api/chat`
+> threads the client through `run_query(llm_client=…)`. Verified hermetically
+> (fake HTTP / stub clients, no ML/network): 13 new tests — client contract,
+> per-stage resolution, bearer-auth, TTL caching, failure-decay, factory
+> wiring, router planner/synthesis through the injected client, engine
+> allowlist, `/api/status` — reconstituting the existing router tests against
+> the injected seam. Full suite **329 passed / 12 skipped**, ruff clean, gates 0
+> blocking. Next: 5.2 reranker service.
 
 ---
 

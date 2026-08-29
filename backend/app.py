@@ -6,7 +6,6 @@ os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 
 import json
 import tempfile
-import requests
 import time
 import uuid
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request, Depends
@@ -16,7 +15,7 @@ from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import Optional, List
+from typing import Optional
 
 # Import our RAG Engine classes
 from backend.rag_engine import DocumentParser, EmbeddingEngine, SQLiteVectorStore, RerankingEngine, safe_filename, _blob_key
@@ -58,13 +57,14 @@ app.add_middleware(
 # lazy so importing the ASGI app does not require local model files. When an
 # object store (S3) is configured, add/delete/serve route source bytes through
 # it; otherwise the legacy filesystem storage_dir path is used unchanged.
-from app_factory import _build_blob_store, _build_authenticator, _build_claim_access_policy, _build_audit_sink, _build_rate_limiter  # noqa: E402
+from app_factory import _build_blob_store, _build_authenticator, _build_claim_access_policy, _build_audit_sink, _build_rate_limiter, _build_llm_client  # noqa: E402
 
 _vector_blob_store = _build_blob_store(settings)
 _authenticator = _build_authenticator(settings)
 _claim_access_policy = _build_claim_access_policy(settings)
 _audit_sink = _build_audit_sink(settings)
 _rate_limiter = _build_rate_limiter(settings)
+_llm_client = _build_llm_client(settings)
 vector_store = SQLiteVectorStore(
     db_path=str(settings.rag_db_path),
     storage_dir=str(settings.stored_documents_dir),
@@ -194,19 +194,6 @@ def _audit(request: Request, principal, event: str, **fields) -> None:
     )
 
 
-def get_loaded_models(url: str) -> Optional[List[str]]:
-    """Returns the loaded model ids, or None if LM Studio is unreachable.
-    None-vs-empty-list distinguishes 'server down' from 'server up with no
-    model loaded', so the status check needs only this single round-trip."""
-    try:
-        response = requests.get(f"{url}/v1/models", timeout=1.5)
-        if response.status_code == 200:
-            data = response.json()
-            return [m["id"] for m in data.get("data", [])]
-    except requests.RequestException:
-        pass
-    return None
-
 @app.get("/health/live")
 def health_live():
     return live_status()
@@ -233,10 +220,15 @@ def auth_me(principal=Depends(get_current_tenant)):  # noqa: B008 - idiomatic Fa
 
 @app.get("/api/status", dependencies=[Depends(get_current_tenant)])
 def get_status():
-    """Checks the status of the local LLM servers."""
-    lm_studio_models = get_loaded_models(settings.llm_base_url)
-    lm_studio_active = lm_studio_models is not None
-    lm_studio_models = lm_studio_models or []
+    """Checks the status of the configured LLM gateway (Phase 5.1).
+    Model discovery now runs through the injected ChatClient (an
+    OpenAICompatibleClient with a TTL'd model cache) rather than an inline
+    HTTP round-trip, so this endpoint and /api/chat agree on the served
+    models. With LLM_PROVIDER=none (simulation only) there is nothing to
+    probe and the LM Studio block reports inactive."""
+    models = _llm_client.models() if _llm_client is not None else []
+    lm_studio_models = models or []
+    lm_studio_active = _llm_client is not None
 
     return {
         "lm_studio": {
@@ -628,7 +620,8 @@ def chat_with_docs(request: Request, req: ChatRequest, principal=Depends(get_cur
         engine=req.engine,
         embedding_engine=_get_embedding_engine(),
         vector_store=vector_store,
-        reranking_engine=_get_reranking_engine()
+        reranking_engine=_get_reranking_engine(),
+        llm_client=_llm_client,
     )
     _audit(
         request,
