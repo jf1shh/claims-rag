@@ -365,7 +365,7 @@ RLS onto live multi-tenant data is the most expensive mistake in this plan.
 
 | Finding | Owner | Reason | Review date |
 |---|---|---|---|
-| Phases 2–6 (S3 live-cloud verification, async ingest, auth/audit, serving, scale) | Repository maintainer (Jared Fisher) | Sequenced roadmap; each phase must land and stabilize before the next | Start of each phase (next: Phase 3) |
+| Phase 6 (scale, drift monitoring, compliance, cutover) + deployment-wiring items (live S3→Lambda→SQS hop, live OIDC redirect, real KMS, Redis rate-limit state, connecting a bought/built model on the company's GPU gateway, golden eval against a live judge, SOC2-type evidence) | Repository maintainer (Jared Fisher) | Sequenced roadmap; hermetic code lands first, then live-infrastructure + compliance verification (needs provisioning and human/security review, not just code) | Start of each milestone (next: Phase 5.2) |
 | Dependency audit (`pip-audit`) wired into the harness | Repository maintainer (Jared Fisher) | Plan Task 8 listed it as a P0 gate; the shipped harness runs secrets/specs/docs gates, and CI runs the isolation/grounding tests — the audit remains advisory until wired | Phase 1 planning |
 | Static security analysis (bandit) as a harness sensor | Repository maintainer (Jared Fisher) | Plan Task 8 listed it as a P1 sensor; not yet invoked by the harness | Phase 1 planning |
 | Docker packaging | Repository maintainer (Jared Fisher) | Optional distribution work; revisit at Phase 5 (serving) | Phase 5 |
