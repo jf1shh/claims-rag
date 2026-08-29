@@ -86,10 +86,26 @@ parity harness defines acceptable divergence (recall@k ≥ 0.9) *before* data mi
 
 ## Phase 2 — Object storage: S3 (2–3 wks)
 
-| Milestone | Deliverable | Exit criteria |
-|---|---|---|
-| 2.1 | Upload writes to `s3://bucket/{tenant}/{claim-or-global}/{key}`; `documents.s3_key`; SSE-KMS; versioning | Server stateless w.r.t. files; delete removes object (or soft-delete + lifecycle) |
-| 2.2 | Download/view via presigned URLs; `get_document_content` reads S3 or DB chunks | UI view/download parity; nosniff/attachment hardening carried over; per-scope overwrite semantics preserved |
+| Milestone | Deliverable | Exit criteria | Status |
+|---|---|---|---|
+| 2.1 | Upload writes to `s3://bucket/{tenant}/{claim-or-global}/{key}`; `documents.s3_key`; SSE-KMS; versioning | Server stateless w.r.t. files; delete removes object (or soft-delete + lifecycle) | **Done 2026-08-29** — `S3DocumentBlobStore` adapter + store wiring (see below) |
+| 2.2 | Download/view via presigned URLs; `get_document_content` reads S3 or DB chunks | UI view/download parity; nosniff/attachment hardening carried over; per-scope overwrite semantics preserved | **Done 2026-08-29** — `/api/documents/download` redirects to a presigned GET when S3 is configured; `get_document_content` stays DB-chunk-based (backend-neutral); per-scope overwrite guard + file-after-commit ordering preserved in both stores |
+
+> **Phase 2 status (2026-08-29):** the object-storage seam (already sketched in
+> Phase 0 as `DocumentBlobStore`) is now real and wired end-to-end. `backend/blob_store.py`
+> gained `S3DocumentBlobStore` (boto3; tenant-scoped object keys `{tenant}/{scope-or-global}/{filename}`;
+> presigned GET via `create_download_url`; SSE-KMS optional via `s3_sse_kms_key_id`; endpoint-URL
+> overridable for MinIO/LocalStack). Both `SQLiteVectorStore` and `PostgresVectorStore` accept an
+> optional `blob_store`; when set, `add_document`/`delete_document` route source bytes through it
+> **after** the DB commit (Phase 16 ordering preserved) and `get_blob_key()` resolves the download
+> key by scope. `app_factory.build_dependencies()` + `backend/app.py` build the adapter from
+> `OBJECT_STORAGE_PROVIDER`/`OBJECT_STORAGE_BUCKET`/`S3_REGION`/`S3_ENDPOINT_URL`/`S3_SSE_KMS_KEY_ID`.
+> Tests: hermetic `moto`-based suites (`tests/test_blob_store_s3.py`, `tests/test_store_blob_wiring.py`,
+> plus a PG blob-wiring case in `tests/test_postgres_store.py`) — no real cloud needed, CI runs them
+> as ordinary pytest. `filesystem` remains the default and is byte-identical to before (the adapter
+> returns None → legacy storage_dir writes). Verified: full suite 112 passed / 1 skipped with the PG
+> leg; live moto smoke of `/api/documents/download` returns a 307 to a presigned URL
+> (`{tenant}/global/labor.txt`).
 
 ---
 
@@ -142,7 +158,7 @@ RLS onto live multi-tenant data is the most expensive mistake in this plan.
 
 | Finding | Owner | Reason | Review date |
 |---|---|---|---|
-| Phases 1–6 (Postgres data plane, S3, async ingest, auth/audit, serving, scale) | Repository maintainer (Jared Fisher) | Sequenced roadmap; each phase must land and stabilize before the next | Start of each phase (next: Phase 1) |
+| Phases 2–6 (S3 live-cloud verification, async ingest, auth/audit, serving, scale) | Repository maintainer (Jared Fisher) | Sequenced roadmap; each phase must land and stabilize before the next | Start of each phase (next: Phase 3) |
 | Dependency audit (`pip-audit`) wired into the harness | Repository maintainer (Jared Fisher) | Plan Task 8 listed it as a P0 gate; the shipped harness runs secrets/specs/docs gates, and CI runs the isolation/grounding tests — the audit remains advisory until wired | Phase 1 planning |
 | Static security analysis (bandit) as a harness sensor | Repository maintainer (Jared Fisher) | Plan Task 8 listed it as a P1 sensor; not yet invoked by the harness | Phase 1 planning |
 | Docker packaging | Repository maintainer (Jared Fisher) | Optional distribution work; revisit at Phase 5 (serving) | Phase 5 |

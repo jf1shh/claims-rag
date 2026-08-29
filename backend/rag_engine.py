@@ -41,6 +41,16 @@ def safe_filename(filename):
     return name
 
 
+def _blob_key(claim_id: str | None, filename: str) -> str:
+    """Builds the object-store key for a source document. The scope (claim id,
+    or ``global`` for the global set) is part of the key so one bucket never
+    mixes a claim's and the global corpus's copy of the same filename. The
+    tenant prefix itself lives in the blob-store adapter.
+    """
+    scope = claim_id if claim_id else "global"
+    return f"{scope}/{filename}"
+
+
 class DocumentParser:
     @staticmethod
     def parse(file_path, file_type):
@@ -231,12 +241,17 @@ class VectorStore(ABC):
 
 
 class SQLiteVectorStore(VectorStore):
-    def __init__(self, db_path=DB_PATH, storage_dir=STORED_DOCUMENTS_DIR):
+    def __init__(self, db_path=DB_PATH, storage_dir=STORED_DOCUMENTS_DIR, blob_store=None):
         self.db_path = db_path
         # Directory for physical copies of source documents. Defaults to the
         # repo-root-anchored stored_documents/; tests pass an explicit temp
         # dir to stay hermetic.
         self.storage_dir = storage_dir
+        # Optional object-storage adapter (Phase 2, S3). When set, add/delete
+        # route source bytes through it instead of self.storage_dir, and the
+        # serving path uses its create_download_url. When None, the legacy
+        # filesystem behavior below is unchanged.
+        self.blob_store = blob_store
         # In-memory, pre-normalized embedding index. Built lazily on first
         # search and invalidated whenever documents are added/removed. This
         # avoids re-reading every embedding BLOB and recomputing corpus norms
@@ -453,23 +468,32 @@ class SQLiteVectorStore(VectorStore):
         finally:
             conn.close()
 
-        # Only touch the filesystem once the DB write has durably committed --
-        # see the docstring above for why this ordering matters. The write is
-        # staged to a sibling temp file and atomically renamed into place, so
-        # a failure mid-copy (disk full, permission) can never leave a
-        # half-written file at the final path: the old file survives intact,
-        # and only a stray *.part file is left behind.
-        dest_path = os.path.abspath(os.path.join(self.storage_dir, filename))
-        tmp_path = dest_path + ".part"
-        if file_path and os.path.exists(file_path):
-            src_abs = os.path.abspath(file_path)
-            if src_abs != dest_path:
-                shutil.copy2(file_path, tmp_path)
-                os.replace(tmp_path, dest_path)
+        # Only touch storage once the DB write has durably committed -- see
+        # the docstring above for why this ordering matters (a rolled-back DB
+        # write must never pair with a storage-side change). When an object
+        # store is configured the source bytes go to it (tenant-scoped key);
+        # otherwise the legacy filesystem path writes atomically to
+        # storage_dir.
+        if self.blob_store is not None:
+            key = _blob_key(claim_id, filename)
+            if file_path and os.path.exists(file_path):
+                with open(file_path, "rb") as fh:
+                    content = fh.read()
+            else:
+                content = text.encode("utf-8", errors="ignore")
+            self.blob_store.put(key, content, file_type or "application/octet-stream")
         else:
-            with open(tmp_path, "w", encoding="utf-8", errors="ignore") as f:
-                f.write(text)
-            os.replace(tmp_path, dest_path)
+            dest_path = os.path.abspath(os.path.join(self.storage_dir, filename))
+            tmp_path = dest_path + ".part"
+            if file_path and os.path.exists(file_path):
+                src_abs = os.path.abspath(file_path)
+                if src_abs != dest_path:
+                    shutil.copy2(file_path, tmp_path)
+                    os.replace(tmp_path, dest_path)
+            else:
+                with open(tmp_path, "w", encoding="utf-8", errors="ignore") as f:
+                    f.write(text)
+                os.replace(tmp_path, dest_path)
 
         return doc_id, len(parent_chunks)
 
@@ -486,11 +510,11 @@ class SQLiteVectorStore(VectorStore):
         conn = self._connect()
         cursor = conn.cursor()
         try:
-            cursor.execute("SELECT id FROM documents WHERE filename = ?", (filename,))
+            cursor.execute("SELECT id, claim_id FROM documents WHERE filename = ?", (filename,))
             row = cursor.fetchone()
             if not row:
                 return False
-            doc_id = row[0]
+            doc_id, claim_of_deleted = row[0], row[1]
             # Delete FTS index first
             cursor.execute("""
                 DELETE FROM parent_chunks_fts
@@ -508,11 +532,15 @@ class SQLiteVectorStore(VectorStore):
         finally:
             conn.close()
 
-        # Delete physical file from storage only now that the DB is
-        # guaranteed to no longer reference it.
-        stored_path = os.path.join(self.storage_dir, filename)
-        if os.path.exists(stored_path):
-            os.remove(stored_path)
+        # Delete from storage only now that the DB is guaranteed to no longer
+        # reference it. With an object store, the key needs the scope (claim)
+        # that was just deleted, so look it up before the delete.
+        if self.blob_store is not None and claim_of_deleted:
+            self.blob_store.delete(_blob_key(claim_of_deleted, filename))
+        elif not self.blob_store:
+            stored_path = os.path.join(self.storage_dir, filename)
+            if os.path.exists(stored_path):
+                os.remove(stored_path)
         return True
 
     def get_all_documents(self):
@@ -596,6 +624,22 @@ class SQLiteVectorStore(VectorStore):
         rows = cursor.fetchall()
         conn.close()
         return "\n\n".join(r[0] for r in rows)
+
+    def get_blob_key(self, filename):
+        """Resolves the object-store key for a document by its filename (used
+        by the serving path to presign its download URL). Returns None if the
+        document is not indexed. Note: filename is unique here (the SQLite
+        schema keys the documents table on filename alone), so the scope is
+        whatever row owns that name."""
+        filename = safe_filename(filename)
+        conn = self._connect()
+        cursor = conn.cursor()
+        cursor.execute("SELECT claim_id FROM documents WHERE filename = ?", (filename,))
+        row = cursor.fetchone()
+        conn.close()
+        if not row:
+            return None
+        return _blob_key(row[0], filename)
 
     def search_similarity(self, query_embedding, query_text, claim_id=None, reranking_engine=None, top_k=15, use_fts=True):
         """Computes hybrid similarity (Vector + FTS5) with RRF and optional Cross-Encoder reranking scoped by claim_id.

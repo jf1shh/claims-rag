@@ -146,6 +146,53 @@ def _add_global(store, filename, text, claim_id=None):
 
 
 # --------------------------------------------------------------------------- #
+# Blob-store wiring (Phase 2) -- source bytes route to the S3 adapter
+# --------------------------------------------------------------------------- #
+
+@needs_postgres
+def test_blob_store_wiring_routes_bytes_to_object_store(provisioned_db, tmp_path):
+    """With a blob_store attached, add/delete must put/delete the source object
+    instead of writing to storage_dir (parity with SQLiteVectorStore)."""
+    import uuid
+
+    import boto3
+    from moto import mock_aws
+
+    from backend.blob_store import S3DocumentBlobStore
+    from backend.postgres_store import PostgresVectorStore
+
+    tenant = f"test-{uuid.uuid4().hex[:8]}"
+    with mock_aws():
+        client = boto3.client("s3", region_name="us-east-1")
+        client.create_bucket(Bucket="test-bucket")
+        blob = S3DocumentBlobStore(bucket="test-bucket", tenant_id=tenant)
+        s = PostgresVectorStore(
+            dsn=provisioned_db,
+            tenant_id=tenant,
+            storage_dir=str(tmp_path / "docs"),
+            embedding_dimensions=384,
+            blob_store=blob,
+        )
+        try:
+            text = "Nevada mechanical labor cap is 110 dollars per hour."
+            s.add_document("labor.txt", "txt", len(text), text, _FakeEmbedder(), claim_id="claim-1")
+            body = client.get_object(Bucket="test-bucket", Key=f"{tenant}/claim-1/labor.txt")["Body"].read()
+            assert body.decode() == text
+            assert not (tmp_path / "docs" / "labor.txt").exists()
+            assert s.get_blob_key("labor.txt") == "claim-1/labor.txt"
+            s.delete_document("labor.txt")
+            keys = [o["Key"] for o in client.list_objects_v2(Bucket="test-bucket").get("Contents", [])]
+            assert f"{tenant}/claim-1/labor.txt" not in keys
+        finally:
+            conn = _connect(provisioned_db)
+            try:
+                conn.execute("DELETE FROM documents WHERE tenant_id = %s", (tenant,))
+                conn.commit()
+            finally:
+                conn.close()
+
+
+# --------------------------------------------------------------------------- #
 # Basic add / search / chunk / delete
 # --------------------------------------------------------------------------- #
 

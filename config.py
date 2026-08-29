@@ -45,6 +45,9 @@ class Settings:
     tenant_id: str = "local-development"
     object_storage_provider: str = "filesystem"
     object_storage_bucket: str | None = None
+    s3_region: str = "us-east-1"
+    s3_endpoint_url: str | None = None
+    s3_sse_kms_key_id: str | None = None
     embedding_model: str = "all-MiniLM-L6-v2"
     embedding_dimensions: int = 384
     reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
@@ -77,6 +80,9 @@ class Settings:
             tenant_id=env.get("TENANT_ID", "local-development").strip(),
             object_storage_provider=env.get("OBJECT_STORAGE_PROVIDER", "filesystem").strip().lower(),
             object_storage_bucket=env.get("OBJECT_STORAGE_BUCKET") or None,
+            s3_region=env.get("S3_REGION", "us-east-1").strip(),
+            s3_endpoint_url=env.get("S3_ENDPOINT_URL") or None,
+            s3_sse_kms_key_id=env.get("S3_SSE_KMS_KEY_ID") or None,
             embedding_model=env.get("EMBEDDING_MODEL", "all-MiniLM-L6-v2"),
             embedding_dimensions=_int(env.get("EMBEDDING_DIMENSIONS"), 384, "EMBEDDING_DIMENSIONS"),
             reranker_model=env.get("RERANKER_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2"),

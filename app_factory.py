@@ -17,8 +17,30 @@ class AppDependencies:
     agentic_router: Any | None = None
 
 
+def _build_blob_store(settings: Settings):
+    """Constructs the object-storage adapter for the configured provider.
+    ``filesystem`` (the default) keeps the legacy local-directory behavior;
+    ``s3`` returns an S3-compatible adapter. Returns None for filesystem so
+    the stores fall back to their existing storage_dir writes."""
+    if settings.object_storage_provider != "s3":
+        return None
+    if not settings.object_storage_bucket:
+        raise ValueError("OBJECT_STORAGE_BUCKET is required when OBJECT_STORAGE_PROVIDER is s3")
+    from backend.blob_store import S3DocumentBlobStore
+
+    return S3DocumentBlobStore(
+        bucket=settings.object_storage_bucket,
+        tenant_id=settings.tenant_id,
+        region=settings.s3_region,
+        endpoint_url=settings.s3_endpoint_url,
+        sse_kms_key_id=settings.s3_sse_kms_key_id,
+    )
+
+
 def build_dependencies(settings: Settings) -> AppDependencies:
     from backend.rag_engine import SQLiteVectorStore
+
+    blob_store = _build_blob_store(settings)
 
     if settings.vector_store == "postgres":
         if not settings.postgres_dsn:
@@ -30,11 +52,13 @@ def build_dependencies(settings: Settings) -> AppDependencies:
             tenant_id=settings.tenant_id,
             storage_dir=str(settings.stored_documents_dir),
             embedding_dimensions=settings.embedding_dimensions,
+            blob_store=blob_store,
         )
     else:
         vector_store = SQLiteVectorStore(
             db_path=str(settings.rag_db_path),
             storage_dir=str(settings.stored_documents_dir),
+            blob_store=blob_store,
         )
 
     return AppDependencies(

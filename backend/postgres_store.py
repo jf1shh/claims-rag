@@ -65,6 +65,7 @@ class PostgresVectorStore:
         tenant_id: str = "local-development",
         storage_dir: Optional[str] = None,
         embedding_dimensions: int = 384,
+        blob_store=None,
     ):
         from backend.rag_engine import STORED_DOCUMENTS_DIR
 
@@ -76,6 +77,9 @@ class PostgresVectorStore:
         self.tenant_id = tenant_id
         self.storage_dir = storage_dir or STORED_DOCUMENTS_DIR
         self.embedding_dimensions = embedding_dimensions
+        # Optional object-storage adapter (Phase 2, S3). When set, add/delete
+        # route source bytes through it; when None, legacy filesystem behavior.
+        self.blob_store = blob_store
         # Exposed for /api/status (path) parity with SQLiteVectorStore.db_path;
         # PG credentials must never be rendered, so keep it redacted.
         self.db_path = _redact_dsn(dsn)
@@ -117,7 +121,7 @@ class PostgresVectorStore:
         """
         import shutil
 
-        from backend.rag_engine import TextChunker, safe_filename
+        from backend.rag_engine import TextChunker, safe_filename, _blob_key
 
         filename = safe_filename(filename)
         os.makedirs(self.storage_dir, exist_ok=True)
@@ -205,20 +209,30 @@ class PostgresVectorStore:
         finally:
             conn.close()
 
-        # Only touch the filesystem once the DB write has durably committed --
-        # the mirror of the SQLite Phase 16 ordering fix. Staged to a sibling
-        # temp file and atomically renamed into place.
-        dest_path = os.path.abspath(os.path.join(self.storage_dir, filename))
-        tmp_path = dest_path + ".part"
-        if file_path and os.path.exists(file_path):
-            src_abs = os.path.abspath(file_path)
-            if src_abs != dest_path:
-                shutil.copy2(file_path, tmp_path)
-                os.replace(tmp_path, dest_path)
+        # Only touch storage once the DB write has durably committed -- the
+        # mirror of the SQLite Phase 16 ordering fix. With an object store, the
+        # source bytes go to it (tenant + scope scoped key); otherwise write
+        # atomically to storage_dir.
+        if self.blob_store is not None:
+            key = _blob_key(claim_id, filename)
+            if file_path and os.path.exists(file_path):
+                with open(file_path, "rb") as fh:
+                    content = fh.read()
+            else:
+                content = text.encode("utf-8", errors="ignore")
+            self.blob_store.put(key, content, file_type or "application/octet-stream")
         else:
-            with open(tmp_path, "w", encoding="utf-8", errors="ignore") as f:
-                f.write(text)
-            os.replace(tmp_path, dest_path)
+            dest_path = os.path.abspath(os.path.join(self.storage_dir, filename))
+            tmp_path = dest_path + ".part"
+            if file_path and os.path.exists(file_path):
+                src_abs = os.path.abspath(file_path)
+                if src_abs != dest_path:
+                    shutil.copy2(file_path, tmp_path)
+                    os.replace(tmp_path, dest_path)
+            else:
+                with open(tmp_path, "w", encoding="utf-8", errors="ignore") as f:
+                    f.write(text)
+                os.replace(tmp_path, dest_path)
 
         return doc_id, len(parent_chunks)
 
@@ -226,11 +240,17 @@ class PostgresVectorStore:
         """Removes a document and (cascade) its chunks/embeddings/FTS rows by
         filename within this tenant. False if no such document exists. The
         physical file is removed only after the delete commits."""
-        from backend.rag_engine import safe_filename
+        from backend.rag_engine import _blob_key, safe_filename
 
         filename = safe_filename(filename)
         conn = self._connect()
+        claim_of_deleted = None
         try:
+            existing = conn.execute(
+                "SELECT claim_id FROM documents WHERE tenant_id = %s AND filename = %s",
+                (self.tenant_id, filename),
+            ).fetchall()
+            claim_of_deleted = existing[0][0] if existing else None
             cur = conn.execute(
                 "DELETE FROM documents WHERE tenant_id = %s AND filename = %s RETURNING id",
                 (self.tenant_id, filename),
@@ -244,9 +264,12 @@ class PostgresVectorStore:
             conn.close()
 
         if deleted:
-            stored_path = os.path.join(self.storage_dir, filename)
-            if os.path.exists(stored_path):
-                os.remove(stored_path)
+            if self.blob_store is not None and claim_of_deleted is not None:
+                self.blob_store.delete(_blob_key(claim_of_deleted, filename))
+            elif not self.blob_store:
+                stored_path = os.path.join(self.storage_dir, filename)
+                if os.path.exists(stored_path):
+                    os.remove(stored_path)
         return deleted
 
     def get_all_documents(self):
@@ -328,6 +351,27 @@ class PostgresVectorStore:
         finally:
             conn.close()
         return "\n\n".join(r[0] for r in rows)
+
+    def get_blob_key(self, filename):
+        """Resolves the object-store key for a document by filename (used by the
+        serving path to presign its download URL). None if not indexed. The
+        same filename may exist in more than one scope in PG (claim vs global),
+        so the key's scope segment comes from whichever row within this tenant
+        owns that name."""
+        from backend.rag_engine import _blob_key, safe_filename
+
+        filename = safe_filename(filename)
+        conn = self._connect()
+        try:
+            rows = conn.execute(
+                "SELECT claim_id FROM documents WHERE tenant_id = %s AND filename = %s",
+                (self.tenant_id, filename),
+            ).fetchall()
+        finally:
+            conn.close()
+        if not rows:
+            return None
+        return _blob_key(rows[0][0], filename)
 
     # ------------------------------------------------------------------ #
     # Interface: hybrid retrieval (vector + FTS + RRF, optional rerank)
