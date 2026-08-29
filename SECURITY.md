@@ -8,7 +8,7 @@ AutoClaimsRAG handles claims-like documents and must treat all uploaded content 
 - Permissions are enforced per role (adjuster / supervisor / SIU / admin) and per claim via `CLAIM_ACLS_FILE`; production deployments must resolve tenant context from verified authentication, not client-controlled claim IDs or filenames.
 - Retrieval, listing, download, upload, deletion, and chat must be tenant- and claim-scoped.
 - Uploaded filenames and storage keys must be normalized and confined to the configured storage root.
-- Model/provider endpoints must be configured server-side and validated; request data must never select an arbitrary outbound URL.
+- Model/provider endpoints must be configured server-side and validated; request data must never select an arbitrary outbound URL — `engine` is a strict allowlist (`simulated` | `lm-studio`), never a client-chosen target. The LLM endpoint runs through a provider-neutral client with an allowlisted base URL and optional credentials (`LLM_API_KEY`) injected from secrets, never client-supplied.
 - Upload bytes, extracted text, query length, and retrieval counts must be bounded; the upload and `/api/eval/search` input caps are enforced (413 above the cap).
 - Sensitive and costly endpoints are rate-limited per authenticated principal via a sliding window (429 with `Retry-After`); a single tenant/subject exhausting its allowance cannot starve others.
 - The assistant must refuse synthesis without supporting evidence.
