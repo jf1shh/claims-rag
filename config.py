@@ -53,6 +53,7 @@ class Settings:
     rag_db_path: Path = REPO_ROOT / "rag_store.db"
     stored_documents_dir: Path = REPO_ROOT / "stored_documents"
     jobs_db_path: Path = REPO_ROOT / "jobs.db"
+    audit_log_path: Path = REPO_ROOT / "audit.log.jsonl"  # Phase 4.3 immutable audit log
     ingestion_mode: str = "sync"  # "sync" | "async" (Phase 3 async ingestion)
     vector_store: str = "sqlite"  # "sqlite" | "postgres" (Phase 1 data plane)
     postgres_dsn: str | None = None
@@ -107,6 +108,7 @@ class Settings:
             rag_db_path=Path(env.get("RAG_DB_PATH", str(REPO_ROOT / "rag_store.db"))).expanduser(),
             stored_documents_dir=Path(env.get("STORED_DOCUMENTS_DIR", str(REPO_ROOT / "stored_documents"))).expanduser(),
             jobs_db_path=Path(env.get("JOBS_DB_PATH", str(REPO_ROOT / "jobs.db"))).expanduser(),
+            audit_log_path=Path(env.get("AUDIT_LOG_PATH", str(REPO_ROOT / "audit.log.jsonl"))).expanduser(),
             ingestion_mode=env.get("INGESTION_MODE", "sync").strip().lower(),
             vector_store=env.get("VECTOR_STORE", "sqlite").strip().lower(),
             postgres_dsn=env.get("POSTGRES_DSN") or None,

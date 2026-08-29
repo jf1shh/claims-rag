@@ -41,3 +41,17 @@ class JsonlAuditSink(AuditSink):
         finally:
             if os.path.exists(temporary):
                 os.unlink(temporary)
+
+    def read_events(self) -> list[dict[str, Any]]:
+        """Returns every recorded event in append order. Used by tests and by
+        operators inspecting the log; each line is a full, self-describing
+        event so no join with job/vector-store state is required."""
+        if not self.path.exists():
+            return []
+        events: list[dict[str, Any]] = []
+        with self.path.open(encoding="utf-8") as stream:
+            for line in stream:
+                line = line.strip()
+                if line:
+                    events.append(json.loads(line))
+        return events

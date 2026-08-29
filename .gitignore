@@ -37,12 +37,14 @@ pip-delete-this-directory.txt
 .env
 .venv/
 stored_documents/
+audit.log.jsonl
 .superpowers/
 
 *.sqlite
 *.sqlite3
 sample_guidelines/
 stored_documents/
+audit.log.jsonl
 
 # Claude Code local settings (machine-specific, not shared)
 .claude/settings.local.json
