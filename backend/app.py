@@ -26,6 +26,7 @@ from config import get_settings
 from backend.health import live_status, ready_status
 from backend.authn import AuthenticationError  # noqa: E402
 from backend.rbac import require_permission  # noqa: E402
+from backend.rate_limit import RateLimitExceeded  # noqa: E402
 
 app = FastAPI(title="Local Insurance RAG System API")
 
@@ -57,12 +58,13 @@ app.add_middleware(
 # lazy so importing the ASGI app does not require local model files. When an
 # object store (S3) is configured, add/delete/serve route source bytes through
 # it; otherwise the legacy filesystem storage_dir path is used unchanged.
-from app_factory import _build_blob_store, _build_authenticator, _build_claim_access_policy, _build_audit_sink  # noqa: E402
+from app_factory import _build_blob_store, _build_authenticator, _build_claim_access_policy, _build_audit_sink, _build_rate_limiter  # noqa: E402
 
 _vector_blob_store = _build_blob_store(settings)
 _authenticator = _build_authenticator(settings)
 _claim_access_policy = _build_claim_access_policy(settings)
 _audit_sink = _build_audit_sink(settings)
+_rate_limiter = _build_rate_limiter(settings)
 vector_store = SQLiteVectorStore(
     db_path=str(settings.rag_db_path),
     storage_dir=str(settings.stored_documents_dir),
@@ -160,6 +162,20 @@ def require_claim_access_403(principal, claim_id: str) -> None:
         _claim_access_policy.require_claim_access(principal, claim_id)
     except PermissionError as exc:
         raise HTTPException(status_code=403, detail=str(exc)) from None
+
+
+def _rate_limit_429(principal) -> None:
+    """Per-principal request limit on sensitive endpoints (Phase 4.4).
+    Keyed by tenant + subject so one adjuster exhausting the allowance cannot
+    starve another in the same tenant. Maps RateLimitExceeded to a 429."""
+    try:
+        _rate_limiter.check(f"{principal.tenant_id}:{principal.subject}")
+    except RateLimitExceeded:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many requests -- please slow down.",
+            headers={"Retry-After": str(int(_rate_limiter.window_seconds))},
+        ) from None
 
 
 def _audit(request: Request, principal, event: str, **fields) -> None:
@@ -279,6 +295,7 @@ async def upload_document(request: Request, file: UploadFile = File(...), princi
     pipeline state.
     """
     require_permission_403(principal, "documents:upload")
+    _rate_limit_429(principal)
     if not file.filename:
         _audit(request, principal, "upload", outcome="failed", filename=None, reason="missing filename")
         raise HTTPException(status_code=400, detail="Missing filename.")
@@ -290,7 +307,13 @@ async def upload_document(request: Request, file: UploadFile = File(...), princi
             detail="Unsupported file format. Please upload PDF, DOCX, Excel, or Text documents."
         )
 
-    content = await file.read()
+    content = await file.read(settings.max_upload_bytes + 1)
+    if len(content) > settings.max_upload_bytes:
+        _audit(request, principal, "upload", outcome="failed", filename=file.filename, reason="upload exceeds size limit")
+        raise HTTPException(
+            status_code=413,
+            detail=f"File exceeds the maximum upload size of {settings.max_upload_bytes // (1024 * 1024)} MB.",
+        )
 
     if settings.ingestion_mode == "async":
         if not content:
@@ -393,6 +416,7 @@ async def upload_claim_document(request: Request, claim_id: str = Form(...), fil
     Same sync/async split as /api/upload (see its docstring)."""
     require_permission_403(principal, "claims:write")
     require_claim_access_403(principal, claim_id)
+    _rate_limit_429(principal)
     if not file.filename:
         _audit(request, principal, "upload", outcome="failed", filename=None, claim_id=claim_id, reason="missing filename")
         raise HTTPException(status_code=400, detail="Missing filename.")
@@ -404,7 +428,13 @@ async def upload_claim_document(request: Request, claim_id: str = Form(...), fil
             detail="Unsupported format. Upload PDF, DOCX, Excel, or Text."
         )
 
-    content = await file.read()
+    content = await file.read(settings.max_upload_bytes + 1)
+    if len(content) > settings.max_upload_bytes:
+        _audit(request, principal, "upload", outcome="failed", filename=file.filename, claim_id=claim_id, reason="upload exceeds size limit")
+        raise HTTPException(
+            status_code=413,
+            detail=f"File exceeds the maximum upload size of {settings.max_upload_bytes // (1024 * 1024)} MB.",
+        )
 
     if settings.ingestion_mode == "async":
         if not content:
@@ -497,6 +527,7 @@ def list_claim_documents(claim_id: str, principal=Depends(get_current_tenant)): 
 def get_document_content(filename: str, principal=Depends(get_current_tenant)):  # noqa: B008 - idiomatic FastAPI dependency injection
     """Fetches the full text content of a document by joining all its parent chunks."""
     require_permission_403(principal, "documents:read")
+    _rate_limit_429(principal)
     try:
         filename = safe_filename(filename)
     except ValueError:
@@ -547,6 +578,7 @@ def delete_document(request: Request, req: DeleteRequest, principal=Depends(get_
     queued delete job and enqueues a delete message, returning 202 + job_id;
     the worker performs the deletion and advances the job to 'deleted'."""
     require_permission_403(principal, "documents:delete")
+    _rate_limit_429(principal)
     try:
         safe_filename(req.filename)
     except ValueError:
@@ -586,6 +618,7 @@ def delete_document(request: Request, req: DeleteRequest, principal=Depends(get_
 def chat_with_docs(request: Request, req: ChatRequest, principal=Depends(get_current_tenant)):  # noqa: B008 - idiomatic FastAPI dependency injection
     """Answers a claims question using local Agentic RAG routing."""
     require_permission_403(principal, "documents:read")
+    _rate_limit_429(principal)
     if req.claim_id:
         require_permission_403(principal, "claims:read")
         require_claim_access_403(principal, req.claim_id)
@@ -664,6 +697,13 @@ def eval_search(req: SearchRequest, principal=Depends(get_current_tenant)):  # n
     retrieval strategies. Not used by the frontend. Gated to roles with the
     eval:search permission (siu/admin) per Phase 4.2/4.4."""
     require_permission_403(principal, "eval:search")
+    _rate_limit_429(principal)
+    try:
+        req.validate_limits(settings)
+    except ValueError as exc:
+        # Oversized query/top_k is a bounded-input violation -- answer the
+        # abuse drill with a 413 (the same status as an oversized upload).
+        raise HTTPException(status_code=413, detail=str(exc)) from None
     if req.mode not in ("naive", "hybrid", "hybrid_rerank"):
         raise HTTPException(status_code=400, detail="mode must be 'naive', 'hybrid', or 'hybrid_rerank'")
 
