@@ -6,6 +6,7 @@ Run from the repository root using the supported local environment:
 
 ```bash
 .venv/bin/python -m pytest -q
+ruff check .
 .venv/bin/python scripts/run_foundation_gates.py --mode gate
 .venv/bin/python eval/parity_runner.py
 .venv/bin/python -m compileall -q backend app_factory.py config.py

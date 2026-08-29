@@ -1,0 +1,13 @@
+[tool.ruff]
+# Lint settings for the AutoClaimsRAG repo. Keep deliberately small: we want
+# lightweight, deterministic gates (unused imports, undefined names, bare
+# excepts, etc.) — not opinionated style churn.
+line-length = 120
+exclude = [".venv", "stored_documents"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "B"]
+# E501: long lines predate the config and enforcing them is style churn with no
+# correctness signal — line-length is already capped for readability elsewhere.
+# E741, B008: occasionally idiomatic (e.g. FastAPI/pydantic defaults); leave note.
+ignore = ["E501", "E741"]

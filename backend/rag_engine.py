@@ -6,7 +6,6 @@ os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 
 import sqlite3
 import time
-import json
 from abc import ABC, abstractmethod
 import numpy as np
 import pypdf
@@ -62,7 +61,7 @@ class DocumentParser:
     def _parse_pdf(file_path):
         reader = pypdf.PdfReader(file_path)
         text_parts = []
-        for i, page in enumerate(reader.pages):
+        for page in reader.pages:
             page_text = page.extract_text()
             if page_text:
                 text_parts.append(page_text)
@@ -75,14 +74,14 @@ class DocumentParser:
         for paragraph in doc.paragraphs:
             if paragraph.text.strip():
                 text_parts.append(paragraph.text)
-        
+
         # Parse tables
         for table in doc.tables:
             for row in table.rows:
                 row_data = [cell.text.strip() for cell in row.cells if cell.text.strip()]
                 if row_data:
                     text_parts.append(" | ".join(row_data))
-        
+
         return "\n\n".join(text_parts)
 
     @staticmethod
@@ -104,7 +103,7 @@ class TextChunker:
         chunks = []
         text_len = len(text)
         start = 0
-        
+
         if text_len == 0:
             return []
 
@@ -172,7 +171,7 @@ class RerankingEngine:
         """Scores passages against query and returns top_k sorted list."""
         if not passages:
             return []
-        
+
         pairs = [(query, p["content"]) for p in passages]
         scores = self.model.predict(pairs, show_progress_bar=False)
 
@@ -183,7 +182,7 @@ class RerankingEngine:
             # Sigmoid squashes to 0-1 and is monotonic, so ranking order is
             # unchanged everywhere.
             passages[idx]["rerank_score"] = float(1.0 / (1.0 + np.exp(-score)))
-            
+
         passages.sort(key=lambda x: x["rerank_score"], reverse=True)
         return passages[:top_k]
 
@@ -221,6 +220,10 @@ class VectorStore(ABC):
     @abstractmethod
     def get_claim_chunks(self, claim_id):
         """Every parent chunk of a claim's own documents, unranked (score=1.0 sentinel)."""
+
+    @abstractmethod
+    def get_document_content(self, filename) -> str:
+        """Reconstructs a document's full text by joining its parent chunks in order."""
 
     @abstractmethod
     def search_similarity(self, query_embedding, query_text, claim_id=None, reranking_engine=None, top_k=15, use_fts=True):
@@ -303,7 +306,7 @@ class SQLiteVectorStore(VectorStore):
     def _init_db(self):
         conn = self._connect()
         cursor = conn.cursor()
-        
+
         # Documents table (with claim_id tag)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS documents (
@@ -315,7 +318,7 @@ class SQLiteVectorStore(VectorStore):
                 claim_id TEXT
             )
         """)
-        
+
         # Parent chunks table (larger text blocks for context)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS parent_chunks (
@@ -326,7 +329,7 @@ class SQLiteVectorStore(VectorStore):
                 FOREIGN KEY (document_id) REFERENCES documents (id) ON DELETE CASCADE
             )
         """)
-        
+
         # Child chunks table (smaller text blocks for vector embeddings)
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS child_chunks (
@@ -337,7 +340,7 @@ class SQLiteVectorStore(VectorStore):
                 FOREIGN KEY (parent_id) REFERENCES parent_chunks (id) ON DELETE CASCADE
             )
         """)
-        
+
         # FTS5 Virtual Table for keyword search on parent chunks
         cursor.execute("""
             CREATE VIRTUAL TABLE IF NOT EXISTS parent_chunks_fts USING fts5(
@@ -345,7 +348,7 @@ class SQLiteVectorStore(VectorStore):
                 tokenize='porter'
             )
         """)
-        
+
         conn.commit()
         conn.close()
 
@@ -435,7 +438,7 @@ class SQLiteVectorStore(VectorStore):
                 embeddings = embedding_engine.embed_chunks(child_chunks)
 
                 # Insert children and embeddings
-                for c_text, embedding in zip(child_chunks, embeddings):
+                for c_text, embedding in zip(child_chunks, embeddings, strict=True):
                     emb_bytes = np.array(embedding, dtype=np.float32).tobytes()
                     cursor.execute(
                         "INSERT INTO child_chunks (parent_id, content, embedding) VALUES (?, ?, ?)",
@@ -577,6 +580,23 @@ class SQLiteVectorStore(VectorStore):
             for content, filename, file_type in rows
         ]
 
+    def get_document_content(self, filename):
+        """Reconstructs a document's full text by joining its parent chunks in
+        order. Backend-neutral replacement for app.py's old inline sqlite read
+        (which could not work on a Postgres backend)."""
+        conn = self._connect()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT p.content
+            FROM parent_chunks p
+            JOIN documents d ON p.document_id = d.id
+            WHERE d.filename = ?
+            ORDER BY p.chunk_index ASC
+        """, (filename,))
+        rows = cursor.fetchall()
+        conn.close()
+        return "\n\n".join(r[0] for r in rows)
+
     def search_similarity(self, query_embedding, query_text, claim_id=None, reranking_engine=None, top_k=15, use_fts=True):
         """Computes hybrid similarity (Vector + FTS5) with RRF and optional Cross-Encoder reranking scoped by claim_id.
 
@@ -663,7 +683,7 @@ class SQLiteVectorStore(VectorStore):
                     LIMIT 40
                 """, (claim_id, clean_query))
                 fts_rows = cursor.fetchall()
-                
+
                 for content, filename, file_type, p_id in fts_rows:
                     fts_ranked.append({
                         "id": p_id,
@@ -674,24 +694,24 @@ class SQLiteVectorStore(VectorStore):
                     })
             except sqlite3.OperationalError:
                 pass
-                
+
         conn.close()
 
         # --- 3. Reciprocal Rank Fusion (RRF) ---
         k_const = 60
         rrf_scores = {}
         parent_info = {}
-        
+
         for rank, item in enumerate(vector_ranked):
             p_id = item["id"]
             rrf_scores[p_id] = rrf_scores.get(p_id, 0.0) + (1.0 / (k_const + rank + 1))
             parent_info[p_id] = item
-            
+
         for rank, item in enumerate(fts_ranked):
             p_id = item["id"]
             rrf_scores[p_id] = rrf_scores.get(p_id, 0.0) + (1.0 / (k_const + rank + 1))
             parent_info[p_id] = item
-            
+
         fused_results = []
         for p_id, score in rrf_scores.items():
             meta = parent_info[p_id]
@@ -702,17 +722,17 @@ class SQLiteVectorStore(VectorStore):
                 "file_type": meta["file_type"],
                 "score": score
             })
-            
+
         fused_results.sort(key=lambda x: x["score"], reverse=True)
         # Keep a candidate pool at least as large as the requested top_k so the
         # reranker (and non-reranked path) can actually return top_k results.
         top_candidates = fused_results[:max(15, top_k)]
-        
+
         # --- 4. Cross-Encoder Reranking ---
         if reranking_engine and top_candidates:
             reranked = reranking_engine.rerank(query_text, top_candidates, top_k=top_k)
             for item in reranked:
                 item["score"] = item["rerank_score"]
             return reranked
-            
+
         return top_candidates[:top_k]

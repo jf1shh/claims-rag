@@ -1,7 +1,5 @@
-import os
 import json
 import time
-import sqlite3
 import requests
 from typing import Optional, List, Dict, Any
 
@@ -92,7 +90,7 @@ class AgenticRAGRouter:
         claim = next((c for c in CLAIMS_DATA if c["id"] == claim_id), None)
         if not claim:
             return ""
-        
+
         md = []
         md.append(f"### ACTIVE CLAIM SUMMARY DOSSIER ({claim_id})")
         md.append(f"- **Insured Claimant**: {claim['insured']}")
@@ -108,22 +106,22 @@ class AgenticRAGRouter:
         md.append("| --- | --- | --- | --- | --- |")
         for row in claim["estimate"]:
             md.append(f"| {row['cat']} | {row['op']} | {row['rate']} | {row['qty']} | {row['total']} |")
-        
+
         return "\n".join(md)
 
     def run_query(
-        self, 
-        query_text: str, 
-        claim_id: Optional[str], 
-        engine: str, 
-        embedding_engine: Any, 
-        vector_store: Any, 
+        self,
+        query_text: str,
+        claim_id: Optional[str],
+        engine: str,
+        embedding_engine: Any,
+        vector_store: Any,
         reranking_engine: Any
     ) -> Dict[str, Any]:
         """Runs the query through a stateful, self-correcting agentic planning & retrieval loop."""
         logs = []
         start_time = time.time()
-        
+
         logs.append(f"🧠 [Agentic Coordinator] Initializing planner for query: '{query_text}'")
         if claim_id:
             logs.append(f"🔍 [Agentic Coordinator] Active claim folder scope: {claim_id}")
@@ -184,11 +182,11 @@ class AgenticRAGRouter:
         logs.append("📋 [Step 1: Planning] Decomposing query into target sub-queries...")
         model_name = self._get_loaded_model(engine_url)
         plan = self._get_llm_plan(query_text, claim_id, engine_url, model_name)
-        
+
         logs.append(f"📄 [Agent Plan] Route Guidelines: {plan['needs_global_policies']} | Route Claim Dossier: {plan['needs_claim_dossier']}")
         for idx, sub_q in enumerate(plan["sub_queries"]):
             logs.append(f"   ➔ Sub-query {idx+1}: '{sub_q}'")
-            
+
         # Step 2: Tool Execution (Retrieve context)
         all_matches = []
         seen_passages = set()
@@ -294,14 +292,14 @@ class AgenticRAGRouter:
 
         # Step 4: Final LLM Synthesis
         logs.append("✍️ [Step 2: Synthesis] Invoking local LLM to generate context-grounded audit response...")
-        
+
         context_blocks = []
         for idx, match in enumerate(top_matches):
             context_blocks.append(
                 f"--- SOURCE {idx+1} | File: {match['filename']} (Sim: {match['score']:.3f}) ---\n{match['content']}\n"
             )
         context_text = "\n".join(context_blocks)
-        
+
         system_prompt = (
             "You are an expert AI claims handler assistant. Your job is to answer the user's questions about insurance claims, "
             "policies, or guidelines using ONLY the provided reference sources and the active claim summary dossier. "
@@ -310,12 +308,12 @@ class AgenticRAGRouter:
             "one applies. Perform calculations (payouts, caps, deductibles) if asked. "
             "If the source guidelines exclude coverage or indicate fraud, state it clearly. Cite source filenames in your explanation."
         )
-        
+
         # Build claim context markdown
         claim_context = ""
         if claim_id:
             claim_context = self._get_claim_context_markdown(claim_id)
-            
+
         user_prompt = (
             f"Active Claim ID: {claim_id if claim_id else 'None (Global Scope)'}\n\n"
             f"{claim_context}\n\n"
@@ -323,7 +321,7 @@ class AgenticRAGRouter:
             f"User Question: {query_text}\n\n"
             "Generate your structured response:"
         )
-        
+
         try:
             url = f"{engine_url}/v1/chat/completions"
             headers = { "Content-Type": "application/json" }
@@ -336,7 +334,7 @@ class AgenticRAGRouter:
                 "temperature": 0.1,
                 "max_tokens": 1000
             }
-            
+
             # 14B-class models on consumer hardware routinely need 40-90s for
             # a long claim-scoped synthesis; 45s was silently tripping the
             # simulated-mode fallback on heavier prompts.
@@ -351,7 +349,7 @@ class AgenticRAGRouter:
 
         elapsed = (time.time() - start_time) * 1000
         logs.append(f"✅ [Agentic Coordinator] Completed reasoning cycle in {elapsed:.1f}ms")
-        
+
         return {
             "answer": answer,
             "sources": [
@@ -384,15 +382,15 @@ class AgenticRAGRouter:
             "Respond ONLY with a JSON object in this format:\n"
             '{"needs_global_policies": true, "needs_claim_dossier": true, "sub_queries": ["query 1", "query 2"]}'
         )
-        
+
         user_prompt = f"Claim ID: {claim_id}\nClaims Query: {query_text}"
-        
+
         fallback_plan = {
             "needs_global_policies": True,
             "needs_claim_dossier": True if claim_id else False,
             "sub_queries": [query_text]
         }
-        
+
         try:
             url = f"{engine_url}/v1/chat/completions"
             payload = {
@@ -445,21 +443,21 @@ class AgenticRAGRouter:
     ) -> Dict[str, Any]:
         """Performs high-fidelity local RAG queries and evaluates policy limits via Python rule engine."""
         logs.append("⚙️ [Simulated Agent] Initializing local rule calculator...")
-        
+
         # Run actual search query on local SQLite database to fetch matching pieces
         query_emb = embedding_engine.embed_query(query_text)
         matches = vector_store.search_similarity(
-            query_emb, 
-            query_text, 
-            claim_id=claim_id, 
-            reranking_engine=reranking_engine, 
+            query_emb,
+            query_text,
+            claim_id=claim_id,
+            reranking_engine=reranking_engine,
             top_k=4
         )
-        
+
         # Build reasoning logs based on matches and claim_id
         logs.append("📋 [Sub-Task 1] Parsing active case details & estimate rows...")
         logs.append("📋 [Sub-Task 2] Retrieving regional guidelines and deductible endorsements...")
-        
+
         # Detect audit parameter type
         q_lower = query_text.lower()
         audit_type = "general"
@@ -471,11 +469,11 @@ class AgenticRAGRouter:
             audit_type = "fraud"
         elif "letter" in q_lower or "settlement" in q_lower or "decision" in q_lower:
             audit_type = "letter"
-            
+
         logs.append(f"🔍 [Agentic Planner] Detected audit parameter: {audit_type.upper()}")
 
         answer_parts = []
-        
+
         if claim_id == "#2026-99382": # Matthew Sterling
             if audit_type == "labor":
                 logs.append("⚙️ [Tool Exec] policy_search: Found Regional_Labor_Rates_2026.xlsx and SOP_Auto_Repair_Labor_Rates.pdf")
@@ -566,7 +564,7 @@ class AgenticRAGRouter:
                     "**Claims Adjuster Copilot**",
                     "*Citations: Auto_Policy_Contract_California.docx, Adjuster_Guide_Rear_Impact.docx, Rider_OEM_Parts_Guarantee.pdf*"
                 ])
-            
+
         elif claim_id == "#2026-10492": # Sarah Jenkins
             if audit_type == "labor":
                 logs.append("⚙️ [Tool Exec] policy_search: Found Regional_Labor_Rates_2026.xlsx")
@@ -645,7 +643,7 @@ class AgenticRAGRouter:
                     "**Claims Adjuster Copilot**",
                     "*Citations: Case_Study_Hail_Damage_PlanA.pdf, Endorsement_Windshield_Zero_Deductible.docx*"
                 ])
-            
+
         elif claim_id == "#2026-30291": # David Chen
             if audit_type == "labor":
                 logs.append("⚙️ [Tool Exec] policy_search: Found SOP_Auto_Repair_Labor_Rates.pdf")
@@ -729,7 +727,7 @@ class AgenticRAGRouter:
                     "**Claims Adjuster Copilot**",
                     "*Citations: Endorsement_Custom_Audio_Visual.docx, SOP_Claims_Fraud_Red_Flags.pdf, Regional_Labor_Rates_2026.xlsx*"
                 ])
-            
+
         elif claim_id == "#2026-55912": # Elena Rostova
             if audit_type == "labor":
                 logs.append("⚙️ [Tool Exec] policy_search: Found Regional_Labor_Rates_2026.xlsx")
@@ -803,18 +801,18 @@ class AgenticRAGRouter:
                     "**Claims Adjuster Copilot**",
                     "*Citations: Case_Study_Engine_Hydro_Lock.pdf, telematics_log_Rostova.pdf, engine_diagnostic_report_Rostova.pdf*"
                 ])
-            
+
         else: # Generic reference lookup
             logs.append("⚙️ [Tool Exec] No active claim folder selected. Fetching global reference matches.")
             answer_parts.append(f"### [Agentic RAG Assistant]\n\nBased on your query: \"{query_text}\", here are the matching policy references in the system:\n")
             for m in matches[:2]:
                 answer_parts.append(f"- **{m['filename']}**: \"{m['content'][:300]}...\"\n")
-                
+
         answer = "\n".join(answer_parts)
 
         elapsed = (time.time() - start_time) * 1000
         logs.append(f"✅ [Agentic Coordinator] Completed reasoning cycle in {elapsed:.1f}ms")
-        
+
         claim_dossier = self._get_claim_context_markdown(claim_id) if claim_id else None
 
         return {

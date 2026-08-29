@@ -7,7 +7,6 @@ sys.path.append(os.path.abspath(os.path.dirname(__file__)))
 
 from backend.rag_engine import (
     DocumentParser,
-    TextChunker,
     EmbeddingEngine,
     SQLiteVectorStore,
     STORED_DOCUMENTS_DIR,
@@ -15,12 +14,12 @@ from backend.rag_engine import (
 
 def ingest_all():
     print("=== Local RAG Batch Ingestion Script ===")
-    
+
     # 1. Initialize Engines
     print("Initializing engines...")
     vector_store = SQLiteVectorStore()
     embedding_engine = EmbeddingEngine()
-    
+
     # Clean up DB for fresh start
     print("Clearing existing records for a clean batch index...")
     conn = vector_store.db_path
@@ -36,7 +35,7 @@ def ingest_all():
         pass # Table might not exist on first initialization
     db.commit()
     db.close()
-    
+
     # Re-initialize vector store tables
     vector_store._init_db()
     print("Database cleared and schema initialized.")
@@ -45,20 +44,20 @@ def ingest_all():
     if not os.path.exists(folder_path):
         print(f"Error: Folder '{folder_path}' not found.")
         return
-        
+
     files = [f for f in os.listdir(folder_path) if f.split('.')[-1].lower() in ["pdf", "docx", "xlsx", "xls", "txt"]]
     print(f"Found {len(files)} files to index inside '{folder_path}'.\n")
-    
+
     total_start = time.time()
-    
+
     for idx, filename in enumerate(files):
         file_path = os.path.join(folder_path, filename)
         file_ext = filename.split('.')[-1].lower()
         file_size = os.path.getsize(file_path)
         print(f"[{idx+1}/{len(files)}] Processing {filename} ({file_size / 1024:.1f} KB)...")
-        
+
         start = time.time()
-        
+
         try:
             # Parse text
             if file_ext == "txt":
@@ -66,11 +65,11 @@ def ingest_all():
                     text = f.read()
             else:
                 text = DocumentParser.parse(file_path, file_ext)
-                
+
             if not text.strip():
                 print(f"   ⚠️ Warning: Document '{filename}' is empty, skipping.")
                 continue
-                
+
             # Save to SQLite Vector Store. file_path must be passed so the real
             # generated binary gets copied into stored_documents/ -- without
             # it, add_document() falls back to writing the extracted text as
@@ -85,18 +84,18 @@ def ingest_all():
                 embedding_engine=embedding_engine,
                 file_path=file_path
             )
-            
+
             elapsed = time.time() - start
             print(f"   Indexed: {parent_count} parent chunks (with child embeddings) in {elapsed:.2f} seconds.")
-            
+
         except Exception as e:
             print(f"   ❌ Error processing '{filename}': {str(e)}")
-            
+
     total_elapsed = time.time() - total_start
-    print(f"\n=== Batch Ingestion Complete! ===")
+    print("\n=== Batch Ingestion Complete! ===")
     print(f"Indexed {len(vector_store.get_all_documents())} global documents successfully.")
     print(f"Total processing time: {total_elapsed:.2f} seconds.")
-    
+
     # Run claim file seeding
     seed_claim_documents(vector_store, embedding_engine)
 
@@ -104,15 +103,15 @@ def generate_pdf(filename, title, content):
     import os
     os.makedirs(STORED_DOCUMENTS_DIR, exist_ok=True)
     file_path = os.path.join(STORED_DOCUMENTS_DIR, filename)
-    
+
     from reportlab.lib.pagesizes import letter
     from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib import colors
-    
+
     doc = SimpleDocTemplate(file_path, pagesize=letter, rightMargin=40, leftMargin=40, topMargin=40, bottomMargin=40)
     styles = getSampleStyleSheet()
-    
+
     title_style = ParagraphStyle(
         'HeaderStyle',
         parent=styles['Heading1'],
@@ -127,15 +126,15 @@ def generate_pdf(filename, title, content):
         spaceAfter=8,
         leading=14
     )
-    
+
     story = []
     story.append(Paragraph(title, title_style))
     story.append(Spacer(1, 10))
-    
+
     for line in content.split('\n'):
         if line.strip():
             story.append(Paragraph(line.strip(), body_style))
-            
+
     doc.build(story)
     return file_path
 
@@ -170,9 +169,9 @@ def copy_seeded_images():
         "civic_smashed_window": "civic_smashed_window.png",
         "bmw_water_damage": "bmw_water_damage.png"
     }
-    
+
     os.makedirs(STORED_DOCUMENTS_DIR, exist_ok=True)
-    
+
     for prefix, target_name in image_mappings.items():
         pattern = os.path.join(artifacts_dir, f"{prefix}_*.png")
         matches = glob.glob(pattern)
@@ -186,10 +185,10 @@ def copy_seeded_images():
 
 def seed_claim_documents(vector_store, embedding_engine):
     print("\nSeeding claim-specific dossier files...")
-    
+
     # 1. Copy generated PNG images to stored_documents
     copy_seeded_images()
-    
+
     # 2. Compile and index PDFs, Excels, and Images
     seeds = [
         # Matthew Sterling
@@ -213,7 +212,7 @@ def seed_claim_documents(vector_store, embedding_engine):
             "title": "CALIBER COLLISION - SERVICE ADVISOR EMAIL THREAD",
             "content": "Claim ID: #2026-99382\nDate: January 15, 2026\nFrom: Service Advisor, Caliber Collision (Los Angeles)\nTo: Claims Adjuster, Auto Insurance\nSubject: Supplemental Repair Estimate Details for Tesla Model Y\n\nDear Adjuster,\n\nWe have completed our disassembly of Mr. Sterling's Tesla Model Y. In addition to the rear bumper cover, the rear motor shield is cracked and needs full replacement. The aluminum subframe is not bent, but we do need to pull the rear body panel (5.0 hours frame time) to align the tailgate properly.\n\nThe ADAS backup sensors also require standard recalibration. We have requested factory OEM parts for the motor shield and ADAS modules. Let us know if you approve this supplement."
         },
-        
+
         # Sarah Jenkins
         {
             "claim_id": "#2026-10492",
@@ -228,7 +227,7 @@ def seed_claim_documents(vector_store, embedding_engine):
             "title": "HAIL DAMAGE PHOTO INSPECTION LOG",
             "content": "Claim ID: #2026-10492\nInsured: Sarah Jenkins\nVehicle: 2024 Ford F-150 SuperCrew\nInspector: A. Ramirez, Claims Specialist\n\nPhotos Reviewed:\n- Photo 1: Hood surface displaying multiple hail dents (approximately 18 separate point impacts).\n- Photo 2: Roof panel showing dense cluster of hail pitting (approximately 24 point impacts). No paint fracturing observed.\n- Photo 3: Windshield passenger side displaying severe circular windshield crack (radial lines extending 4 inches). Requires replacement.\n- Photo 4: Tailgate display panel showing minor superficial dent.\n\nAdjuster Notes:\nPaintless Dent Repair (PDR) is fully applicable for hood and roof dents, as paint remains unbroken. Windshield replacement is mandatory under standard safety rules."
         },
-        
+
         # David Chen
         {
             "claim_id": "#2026-30291",
@@ -254,7 +253,7 @@ def seed_claim_documents(vector_store, embedding_engine):
             "type": "image",
             "content": "Inspection Photo: Smashed passenger window and vandalized console dash screen in David Chen's 2022 Honda Civic Sport."
         },
-        
+
         # Elena Rostova
         {
             "claim_id": "#2026-55912",
@@ -277,7 +276,7 @@ def seed_claim_documents(vector_store, embedding_engine):
             "content": "Inspection Photo: Disassembled BMW 330i engine intake tract showing standing water and bent piston rod diagnostic inspection."
         }
     ]
-    
+
     for s in seeds:
         file_path = None
         if s["type"] == "pdf":
@@ -286,10 +285,10 @@ def seed_claim_documents(vector_store, embedding_engine):
             file_path = generate_excel(s["filename"], s["rows"], s["columns"])
         elif s["type"] == "image":
             file_path = os.path.join(STORED_DOCUMENTS_DIR, s["filename"])
-            
+
         file_size = os.path.getsize(file_path) if file_path and os.path.exists(file_path) else len(s["content"])
         file_ext = s["filename"].split(".")[-1].lower()
-        
+
         vector_store.add_document(
             filename=s["filename"],
             file_type=file_ext,

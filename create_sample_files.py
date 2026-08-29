@@ -9,7 +9,7 @@ os.makedirs("sample_guidelines", exist_ok=True)
 def create_auto_claims_docx():
     doc = docx.Document()
     doc.add_heading("Standard Operating Guidelines: Auto Insurance Claims", level=1)
-    
+
     doc.add_heading("1. Comprehensive vs. Collision Coverage", level=2)
     doc.add_paragraph(
         "Collision Coverage applies to damage to the policyholder's vehicle resulting from a collision with "
@@ -17,7 +17,7 @@ def create_auto_claims_docx():
         "applies to damage caused by events other than collision, including theft, vandalism, fire, contact with "
         "animals (e.g., hitting a deer), windstorms, hail, or falling objects (e.g., tree branches)."
     )
-    
+
     doc.add_heading("2. Claims Processing Requirements", level=2)
     doc.add_paragraph(
         "To process any physical damage auto claim, the claims handler must verify and compile the following evidence:"
@@ -34,7 +34,7 @@ def create_auto_claims_docx():
         "is fully waived. If full replacement is required, the standard Comprehensive deductible applies unless "
         "the policyholder has purchased a Zero-Deductible Glass endorsement."
     )
-    
+
     doc.add_heading("4. Rental Car Reimbursement Rules", level=2)
     doc.add_paragraph(
         "Rental reimbursement coverage (Transportation Expenses) is optional and only applies if the vehicle is "
@@ -42,7 +42,7 @@ def create_auto_claims_docx():
         "for a maximum of 30 days ($900 total limit). Premium plans extend this limit to $50 per day for up to "
         "30 days ($1,500 total limit). Reimbursement is only provided during the actual period of active repairs."
     )
-    
+
     doc.save("sample_guidelines/Auto_Claims_Guidelines.docx")
     print("Created: sample_guidelines/Auto_Claims_Guidelines.docx")
 
@@ -51,45 +51,45 @@ def create_auto_claims_docx():
 def create_auto_limits_xlsx():
     data = {
         "Policy Plan": [
-            "Standard Auto (Plan A)", 
-            "Standard Auto (Plan A)", 
-            "Premium Auto (Plan B)", 
-            "Premium Auto (Plan B)", 
+            "Standard Auto (Plan A)",
+            "Standard Auto (Plan A)",
+            "Premium Auto (Plan B)",
+            "Premium Auto (Plan B)",
             "Basic Auto (Plan C)"
         ],
         "Coverage Category": [
-            "Collision Damage", 
-            "Comprehensive Perils", 
-            "Collision Damage", 
-            "Comprehensive Perils", 
+            "Collision Damage",
+            "Comprehensive Perils",
+            "Collision Damage",
+            "Comprehensive Perils",
             "Collision Only"
         ],
         "Coverage Limit ($)": [
-            "Actual Cash Value (ACV)", 
-            "Actual Cash Value (ACV)", 
-            "Actual Cash Value (ACV)", 
-            "Actual Cash Value (ACV)", 
+            "Actual Cash Value (ACV)",
+            "Actual Cash Value (ACV)",
+            "Actual Cash Value (ACV)",
+            "Actual Cash Value (ACV)",
             "Actual Cash Value (ACV)"
         ],
         "Standard Deductible ($)": [
-            1000, 
-            500, 
-            500, 
-            250, 
+            1000,
+            500,
+            500,
+            250,
             2000
         ],
         "Towing & Roadside Assistance": [
-            "Capped at $75/event", 
-            "Capped at $75/event", 
-            "Full Coverage (Unlimited)", 
-            "Full Coverage (Unlimited)", 
+            "Capped at $75/event",
+            "Capped at $75/event",
+            "Full Coverage (Unlimited)",
+            "Full Coverage (Unlimited)",
             "Not Covered"
         ],
         "Rental Reimbursement ($/Day)": [
-            30, 
-            30, 
-            50, 
-            50, 
+            30,
+            30,
+            50,
+            50,
             0
         ]
     }

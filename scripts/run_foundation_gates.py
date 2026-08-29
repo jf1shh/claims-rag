@@ -8,10 +8,10 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from backend.harness import Finding, run_gate
+from backend.harness import Finding, run_gate  # noqa: E402 - needs ROOT on sys.path above
 
 
-GATES = ("secrets", "specs", "docs")
+GATES = ("secrets", "specs", "docs", "lint")
 
 
 def format_finding(finding: Finding) -> str:

@@ -395,7 +395,7 @@ def generate_pdf_files():
     gen_texas_regulations()
     # 3. Florida Regulations
     gen_florida_regulations()
-    
+
     # 4. New York Regulations
     build_pdf(
         "New_York_Auto_Insurance_Statutes.pdf",
@@ -421,7 +421,7 @@ def generate_pdf_files():
     gen_case_hail()
     # 7. Case Theft
     gen_case_theft()
-    
+
     # 8. Case Pedestrian
     build_pdf(
         "Case_Study_Pedestrian_Accident.pdf",
@@ -782,7 +782,7 @@ def gen_rider_oem():
 
 if __name__ == "__main__":
     print("=== Generating Massive Auto Insurance Dataset ===")
-    
+
     # Clean previous sample folder contents
     for filename in os.listdir(OUTPUT_DIR):
         file_path = os.path.join(OUTPUT_DIR, filename)
@@ -791,17 +791,17 @@ if __name__ == "__main__":
                 os.unlink(file_path)
         except Exception as e:
             print(f"Error clearing {filename}: {e}")
-            
+
     print("1. Generating 15 DOCX guidelines...")
     generate_docx_files()
-    
+
     print("\n2. Generating 10 XLSX fee and deductibles sheets...")
     generate_xlsx_files()
-    
+
     print("\n3. Generating 15 PDF statutes and studies...")
     generate_pdf_files()
-    
+
     print("\n4. Generating 5 TXT directives...")
     generate_txt_files()
-    
+
     print("\n=== Dataset Generation Complete (45 total files) ===")

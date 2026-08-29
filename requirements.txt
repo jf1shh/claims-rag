@@ -11,6 +11,12 @@ numpy==2.5.1
 requests==2.34.2
 python-multipart==0.0.32
 
+# Postgres + pgvector backend (Phase 1)
+sqlalchemy==2.0.52
+alembic==1.19.1
+psycopg[binary]==3.3.4
+pgvector==0.5.0
+
 # Evaluation harness (eval/)
 ragas==0.4.3
 openai==2.46.0
@@ -18,3 +24,6 @@ matplotlib==3.11.1
 
 # Tests (tests/)
 pytest==9.1.1
+
+# Lint gate (scripts + CI)
+ruff==0.16.5
