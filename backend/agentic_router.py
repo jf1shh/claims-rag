@@ -1,7 +1,8 @@
 import json
 import time
-import requests
 from typing import Optional, List, Dict, Any
+
+from backend.llm_client import ChatClientError
 
 CLAIMS_DATA = [
     {
@@ -75,16 +76,6 @@ CLAIMS_DATA = [
 ]
 
 class AgenticRAGRouter:
-    # How long to trust a cached "currently loaded LM Studio model" answer
-    # before re-checking. _get_loaded_model was making a synchronous HTTP
-    # round-trip on every single chat request; the loaded model changes only
-    # when a human swaps it in LM Studio, so a short TTL avoids that cost on
-    # every query while still picking up a model swap within a few seconds.
-    MODEL_CACHE_TTL_SECONDS = 10.0
-
-    def __init__(self):
-        self._model_cache: Optional[str] = None
-        self._model_cache_at: float = 0.0
 
     def _get_claim_context_markdown(self, claim_id: str) -> str:
         claim = next((c for c in CLAIMS_DATA if c["id"] == claim_id), None)
@@ -116,7 +107,8 @@ class AgenticRAGRouter:
         engine: str,
         embedding_engine: Any,
         vector_store: Any,
-        reranking_engine: Any
+        reranking_engine: Any = None,
+        llm_client: Any = None,
     ) -> Dict[str, Any]:
         """Runs the query through a stateful, self-correcting agentic planning & retrieval loop."""
         logs = []
@@ -129,7 +121,8 @@ class AgenticRAGRouter:
         # If simulated mode, execute high-fidelity structured routing
         if engine == "simulated":
             return self._run_simulated_agent(query_text, claim_id, vector_store, embedding_engine, reranking_engine, logs, start_time)
-
+        if llm_client is None:
+            return self._run_simulated_agent(query_text, claim_id, vector_store, embedding_engine, reranking_engine, logs, start_time)
         # Only "lm-studio" is accepted for the online path. engine used to be
         # used directly as a request URL when it wasn't "lm-studio" -- an SSRF
         # vector, since the retrieved claim/policy context would be POSTed to
@@ -145,43 +138,23 @@ class AgenticRAGRouter:
                 "pipeline_logs": logs
             }
 
-        engine_url = "http://127.0.0.1:1234"
-        return self._run_online_agent(query_text, claim_id, engine_url, vector_store, embedding_engine, reranking_engine, logs, start_time)
-
-    def _get_loaded_model(self, engine_url: str) -> str:
-        if self._model_cache and (time.time() - self._model_cache_at) < self.MODEL_CACHE_TTL_SECONDS:
-            return self._model_cache
-        try:
-            response = requests.get(f"{engine_url}/v1/models", timeout=2.0)
-            if response.status_code == 200:
-                data = response.json()
-                if "data" in data and len(data["data"]) > 0:
-                    model_name = data["data"][0]["id"]
-                    self._model_cache = model_name
-                    self._model_cache_at = time.time()
-                    return model_name
-        except Exception:
-            pass
-        # Don't cache a failure -- retry on the next call rather than getting
-        # stuck on the "local-model" placeholder for the full TTL if LM
-        # Studio was just temporarily unreachable.
-        return "local-model"
+        return self._run_online_agent(query_text, claim_id, vector_store, embedding_engine, reranking_engine, logs, start_time, llm_client)
 
     def _run_online_agent(
         self,
         query_text: str,
         claim_id: Optional[str],
-        engine_url: str, # URL of the LM Studio endpoint
         vector_store: Any,
         embedding_engine: Any,
         reranking_engine: Any,
         logs: List[str],
-        start_time: float
+        start_time: float,
+        llm_client: Any
     ) -> Dict[str, Any]:
         # Step 1: Query Decomposition (Planner Call)
         logs.append("📋 [Step 1: Planning] Decomposing query into target sub-queries...")
-        model_name = self._get_loaded_model(engine_url)
-        plan = self._get_llm_plan(query_text, claim_id, engine_url, model_name)
+        model_name = llm_client.models()[0]
+        plan = self._get_llm_plan(query_text, claim_id, llm_client, model_name)
 
         logs.append(f"📄 [Agent Plan] Route Guidelines: {plan['needs_global_policies']} | Route Claim Dossier: {plan['needs_claim_dossier']}")
         for idx, sub_q in enumerate(plan["sub_queries"]):
@@ -323,28 +296,18 @@ class AgenticRAGRouter:
         )
 
         try:
-            url = f"{engine_url}/v1/chat/completions"
-            headers = { "Content-Type": "application/json" }
-            payload = {
-                "model": model_name,
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
-                "temperature": 0.1,
-                "max_tokens": 1000
-            }
-
-            # 14B-class models on consumer hardware routinely need 40-90s for
-            # a long claim-scoped synthesis; 45s was silently tripping the
-            # simulated-mode fallback on heavier prompts.
-            response = requests.post(url, json=payload, headers=headers, timeout=120)
-            if response.status_code == 200:
-                answer = response.json()["choices"][0]["message"]["content"]
-            else:
-                raise Exception(f"LLM request failed with status: {response.status_code}")
-        except Exception as e:
-            logs.append(f"❌ [Synthesis Error] LLM generation failed: {str(e)}. Falling back to simulation.")
+            # Timeouts are owned by the injected client: the configured
+            # synthesis timeout (default 120s for a 14B-class model on consumer
+            # hardware) applies unless this model is the fast planner.
+            answer = llm_client.complete(
+                [{"role": "system", "content": system_prompt},
+                 {"role": "user", "content": user_prompt}],
+                model=llm_client.model_for_stage("synthesis"),
+                temperature=0.1,
+                max_tokens=1000,
+            )
+        except ChatClientError as e:
+            logs.append(f"❌ [Synthesis Error] LLM generation failed: {e}. Falling back to simulation.")
             return self._run_simulated_agent(query_text, claim_id, vector_store, embedding_engine, reranking_engine, logs, start_time)
 
         elapsed = (time.time() - start_time) * 1000
@@ -371,8 +334,8 @@ class AgenticRAGRouter:
             "pipeline_logs": logs
         }
 
-    def _get_llm_plan(self, query_text: str, claim_id: Optional[str], engine_url: str, model_name: str) -> Dict[str, Any]:
-        """Requests a structured JSON plan from the LLM."""
+    def _get_llm_plan(self, query_text: str, claim_id: Optional[str], llm_client: Any, model_name: str) -> Dict[str, Any]:
+        """Requests a structured JSON plan from the LLM via the injected client."""
         system_prompt = (
             "You are an AI Claims Planner. Decompose the claims query into target document searches.\n"
             "Determine if the query needs: \n"
@@ -392,40 +355,36 @@ class AgenticRAGRouter:
         }
 
         try:
-            url = f"{engine_url}/v1/chat/completions"
-            payload = {
-                "model": model_name,
-                "messages": [
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
-                "temperature": 0.0,
-                "max_tokens": 150
-            }
-            response = requests.post(url, json=payload, timeout=5)
-            if response.status_code == 200:
-                text = response.json()["choices"][0]["message"]["content"].strip()
-                # Parse JSON out of response
-                if "```json" in text:
-                    text = text.split("```json")[1].split("```")[0].strip()
-                elif "```" in text:
-                    text = text.split("```")[1].split("```")[0].strip()
-                parsed = json.loads(text)
-                # The plan comes from a small local model -- valid JSON with
-                # missing/mistyped keys is common, and callers index the plan
-                # dict directly, so every field is coerced to the expected
-                # shape here (falling back per-field) rather than trusting it.
-                if isinstance(parsed, dict):
-                    sub_queries = parsed.get("sub_queries")
-                    if not (isinstance(sub_queries, list)
-                            and sub_queries
-                            and all(isinstance(q, str) and q.strip() for q in sub_queries)):
-                        sub_queries = [query_text]
-                    return {
-                        "needs_global_policies": bool(parsed.get("needs_global_policies", True)),
-                        "needs_claim_dossier": bool(parsed.get("needs_claim_dossier", bool(claim_id))),
-                        "sub_queries": sub_queries[:3],
-                    }
+            text = llm_client.complete(
+                [{"role": "system", "content": system_prompt},
+                 {"role": "user", "content": user_prompt}],
+                model=llm_client.model_for_stage("planning"),
+                temperature=0.0,
+                max_tokens=150,
+            ).strip()
+            # Parse JSON out of response
+            if "```json" in text:
+                text = text.split("```json")[1].split("```")[0].strip()
+            elif "```" in text:
+                text = text.split("```")[1].split("```")[0].strip()
+            parsed = json.loads(text)
+            # The plan comes from a small local model -- valid JSON with
+            # missing/mistyped keys is common, and callers index the plan
+            # dict directly, so every field is coerced to the expected
+            # shape here (falling back per-field) rather than trusting it.
+            if isinstance(parsed, dict):
+                sub_queries = parsed.get("sub_queries")
+                if not (isinstance(sub_queries, list)
+                        and sub_queries
+                        and all(isinstance(q, str) and q.strip() for q in sub_queries)):
+                    sub_queries = [query_text]
+                return {
+                    "needs_global_policies": bool(parsed.get("needs_global_policies", True)),
+                    "needs_claim_dossier": bool(parsed.get("needs_claim_dossier", bool(claim_id))),
+                    "sub_queries": sub_queries[:3],
+                }
+        except ChatClientError:
+            pass
         except Exception:
             pass
 
