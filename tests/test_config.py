@@ -36,3 +36,21 @@ def test_given_malformed_cors_origins_then_validation_fails():
 def test_given_invalid_integer_setting_then_parsing_fails():
     with pytest.raises(ValueError, match="MAX_TOP_K"):
         Settings.from_env({"MAX_TOP_K": "zero"})
+
+
+def test_given_invalid_ingestion_mode_then_validation_fails():
+    settings = Settings.from_env({"INGESTION_MODE": "batch"})
+    with pytest.raises(ValueError, match="INGESTION_MODE"):
+        settings.validate_for_environment()
+
+
+def test_given_async_ingestion_mode_then_parsed():
+    settings = Settings.from_env({"INGESTION_MODE": "async"})
+    assert settings.ingestion_mode == "async"
+    assert settings.jobs_db_path.name == "jobs.db"
+
+
+def test_given_sqs_queue_provider_without_url_then_validation_fails():
+    settings = Settings.from_env({"QUEUE_PROVIDER": "sqs"})
+    with pytest.raises(ValueError, match="SQS_QUEUE_URL"):
+        settings.validate_for_environment()

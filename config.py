@@ -33,6 +33,18 @@ def _int(value: str | None, default: int, name: str) -> int:
     return result
 
 
+def _float(value: str | None, default: float, name: str) -> float:
+    if value is None:
+        return default
+    try:
+        result = float(value)
+    except ValueError as exc:
+        raise ValueError(f"{name} must be a number") from exc
+    if result <= 0:
+        raise ValueError(f"{name} must be positive")
+    return result
+
+
 @dataclass(frozen=True)
 class Settings:
     app_env: str = "development"
@@ -40,6 +52,8 @@ class Settings:
     cors_origins: tuple[str, ...] = ("http://localhost:8000", "http://127.0.0.1:8000")
     rag_db_path: Path = REPO_ROOT / "rag_store.db"
     stored_documents_dir: Path = REPO_ROOT / "stored_documents"
+    jobs_db_path: Path = REPO_ROOT / "jobs.db"
+    ingestion_mode: str = "sync"  # "sync" | "async" (Phase 3 async ingestion)
     vector_store: str = "sqlite"  # "sqlite" | "postgres" (Phase 1 data plane)
     postgres_dsn: str | None = None
     tenant_id: str = "local-development"
@@ -48,6 +62,14 @@ class Settings:
     s3_region: str = "us-east-1"
     s3_endpoint_url: str | None = None
     s3_sse_kms_key_id: str | None = None
+    queue_provider: str = "in-process"  # "in-process" | "sqs" (Phase 3 async ingestion)
+    sqs_queue_url: str | None = None
+    sqs_dlq_url: str | None = None
+    sqs_region: str = "us-east-1"
+    sqs_endpoint_url: str | None = None
+    worker_max_retries: int = 5
+    worker_backoff_base_seconds: float = 2.0
+    worker_poll_interval_seconds: float = 1.0
     embedding_model: str = "all-MiniLM-L6-v2"
     embedding_dimensions: int = 384
     reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
@@ -75,6 +97,8 @@ class Settings:
             cors_origins=origins,
             rag_db_path=Path(env.get("RAG_DB_PATH", str(REPO_ROOT / "rag_store.db"))).expanduser(),
             stored_documents_dir=Path(env.get("STORED_DOCUMENTS_DIR", str(REPO_ROOT / "stored_documents"))).expanduser(),
+            jobs_db_path=Path(env.get("JOBS_DB_PATH", str(REPO_ROOT / "jobs.db"))).expanduser(),
+            ingestion_mode=env.get("INGESTION_MODE", "sync").strip().lower(),
             vector_store=env.get("VECTOR_STORE", "sqlite").strip().lower(),
             postgres_dsn=env.get("POSTGRES_DSN") or None,
             tenant_id=env.get("TENANT_ID", "local-development").strip(),
@@ -83,6 +107,14 @@ class Settings:
             s3_region=env.get("S3_REGION", "us-east-1").strip(),
             s3_endpoint_url=env.get("S3_ENDPOINT_URL") or None,
             s3_sse_kms_key_id=env.get("S3_SSE_KMS_KEY_ID") or None,
+            queue_provider=env.get("QUEUE_PROVIDER", "in-process").strip().lower(),
+            sqs_queue_url=env.get("SQS_QUEUE_URL") or None,
+            sqs_dlq_url=env.get("SQS_DLQ_URL") or None,
+            sqs_region=env.get("SQS_REGION", "us-east-1").strip(),
+            sqs_endpoint_url=env.get("SQS_ENDPOINT_URL") or None,
+            worker_max_retries=_int(env.get("WORKER_MAX_RETRIES"), 5, "WORKER_MAX_RETRIES"),
+            worker_backoff_base_seconds=_float(env.get("WORKER_BACKOFF_BASE_SECONDS"), 2.0, "WORKER_BACKOFF_BASE_SECONDS"),
+            worker_poll_interval_seconds=_float(env.get("WORKER_POLL_INTERVAL_SECONDS"), 1.0, "WORKER_POLL_INTERVAL_SECONDS"),
             embedding_model=env.get("EMBEDDING_MODEL", "all-MiniLM-L6-v2"),
             embedding_dimensions=_int(env.get("EMBEDDING_DIMENSIONS"), 384, "EMBEDDING_DIMENSIONS"),
             reranker_model=env.get("RERANKER_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2"),
@@ -112,6 +144,12 @@ class Settings:
             raise ValueError("TENANT_ID must not be empty")
         if self.object_storage_provider not in {"filesystem", "s3"}:
             raise ValueError("OBJECT_STORAGE_PROVIDER must be filesystem or s3")
+        if self.queue_provider not in {"in-process", "sqs"}:
+            raise ValueError("QUEUE_PROVIDER must be in-process or sqs")
+        if self.queue_provider == "sqs" and not self.sqs_queue_url:
+            raise ValueError("SQS_QUEUE_URL is required when QUEUE_PROVIDER is sqs")
+        if self.ingestion_mode not in {"sync", "async"}:
+            raise ValueError("INGESTION_MODE must be sync or async")
         if self.llm_provider not in {"lm-studio", "openai-compatible", "none"}:
             raise ValueError("LLM_PROVIDER must be lm-studio, openai-compatible, or none")
         if self.app_env == "production":

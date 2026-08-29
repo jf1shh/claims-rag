@@ -247,12 +247,26 @@ async function handleFileUpload(file) {
 
         const result = await response.json();
         
+        // Async ingestion mode: the upload was accepted as a job (202). Poll
+        // GET /api/jobs/{id} so the progress bar reflects real pipeline state
+        // (queued -> parsing -> embedding -> indexed) instead of a simulation.
+        if (result.job_id && result.status && result.status !== 'indexed') {
+            await pollIngestionJob(result.job_id, file.name);
+            setTimeout(() => {
+                uploadProgressContainer.style.display = 'none';
+            }, 1500);
+            await fetchDocuments();
+            return;
+        }
+        
         uploadProgressFill.style.width = '100%';
         uploadProgressStatus.innerText = 'Indexing complete!';
         
-        logSystemEvent(`Document parsed successfully in ${result.steps.parsing_ms}ms`, 'success');
-        logSystemEvent(`Chunked, embedded, and stored ${result.chunks_count} parent chunk(s) in SQLite vector store in ${result.steps.db_storage_ms}ms`, 'success');
-        logSystemEvent(`Ingestion complete for ${file.name}. Total time: ${result.total_time_ms}ms`, 'success');
+        if (result.steps) {
+            logSystemEvent(`Document parsed successfully in ${result.steps.parsing_ms}ms`, 'success');
+            logSystemEvent(`Chunked, embedded, and stored ${result.chunks_count} parent chunk(s) in SQLite vector store in ${result.steps.db_storage_ms}ms`, 'success');
+            logSystemEvent(`Ingestion complete for ${file.name}. Total time: ${result.total_time_ms}ms`, 'success');
+        }
         
         setTimeout(() => {
             uploadProgressContainer.style.display = 'none';
@@ -1060,7 +1074,16 @@ async function uploadClaimFile(file, claimId) {
         }
         
         const result = await response.json();
-        logSystemEvent(`Successfully attached '${file.name}' to dossier (Indexed: ${result.chunks_count} chunks)`, 'success');
+        
+        // Async ingestion mode: poll the durable job record for real state.
+        if (result.job_id && result.status && result.status !== 'indexed') {
+            await pollIngestionJob(result.job_id, file.name, claimId);
+            await fetchClaimDocuments(claimId);
+            return;
+        }
+        
+        const chunkNote = result.chunks_count !== undefined ? ` (Indexed: ${result.chunks_count} chunks)` : '';
+        logSystemEvent(`Successfully attached '${file.name}' to dossier${chunkNote}`, 'success');
         
         // Refresh claim attachments
         await fetchClaimDocuments(claimId);
@@ -1068,6 +1091,47 @@ async function uploadClaimFile(file, claimId) {
     } catch (error) {
         logSystemEvent(`Failed to attach file to dossier: ${error.message}`, 'error');
         alert(`Failed to attach file: ${error.message}`);
+    }
+}
+
+// Polls GET /api/jobs/{id} until the ingestion job reaches a terminal state,
+// driving the upload progress bar from the real job record (Phase 3.2).
+async function pollIngestionJob(jobId, filename, claimId = null) {
+    const progressByStatus = { queued: 10, parsing: 30, embedding: 70, indexed: 100 };
+    const labelByStatus = {
+        queued: 'Queued for async ingestion...',
+        parsing: 'Parsing and extracting text...',
+        embedding: 'Chunking and embedding...',
+        indexed: 'Indexing complete!'
+    };
+    const scopeNote = claimId ? ` for claim ${claimId}` : '';
+    logSystemEvent(`Upload accepted; indexing '${filename}' asynchronously${scopeNote} (job ${jobId})`);
+    
+    while (true) {
+        const response = await fetch(`/api/jobs/${encodeURIComponent(jobId)}`);
+        if (!response.ok) {
+            throw new Error(`Job status lookup failed (HTTP ${response.status})`);
+        }
+        const job = await response.json();
+        
+        const progress = progressByStatus[job.status] ?? 10;
+        uploadProgressFill.style.width = `${progress}%`;
+        uploadProgressStatus.innerText = labelByStatus[job.status] || job.status;
+        
+        if (job.status === 'indexed') {
+            uploadProgressFill.style.width = '100%';
+            uploadProgressStatus.innerText = 'Indexing complete!';
+            logSystemEvent(`Ingestion complete for '${filename}'${scopeNote} (job ${jobId})`, 'success');
+            return;
+        }
+        if (job.status === 'failed') {
+            throw new Error(job.error_message || `Ingestion failed (${job.error_code || 'unknown error'})`);
+        }
+        if (job.status === 'deleted') {
+            throw new Error('Ingestion job was deleted before completion.');
+        }
+        
+        await new Promise(resolve => setTimeout(resolve, 800));
     }
 }
 

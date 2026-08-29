@@ -383,3 +383,125 @@ def test_result_ids_are_parent_ids(store):
         assert all(m["id"] in valid for m in hits), "search returned non-parent ids"
     finally:
         conn.close()
+
+
+# --------------------------------------------------------------------------- #
+# Phase 3 async ingestion -- worker against the Postgres data plane
+# --------------------------------------------------------------------------- #
+
+@needs_postgres
+def test_ingestion_worker_indexes_into_postgres(provisioned_db, tmp_path):
+    """The Phase 3 ingestion worker drives PostgresVectorStore end-to-end: blob
+    -> parse -> embed -> transactional upsert, with the result searchable via
+    pgvector. This is the 'incremental pgvector upsert' leg of milestone 3.1."""
+    import uuid
+
+    from backend.blob_store import LocalDocumentBlobStore
+    from backend.ingestion_worker import INDEXED, IngestionWorker
+    from backend.postgres_store import PostgresVectorStore
+    from backend.queue import InProcessQueue
+
+    tenant = f"test-{uuid.uuid4().hex[:8]}"
+    blob = LocalDocumentBlobStore(tmp_path / "blobs")
+    store = PostgresVectorStore(
+        dsn=provisioned_db,
+        tenant_id=tenant,
+        storage_dir=str(tmp_path / "docs"),
+        embedding_dimensions=384,
+        blob_store=blob,
+    )
+    queue = InProcessQueue()
+    text = "Nevada mechanical labor cap is 110 dollars per hour."
+    blob.put("global/labor.txt", text.encode(), "text/plain")
+    queue.enqueue(
+        {
+            "job_id": "job_1",
+            "tenant_id": tenant,
+            "filename": "labor.txt",
+            "claim_id": None,
+            "blob_key": "global/labor.txt",
+            "etag": "abc",
+        }
+    )
+    worker = IngestionWorker(
+        queue=queue,
+        vector_store=store,
+        blob_store=blob,
+        embedding_engine_factory=_FakeEmbedder,
+    )
+    try:
+        assert worker.process_message(queue.dequeue()) == INDEXED
+        docs = store.get_all_documents()
+        assert len(docs) == 1 and docs[0]["filename"] == "labor.txt"
+        hits = store.search_similarity(_hash_embed("labor rate Nevada"), "labor rate Nevada", top_k=3)
+        assert hits and hits[0]["filename"] == "labor.txt"
+        assert queue.pending_count == 0
+    finally:
+        conn = _connect(provisioned_db)
+        try:
+            conn.execute("DELETE FROM documents WHERE tenant_id = %s", (tenant,))
+            conn.commit()
+        finally:
+            conn.close()
+
+
+@needs_postgres
+def test_ingestion_worker_embed_failure_leaves_no_half_state_in_postgres(provisioned_db, tmp_path):
+    """An embedding failure inside the worker retries and never leaves a partial
+    document searchable -- the transaction rolls back on the Postgres side too."""
+    import uuid
+
+    from backend.blob_store import LocalDocumentBlobStore
+    from backend.ingestion_worker import REJECTED, IngestionWorker
+    from backend.postgres_store import PostgresVectorStore
+    from backend.queue import InProcessQueue
+
+    tenant = f"test-{uuid.uuid4().hex[:8]}"
+    blob = LocalDocumentBlobStore(tmp_path / "blobs")
+    store = PostgresVectorStore(
+        dsn=provisioned_db,
+        tenant_id=tenant,
+        storage_dir=str(tmp_path / "docs"),
+        embedding_dimensions=384,
+        blob_store=blob,
+    )
+    queue = InProcessQueue()
+    blob.put("global/labor.txt", b"Nevada labor cap 110 dollars.", "text/plain")
+    queue.enqueue(
+        {
+            "job_id": "job_1",
+            "tenant_id": tenant,
+            "filename": "labor.txt",
+            "claim_id": None,
+            "blob_key": "global/labor.txt",
+            "etag": "abc",
+        }
+    )
+
+    class _BrokenEmbedder:
+        def embed_chunks(self, chunks):
+            raise RuntimeError("embedding engine down")
+
+    worker = IngestionWorker(
+        queue=queue,
+        vector_store=store,
+        blob_store=blob,
+        embedding_engine_factory=_BrokenEmbedder,
+        max_retries=2,
+        backoff_base_seconds=0.0,
+    )
+    try:
+        assert worker.process_message(queue.dequeue()) == REJECTED
+        conn = _connect(provisioned_db)
+        try:
+            n = conn.execute("SELECT count(*) FROM documents WHERE tenant_id = %s", (tenant,)).fetchone()[0]
+            assert n == 0, "failed embed left a searchable document row (half-state!)"
+        finally:
+            conn.close()
+    finally:
+        conn = _connect(provisioned_db)
+        try:
+            conn.execute("DELETE FROM documents WHERE tenant_id = %s", (tenant,))
+            conn.commit()
+        finally:
+            conn.close()

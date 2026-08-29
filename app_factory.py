@@ -15,6 +15,8 @@ class AppDependencies:
     embedding_engine: Any | None = None
     reranking_engine: Any | None = None
     agentic_router: Any | None = None
+    queue: Any | None = None
+    job_store: Any | None = None
 
 
 def _build_blob_store(settings: Settings):
@@ -37,10 +39,42 @@ def _build_blob_store(settings: Settings):
     )
 
 
+def _build_queue(settings: Settings):
+    """Constructs the ingestion-queue adapter for the configured provider.
+    ``in-process`` (the default) is the dev/test loopback; ``sqs`` returns an
+    SQS adapter pointing at a real queue or a compatible endpoint (LocalStack
+    via SQS_ENDPOINT_URL). Mirrors _build_blob_store."""
+    if settings.queue_provider != "sqs":
+        from backend.queue import InProcessQueue
+
+        return InProcessQueue()
+    if not settings.sqs_queue_url:
+        raise ValueError("SQS_QUEUE_URL is required when QUEUE_PROVIDER is sqs")
+    from backend.queue import SQSQueue
+
+    return SQSQueue(
+        queue_url=settings.sqs_queue_url,
+        region=settings.sqs_region,
+        endpoint_url=settings.sqs_endpoint_url,
+        dlq_url=settings.sqs_dlq_url,
+    )
+
+
+def _build_job_store(settings: Settings):
+    """Durable ingestion-job records (Phase 3.2) live in their own SQLite file,
+    independent of the vector-store backend, so GET /api/jobs/{id} stays
+    truthful across restarts and across the sync/async modes."""
+    from backend.job_store import SqliteJobStore
+
+    return SqliteJobStore(str(settings.jobs_db_path))
+
+
 def build_dependencies(settings: Settings) -> AppDependencies:
     from backend.rag_engine import SQLiteVectorStore
 
     blob_store = _build_blob_store(settings)
+    queue = _build_queue(settings)
+    job_store = _build_job_store(settings)
 
     if settings.vector_store == "postgres":
         if not settings.postgres_dsn:
@@ -64,6 +98,8 @@ def build_dependencies(settings: Settings) -> AppDependencies:
     return AppDependencies(
         settings=settings,
         vector_store=vector_store,
+        queue=queue,
+        job_store=job_store,
     )
 
 
