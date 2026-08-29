@@ -12,7 +12,7 @@ ruff check .
 .venv/bin/python -m compileall -q backend app_factory.py config.py
 ```
 
-Record the actual output and exit code for every command. Do not state that CI is green until the remote workflow has completed successfully.
+Record the actual output and exit code for every command. Do not state that CI is green until the workflow has completed successfully. CI runs on a **self-hosted runner** (`.github/workflows/tests.yml`, both jobs on `runs-on: [self-hosted, linux, autoclaimsrag]`) — a run stuck queued usually means the runner's systemd service is down, not a workflow bug. Verify the runner is online first (`gh api repos/jf1shh/auto-claims-rag/actions/runners --jq '.runners[].status'`), then check the workflow results (`gh run list --workflow tests.yml --limit 3`). See `docs/operations/local-and-production.md` → "Local CI (self-hosted runner)".
 
 ## Required review checks
 

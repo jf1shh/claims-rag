@@ -11,6 +11,7 @@
 | Run unit tests | `tests/` | `README.md` |
 | Run retrieval parity | `eval/parity_runner.py` | `docs/enterprise-migration.md` |
 | Run foundation gates | `scripts/run_foundation_gates.py` | `stages/verify/CONTEXT.md` |
+| Run / check CI | `.github/workflows/tests.yml` | `docs/operations/local-and-production.md` |
 | Record a new lesson | `stages/learn/CONTEXT.md` | `docs/superpowers/specs/2026-08-28-enterprise-foundation-design.md` |
 
 ## Session start
