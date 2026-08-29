@@ -202,12 +202,37 @@ parity harness defines acceptable divergence (recall@k ≥ 0.9) *before* data mi
 
 ## Phase 4 — Tenancy, auth, audit (3–4 wks)
 
-| Milestone | Deliverable | Exit criteria |
-|---|---|---|
-| 4.1 | SSO/OIDC (Okta/Entra/Google) + service accounts; FastAPI `get_current_tenant` on every route; frontend login + returnTo | No endpoint reachable without auth |
-| 4.2 | RBAC: adjuster / supervisor / SIU / admin; claim-level ACLs | Permission matrix tested |
-| 4.3 | Immutable audit log: upload/delete/chat/download — who, tenant, claim, query, sources returned, timestamps | Completeness test on sampled actions; chat answers + source IDs logged |
-| 4.4 | Rate limiting, upload size caps, `/api/eval/search` gated to CI/internal, secrets via KMS | Abuse drill (huge `top_k`, giant uploads) → 429/413 |
+| Milestone | Deliverable | Exit criteria | Status |
+|---|---|---|---|
+| 4.1 | SSO/OIDC (Okta/Entra/Google) + service accounts; FastAPI `get_current_tenant` on every route; frontend login + returnTo | No endpoint reachable without auth | **Done 2026-08-29** — provider-neutral `Authenticator` seam (dev / OIDC / service accounts / chain), `get_current_tenant` on every `/api/*` route, `/api/auth/me`, frontend login gate (see status below) |
+| 4.2 | RBAC: adjuster / supervisor / SIU / admin; claim-level ACLs | Permission matrix tested | |
+| 4.3 | Immutable audit log: upload/delete/chat/download — who, tenant, claim, query, sources returned, timestamps | Completeness test on sampled actions; chat answers + source IDs logged | |
+| 4.4 | Rate limiting, upload size caps, `/api/eval/search` gated to CI/internal, secrets via KMS | Abuse drill (huge `top_k`, giant uploads) → 429/413 | |
+
+> **Phase 4 status (2026-08-29, milestone 4.1):** every `/api/*` endpoint is now
+> behind a `get_current_tenant` FastAPI dependency that resolves the request to a
+> `PrincipalContext` via a provider-neutral `Authenticator` seam (`backend/authn.py`,
+> built by `_build_authenticator` in `app_factory.py`, mirroring the Phase-2/3
+> blob-store/queue pattern). `AUTH_PROVIDERS` is a comma-separated chain:
+> **`development`** (default — the explicit Phase-0 local identity, rejected by
+> config validation in production), **`oidc`** (Bearer JWT verified against the
+> issuer's JWKS: signature via the token's `kid`, plus `exp`/`iss`/`aud` checks;
+> tenant/role claims configurable via `OIDC_TENANT_CLAIM`/`OIDC_ROLES_CLAIM` for
+> Entra `tid`/Okta `groups` etc.; JWKS fetched lazily and cached per
+> `OIDC_CACHE_TTL_SECONDS`), and **`service-accounts`** (static `X-API-Key` keys
+> from `SERVICE_ACCOUNTS_FILE`, constant-time compared). `GET /api/auth/me`
+> reports the resolved principal so the frontend can show who is signed in. The
+> frontend attaches the stored credential to every request (`apiFetch`), shows a
+> login gate on 401, and reloads after sign-in so the user returns to the page
+> they were on. `/health/*` and the static frontend mount stay open deliberately
+> (probes and the login surface itself); the OIDC **authorization-code redirect**
+> (the "Sign in with Okta" button) is deployment wiring — the client consumes the
+> resulting access token, exactly like the S3 bucket-notification → Lambda hop in
+> Phase 3. OIDC is verified hermetically: tests generate a real RSA keypair, mint
+> signed JWTs, and inject the JWKS fetcher — expired/wrong-issuer/wrong-audience/
+> bad-signature/unknown-kid all exercised against the real verification logic
+> (moto-style, no live IdP needed). Full suite 238 passed / 12 skipped, ruff
+> clean, gates 0 blocking. Next: 4.2 RBAC.
 
 **Note:** `tenant_id` + RLS land in Phase 1, *before* real tenants exist — retrofitting
 RLS onto live multi-tenant data is the most expensive mistake in this plan.

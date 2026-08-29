@@ -32,6 +32,11 @@
                     <span class="status-indicator" id="ind-lmstudio"></span>
                     <span class="status-label" id="label-lmstudio">LM Studio: Checking...</span>
                 </div>
+                <div class="status-chip" id="status-auth" style="display: none;">
+                    <span class="status-indicator active"></span>
+                    <span class="status-label" id="label-auth">Signed in</span>
+                </div>
+                <button class="btn btn-secondary btn-sm" id="sign-out-btn" style="display: none;">Sign out</button>
             </div>
         </header>
 
@@ -318,6 +323,32 @@
         </main>
     </div>
 
+    <!-- Login Gate (Phase 4.1) -->
+    <div class="modal-backdrop" id="login-modal">
+        <div class="modal-box" style="max-width: 420px;">
+            <div class="modal-header">
+                <h2>Sign in</h2>
+            </div>
+            <div class="modal-body" style="white-space: normal; font-family: inherit; font-size: 13px; background: none; border: none; padding: 4px 0 0 0;">
+                <p style="margin: 0 0 12px 0; color: var(--text-muted);">
+                    This deployment requires authentication. Paste an access token from
+                    your identity provider, or an API key for a service account.
+                </p>
+                <input
+                    type="password"
+                    id="login-token-input"
+                    placeholder="Paste token or API key"
+                    style="width: 100%; padding: 8px 10px; border: 1px solid var(--border-color); border-radius: 6px; font-family: monospace; box-sizing: border-box;"
+                    autocomplete="off"
+                >
+                <p id="login-error" style="display: none; margin: 10px 0 0 0; color: #dc2626; font-size: 12px;"></p>
+            </div>
+            <div class="modal-footer" style="display: flex; justify-content: flex-end; gap: 8px; padding-top: 12px;">
+                <button class="btn btn-primary btn-sm" id="login-submit-btn">Sign in</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Citation Source Card Modal -->
     <div class="modal-backdrop" id="source-modal">
         <div class="modal-box">
@@ -336,6 +367,6 @@
         </div>
     </div>
 
-    <script src="app.js?v=1.0.6"></script>
+    <script src="app.js?v=1.0.7"></script>
 </body>
 </html>

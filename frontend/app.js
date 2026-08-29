@@ -3,6 +3,111 @@ let currentEngine = 'lm-studio';
 let documents = [];
 let backendStatus = null;
 
+// Auth (Phase 4.1): the access token / API key is stored in localStorage and
+// attached to every API request. A 401 shows the login gate; signing in
+// stores the credential and reloads, which restores the current page
+// (returnTo) now that the app is authenticated.
+let authToken = localStorage.getItem('auth_token') || null;
+let loginGateShown = false;
+
+function apiFetch(path, options = {}) {
+    const headers = { ...(options.headers || {}) };
+    if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+    return fetch(path, { ...options, headers }).then(response => {
+        if (response.status === 401 && !path.startsWith('/api/auth/')) {
+            showLoginGate();
+        }
+        return response;
+    });
+}
+
+// Fetches a binary document with the auth header and returns an object URL,
+// so downloads/PDFs/images work when the API requires a token (a plain
+// window.open/<img src> navigation cannot carry the Authorization header).
+async function fetchBlobUrl(path) {
+    const response = await apiFetch(path);
+    if (!response.ok) throw new Error(`Failed to load document (HTTP ${response.status})`);
+    const blob = await response.blob();
+    return URL.createObjectURL(blob);
+}
+
+function showLoginGate() {
+    if (loginGateShown) return;
+    loginGateShown = true;
+    const modal = document.getElementById('login-modal');
+    if (modal) modal.style.display = 'flex';
+}
+
+function hideLoginGate() {
+    loginGateShown = false;
+    const modal = document.getElementById('login-modal');
+    if (modal) modal.style.display = 'none';
+}
+
+async function checkAuth() {
+    // /api/auth/me resolves the authenticated principal. In development the
+    // server returns the explicit local identity (no login needed); under
+    // OIDC/service accounts a missing/invalid credential 401s and the login
+    // gate blocks the app until the user signs in.
+    try {
+        const response = await apiFetch('/api/auth/me');
+        if (response.ok) {
+            const me = await response.json();
+            const label = document.getElementById('label-auth');
+            if (label) {
+                label.innerText = me.is_development_identity
+                    ? `Signed in (dev): ${me.subject}`
+                    : `Signed in: ${me.subject} @ ${me.tenant_id}`;
+            }
+            const chip = document.getElementById('status-auth');
+            const signOut = document.getElementById('sign-out-btn');
+            if (chip) chip.style.display = 'flex';
+            if (signOut) signOut.style.display = 'inline-block';
+            return true;
+        }
+    } catch (error) {
+        console.error('Auth check failed:', error);
+    }
+    showLoginGate();
+    return false;
+}
+
+function setupLoginGate() {
+    const submitBtn = document.getElementById('login-submit-btn');
+    const input = document.getElementById('login-token-input');
+    const errorEl = document.getElementById('login-error');
+    const signOutBtn = document.getElementById('sign-out-btn');
+
+    if (submitBtn && input) {
+        const attemptLogin = () => {
+            const value = input.value.trim();
+            if (!value) {
+                if (errorEl) errorEl.innerText = 'Enter a token or API key.';
+                if (errorEl) errorEl.style.display = 'block';
+                return;
+            }
+            authToken = value;
+            localStorage.setItem('auth_token', value);
+            hideLoginGate();
+            // Return to where the user was: reload restores the current page,
+            // now authenticated (the 401 that opened the gate is gone).
+            window.location.reload();
+        };
+        submitBtn.addEventListener('click', attemptLogin);
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') attemptLogin();
+        });
+    }
+
+    if (signOutBtn) {
+        signOutBtn.addEventListener('click', () => {
+            localStorage.removeItem('auth_token');
+            authToken = null;
+            window.location.reload();
+        });
+    }
+}
+
 // Claims Database -- fetched from /api/claims (backend/agentic_router.py's
 // CLAIMS_DATA), the same source of truth the agentic router grounds
 // claim-scoped answers in, so this can't drift out of sync with it.
@@ -14,7 +119,7 @@ function slugifyStatus(status) {
 }
 
 async function fetchClaims() {
-    const response = await fetch('/api/claims');
+    const response = await apiFetch('/api/claims');
     if (!response.ok) throw new Error('Failed to fetch claims');
     CLAIMS_DATA = await response.json();
     CLAIMS_DATA.forEach(c => { c.statusClass = slugifyStatus(c.status); });
@@ -77,6 +182,10 @@ document.addEventListener('DOMContentLoaded', initializeApp);
 
 // Initialize App
 async function initializeApp() {
+    setupLoginGate();
+    const authenticated = await checkAuth();
+    if (!authenticated) return;
+
     setupEngineSelection();
     setupDragAndDrop();
     setupBrowseButton();
@@ -116,7 +225,7 @@ let lastLmStudioActive = null;
 
 async function checkBackendStatus() {
     try {
-        const response = await fetch('/api/status');
+        const response = await apiFetch('/api/status');
         if (!response.ok) throw new Error('Status endpoint failed');
 
         backendStatus = await response.json();
@@ -233,7 +342,7 @@ async function handleFileUpload(file) {
     logSystemEvent("Parsing file content and running text extraction pipeline...");
 
     try {
-        const response = await fetch('/api/upload', {
+        const response = await apiFetch('/api/upload', {
             method: 'POST',
             body: formData
         });
@@ -285,7 +394,7 @@ async function handleFileUpload(file) {
 // 3. Guideline Document Management
 async function fetchDocuments() {
     try {
-        const response = await fetch('/api/documents');
+        const response = await apiFetch('/api/documents');
         if (!response.ok) throw new Error('Failed to load documents');
         
         documents = await response.json();
@@ -355,7 +464,7 @@ function renderDocuments() {
 async function deleteDocument(filename) {
     logSystemEvent(`Deleting document: ${filename}`);
     try {
-        const response = await fetch('/api/delete', {
+        const response = await apiFetch('/api/delete', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ filename })
@@ -425,7 +534,7 @@ chatForm.addEventListener('submit', async (e) => {
     logSystemEvent(`Target LLM: ${currentEngine.toUpperCase()}`);
     
     try {
-        const response = await fetch('/api/chat', {
+        const response = await apiFetch('/api/chat', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -971,7 +1080,7 @@ function setupResizableColumns() {
 
 async function fetchClaimDocuments(claimId) {
     try {
-        const response = await fetch(`/api/documents/claim/${encodeURIComponent(claimId)}`);
+        const response = await apiFetch(`/api/documents/claim/${encodeURIComponent(claimId)}`);
         if (!response.ok) throw new Error('Failed to load claim documents');
         
         const docs = await response.json();
@@ -1069,7 +1178,7 @@ async function uploadClaimFile(file, claimId) {
     formData.append('claim_id', claimId);
     
     try {
-        const response = await fetch('/api/upload-claim-file', {
+        const response = await apiFetch('/api/upload-claim-file', {
             method: 'POST',
             body: formData
         });
@@ -1115,7 +1224,7 @@ async function pollIngestionJob(jobId, filename, claimId = null) {
     logSystemEvent(`Accepted as job ${jobId} (${filename}${scopeNote}); waiting for completion...`);
     
     while (true) {
-        const response = await fetch(`/api/jobs/${encodeURIComponent(jobId)}`);
+        const response = await apiFetch(`/api/jobs/${encodeURIComponent(jobId)}`);
         if (!response.ok) {
             throw new Error(`Job status lookup failed (HTTP ${response.status})`);
         }
@@ -1149,7 +1258,7 @@ async function pollIngestionJob(jobId, filename, claimId = null) {
 window.deleteClaimDocument = async function(filename) {
     logSystemEvent(`Removing attachment: ${filename}`);
     try {
-        const response = await fetch('/api/delete', {
+        const response = await apiFetch('/api/delete', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ filename })
@@ -1177,21 +1286,34 @@ async function openDocumentViewer(filename) {
     // 1. If it's a PDF or Excel spreadsheet, open it physically in a new tab
     if (ext === 'pdf' || ext === 'xlsx' || ext === 'xls') {
         logSystemEvent(`Opening high-fidelity document in new tab: '${filename}'`);
-        window.open(`/api/documents/download/${encodeURIComponent(filename)}`, '_blank');
+        // Fetch the bytes with the auth header and open an object URL (a plain
+        // window.open navigation cannot carry the Authorization header).
+        try {
+            const blobUrl = await fetchBlobUrl(`/api/documents/download/${encodeURIComponent(filename)}`);
+            window.open(blobUrl, '_blank');
+        } catch (error) {
+            logSystemEvent(`Failed to open document: ${error.message}`, 'error');
+            alert(`Error opening document: ${error.message}`);
+        }
         return;
     }
     
     // 2. If it's an image, render it directly in the modal
     if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) {
         logSystemEvent(`Rendering photo in modal viewer: '${filename}'`);
-        showModal(filename, 'N/A (Image View)', `/api/documents/download/${encodeURIComponent(filename)}`, true);
+        try {
+            const blobUrl = await fetchBlobUrl(`/api/documents/download/${encodeURIComponent(filename)}`);
+            showModal(filename, 'N/A (Image View)', blobUrl, true);
+        } catch (error) {
+            logSystemEvent(`Failed to render photo: ${error.message}`, 'error');
+        }
         return;
     }
     
     // 3. Text or fallback content: fetch text from content API
     logSystemEvent(`Retrieving full text content for document: '${filename}'`);
     try {
-        const response = await fetch(`/api/documents/content/${encodeURIComponent(filename)}`);
+        const response = await apiFetch(`/api/documents/content/${encodeURIComponent(filename)}`);
         if (!response.ok) throw new Error('Failed to load document content');
         
         const result = await response.json();

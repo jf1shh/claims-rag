@@ -14,6 +14,10 @@ python-multipart==0.0.32
 # Object storage (Phase 2 S3; boto3 is the runtime adapter)
 boto3==1.43.83
 
+# Authentication (Phase 4.1 OIDC JWT verification)
+PyJWT==2.13.0
+cryptography==50.0.1
+
 # Postgres + pgvector backend (Phase 1)
 sqlalchemy==2.0.52
 alembic==1.19.1
