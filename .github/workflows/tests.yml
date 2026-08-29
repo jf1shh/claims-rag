@@ -17,21 +17,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
+      # actions/setup-python's downloadable manifest has no prebuilt release
+      # for this host's distro (CachyOS rolling), so it 404s on self-hosted.
+      # Python 3.12 is already installed on the runner host itself -- use it
+      # directly via a per-run venv instead of setup-python.
+      - name: Set up venv
+        run: python3.12 -m venv .venv && .venv/bin/pip install --upgrade pip
 
       # Install the pinned runtime/test dependencies needed by the API,
       # contracts, parsers, and tests. Model engines import lazily, so CI does
       # not contact hosted model services or require keys/tokens.
       - name: Install test dependencies
-        run: pip install -r requirements.txt
+        run: .venv/bin/pip install -r requirements.txt
 
       - name: Run linter
-        run: ruff check .
+        run: .venv/bin/ruff check .
 
       - name: Run unit tests
-        run: pytest tests/ -v
+        run: .venv/bin/pytest tests/ -v
 
       # Phase 0.2 of docs/enterprise-migration.md: retrieval parity harness.
       # Self-check mode (sqlite vs sqlite on two independent DBs) must report
@@ -39,7 +42,7 @@ jobs:
       # any second backend exists. Phase 1 adds a postgres service + a
       # --backend-b postgres comparison.
       - name: Retrieval parity self-check
-        run: python eval/parity_runner.py
+        run: .venv/bin/python eval/parity_runner.py
 
   # Kept on GitHub-hosted Windows: no self-hosted Windows box is available,
   # and this single leg stays well under the free-minutes cap on its own.
@@ -91,18 +94,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
+      # See the matching comment in pytest-linux -- setup-python has no
+      # release for this distro; use the runner host's system Python 3.12.
+      - name: Set up venv
+        run: python3.12 -m venv .venv && .venv/bin/pip install --upgrade pip
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: .venv/bin/pip install -r requirements.txt
 
       - name: Run linter
-        run: ruff check .
+        run: .venv/bin/ruff check .
 
       - name: Run Postgres backend tests (migrations + store + RLS)
-        run: pytest tests/test_postgres_store.py -v
+        run: .venv/bin/pytest tests/test_postgres_store.py -v
 
       - name: Inter-backend retrieval parity (Postgres vs SQLite)
-        run: python eval/parity_runner.py --backend-b postgres --tolerance 0.9
+        run: .venv/bin/python eval/parity_runner.py --backend-b postgres --tolerance 0.9
