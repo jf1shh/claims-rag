@@ -4,9 +4,9 @@ AutoClaimsRAG handles claims-like documents and must treat all uploaded content 
 
 ## Current security boundaries
 
-- Local mode is single-user and uses an explicit development identity.
-- Production deployments must resolve tenant context from verified authentication, not client-controlled claim IDs or filenames.
-- Retrieval, listing, download, and deletion must be tenant- and claim-scoped.
+- Every `/api/*` route requires authentication: a Bearer JWT verified against the configured OIDC issuer's JWKS, an `X-API-Key` from the service-accounts file, or (local mode only) the explicit development identity, which config validation rejects in production. Health endpoints and the static frontend stay open deliberately (probes + the login surface).
+- Permissions are enforced per role (adjuster / supervisor / SIU / admin) and per claim via `CLAIM_ACLS_FILE`; production deployments must resolve tenant context from verified authentication, not client-controlled claim IDs or filenames.
+- Retrieval, listing, download, upload, deletion, and chat must be tenant- and claim-scoped.
 - Uploaded filenames and storage keys must be normalized and confined to the configured storage root.
 - Model/provider endpoints must be configured server-side and validated; request data must never select an arbitrary outbound URL.
 - Upload bytes, extracted text, query length, and retrieval counts must be bounded.
