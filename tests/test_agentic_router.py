@@ -24,7 +24,7 @@ class _StubClient:
     def model_for_stage(self, stage):
         return "m"
 
-    def complete(self, messages, *, model, temperature, max_tokens):
+    def complete(self, messages, *, model, temperature, max_tokens, stage="synthesis"):
         self.calls.append(True)
         if isinstance(self._text, Exception):
             raise self._text

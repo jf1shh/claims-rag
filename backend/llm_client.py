@@ -27,6 +27,7 @@ class ChatClient(ABC):
         model: str,
         temperature: float,
         max_tokens: int,
+        stage: str = "synthesis",
     ) -> str:
         raise NotImplementedError
 
@@ -77,8 +78,12 @@ class OpenAICompatibleClient(ChatClient):
             h["Authorization"] = f"Bearer {self.api_key}"
         return h
 
-    def complete(self, messages, *, model, temperature, max_tokens):
-        timeout = self.plan_timeout if model == self.planning_model else self.timeout
+    def complete(self, messages, *, model, temperature, max_tokens, stage="synthesis"):
+        # The timeout follows the stage, not the resolved model name: under the
+        # default dev config (PLANNING_MODEL unset) the planner's resolved model
+        # equals default_model, so picking the timeout by `model == planning_model`
+        # would silently give the planner the 120s synthesis timeout.
+        timeout = self.plan_timeout if stage == "planning" else self.timeout
         try:
             resp = self._http.post(
                 f"{self.base_url}/v1/chat/completions",

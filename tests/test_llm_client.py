@@ -52,6 +52,35 @@ def _completion_body(content="hi there"):
 from backend.llm_client import OpenAICompatibleClient  # noqa: E402
 
 
+def test_complete_uses_plan_timeout_for_planning_stage():
+    """Planner calls must use plan_timeout (5s) even when PLANNING_MODEL is
+    unset (default dev config) -- the timeout must follow the stage, not the
+    resolved model name, or a hung gateway stalls planning for the synthesis
+    timeout (120s). Regression for the 5.1 merge."""
+    http = FakeHTTP()
+    http._post_resp = _completion_body("plan ok")
+    # No planning_model set -> model_for_stage returns default_model.
+    client = OpenAICompatibleClient(
+        base_url="http://x", default_model="M", http=http,
+        timeout=120.0, plan_timeout=5.0,
+    )
+    client.complete([{"role": "user", "content": "q"}],
+                    model=client.model_for_stage("planning"),
+                    temperature=0.0, max_tokens=150, stage="planning")
+    assert http.posts[0]["timeout"] == 5.0
+
+    http2 = FakeHTTP()
+    http2._post_resp = _completion_body("answer")
+    client2 = OpenAICompatibleClient(
+        base_url="http://x", default_model="M", http=http2,
+        timeout=120.0, plan_timeout=5.0,
+    )
+    client2.complete([{"role": "user", "content": "q"}],
+                     model=client2.model_for_stage("synthesis"),
+                     temperature=0.1, max_tokens=1000)
+    assert http2.posts[0]["timeout"] == 120.0
+
+
 def test_complete_posts_to_chat_completions_with_stage_model():
     http = FakeHTTP()
     http._post_resp = _completion_body("plan ok")
