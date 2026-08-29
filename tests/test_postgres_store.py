@@ -62,13 +62,11 @@ def _schema_ready(dsn) -> bool:
         return False
 
 
-if POSTGRES_DSN and not _schema_ready(POSTGRES_DSN):
-    needs_postgres = pytest.mark.skipif(True, reason=f"vector extension missing at {POSTGRES_DSN}")
-
-
 def _provision_schema(dsn: str) -> None:
     """Runs `alembic upgrade head` against the DSN so the migration is itself
-    exercised every time this suite runs."""
+    exercised every time this suite runs. The migration creates the `vector`
+    extension (if absent) plus all tables/indexes, so this both provisions the
+    schema and installs the extension a fresh DB needs."""
     from alembic import command
     from alembic.config import Config
 
@@ -83,6 +81,25 @@ def _provision_schema(dsn: str) -> None:
             os.environ.pop("POSTGRES_DSN", None)
         else:
             os.environ["POSTGRES_DSN"] = old
+
+
+if POSTGRES_DSN:
+    # A reachable DSN with no `vector` extension means a brand-new database that
+    # has not been migrated yet (e.g. a fresh CI service container). Instead of
+    # skipping, prove the extension is genuinely unavailable by running the
+    # migration once -- it creates the extension + schema. Tests then skip only
+    # for a truly unreachable/misconfigured DSN.
+    if not _schema_ready(POSTGRES_DSN):
+        try:
+            _provision_schema(POSTGRES_DSN)
+        except Exception:
+            needs_postgres = pytest.mark.skipif(
+                True, reason=f"could not provision schema/vector extension at {POSTGRES_DSN}"
+            )
+    if not _schema_ready(POSTGRES_DSN):
+        needs_postgres = pytest.mark.skipif(
+            True, reason=f"vector extension still missing after provisioning at {POSTGRES_DSN}"
+        )
 
 
 @pytest.fixture(scope="module")
