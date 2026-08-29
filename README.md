@@ -161,7 +161,7 @@ Run these commands from the repository root and report their actual output:
 
 ## Tech stack
 
-FastAPI · SQLite (custom hybrid vector + FTS5 store, default) with a Postgres + pgvector backend behind the same `VectorStore` interface · filesystem storage (default) with an S3-compatible `DocumentBlobStore` behind the same interface · OIDC/JWT + service-account authentication (`PyJWT`) · role-based access control with claim-level ACLs · sentence-transformers (`all-MiniLM-L6-v2`) · cross-encoder reranking (`ms-marco-MiniLM-L-6-v2`) · LM Studio (local OpenAI-compatible inference) · Ragas (local evaluation) · vanilla JS frontend
+FastAPI · SQLite (custom hybrid vector + FTS5 store, default) with a Postgres + pgvector backend behind the same `VectorStore` interface · filesystem storage (default) with an S3-compatible `DocumentBlobStore` behind the same interface · OIDC/JWT + service-account authentication (`PyJWT`) · role-based access control with claim-level ACLs · sentence-transformers (`all-MiniLM-L6-v2`) · cross-encoder reranking (`ms-marco-MiniLM-L-6-v2`) · provider-neutral OpenAI-compatible LLM client (LM Studio locally; a private vLLM/TGI/SGLang gateway at enterprise scale) · Ragas (local evaluation) · vanilla JS frontend
 
 ## About
 
