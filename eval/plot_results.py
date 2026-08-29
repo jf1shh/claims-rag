@@ -28,7 +28,7 @@ def main():
     summary = json.loads(results_path.read_text(encoding="utf-8"))["summary"]
 
     faithfulness_trend = FAITHFULNESS_HISTORY + [summary["faithfulness_avg"]]
-    faithfulness_labels = FAITHFULNESS_HISTORY_LABELS + ["fts-rank fix rerun"]
+    faithfulness_labels = FAITHFULNESS_HISTORY_LABELS + ["golden-corpus refresh"]
 
     fig, axes = plt.subplots(1, 3, figsize=(15, 4.5))
     fig.suptitle("AutoClaimsRAG Evaluation Results (19 golden queries, local LM Studio judge)", fontsize=12)
