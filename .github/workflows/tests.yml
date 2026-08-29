@@ -7,11 +7,13 @@ on:
     branches: [main]
 
 jobs:
-  pytest:
-    strategy:
-      matrix:
-        os: [ubuntu-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
+  # Self-hosted runner (labeled "autoclaimsrag") on Jared's own machine --
+  # this repo is private, so GitHub-hosted minutes are capped; self-hosted
+  # avoids the cap entirely and matches the project's own "runs entirely on
+  # my own machine, no cloud" design constraint. See ~/actions-runner and the
+  # systemd unit actions.runner.jf1shh-auto-claims-rag.*.service.
+  pytest-linux:
+    runs-on: [self-hosted, linux, autoclaimsrag]
     steps:
       - uses: actions/checkout@v4
 
@@ -39,14 +41,37 @@ jobs:
       - name: Retrieval parity self-check
         run: python eval/parity_runner.py
 
+  # Kept on GitHub-hosted Windows: no self-hosted Windows box is available,
+  # and this single leg stays well under the free-minutes cap on its own.
+  pytest-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install test dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run linter
+        run: ruff check .
+
+      - name: Run unit tests
+        run: pytest tests/ -v
+
+      - name: Retrieval parity self-check
+        run: python eval/parity_runner.py
+
   # Phase 1 (docs/enterprise-migration.md): Postgres + pgvector data plane.
-  # Runs only on ubuntu because GitHub Actions does not run service containers
-  # on Windows runners. The Postgres test module self-provisions the schema via
+  # Runs on the self-hosted runner (Docker is installed there specifically
+  # for this). The Postgres test module self-provisions the schema via
   # `alembic upgrade head`, and the golden parity harness is pointed at Postgres
   # with the looser 0.9 tolerance (pgvector HNSW is approximate vs SQLite's
   # exact brute-force search).
   postgres:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, autoclaimsrag]
     services:
       postgres:
         image: pgvector/pgvector:pg16
