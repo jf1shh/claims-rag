@@ -114,8 +114,8 @@ parity harness defines acceptable divergence (recall@k ≥ 0.9) *before* data mi
 | Milestone | Deliverable | Exit criteria | Status |
 |---|---|---|---|
 | 3.1 | S3 put-event → queue → worker: parse → chunk → embed (batched) → incremental pgvector upsert | Ingestion no longer O(n) per write; embed failures → retryable job, never a half-state | **In progress 2026-08-29** — queue seam, S3-event bridge, and worker implemented + tested (see status below) |
-| 3.2 | `/api/upload` → `202 {job_id}`; `GET /api/jobs/{id}`; frontend progress binds to real job state; delete/overwrite are jobs | UI reflects true pipeline state; corrupt-file 400 detail preserved | **In progress 2026-08-29** — 202 + jobs API + durable job records + frontend polling implemented (see status below); delete-as-job still open |
-| 3.3 | Idempotency by `(tenant, s3_key, etag)`, DLQ + retry/backoff, job metrics | Failure drills pass (no orphan rows on mid-embedding crash); 10k-doc throughput load test | |
+| 3.2 | `/api/upload` → `202 {job_id}`; `GET /api/jobs/{id}`; frontend progress binds to real job state; delete/overwrite are jobs | UI reflects true pipeline state; corrupt-file 400 detail preserved | **Done 2026-08-29** — 202 + jobs API + durable job records + frontend polling + delete-as-job (see status below) |
+| 3.3 | Idempotency by `(tenant, s3_key, etag)`, DLQ + retry/backoff, job metrics | Failure drills pass (no orphan rows on mid-embedding crash); 10k-doc throughput load test | **Done 2026-08-29** — etag idempotency, DLQ/retry drills (in-process + SQS), worker job metrics, 10k-doc load test (see status below) |
 
 > **Phase 3 status (2026-08-29):** milestone 3.1 is implemented behind a
 > provider-neutral queue seam, mirroring how Phase 2's blob storage was done.
@@ -165,11 +165,38 @@ parity harness defines acceptable divergence (recall@k ≥ 0.9) *before* data mi
 > record (`app.js?v=1.0.6`). Fixed en route: both upload endpoints passed the
 > raw `embedding_engine` module global (None until a chat call lazily loaded it)
 > -- a fresh server's first upload crashed with a 500; now `_get_embedding_engine()`.
-> Deferred within 3.2: delete-as-job (the delete endpoint stays synchronous).
-> Tests: `tests/test_job_store.py` (9), `tests/test_ingestion_async.py` (7),
-> `tests/test_api_jobs.py` (8) + config cases; full suite 164 passed / 12 skipped
-> (PG-gated, no local PG), ruff clean, foundation gates 0 blocking. Milestone 3.3
-> (etag idempotency, DLQ drills, 10k-doc load test) remains.
+
+> **Phase 3 status (2026-08-29, milestone 3.2 close-out):** delete-as-job landed
+> to finish 3.2. `/api/delete` returns **202 + job_id** in async mode
+> (`IngestionService.submit_delete` creates a queued delete job and enqueues an
+> `action: "delete"` message; the worker removes the document and advances the
+> job to `deleted`) and keeps inline behavior + a recorded `deleted` job in sync
+> mode. Delete dedupes only while in flight (content-independent, so a completed
+> delete must not suppress a later one). Missing-document deletes become failed
+> jobs (`DOCUMENT_NOT_FOUND`), mirroring the sync endpoint's 404; unsafe
+> filenames 400 at the API before enqueue. The frontend polls delete jobs to
+> completion (`pollIngestionJob` treats `deleted` as terminal success). Fixed en
+> route: `/api/delete` never mapped `safe_filename` `ValueError`s to 400 (traversal
+> names 500'd) -- now guarded like the upload endpoints.
+
+> **Phase 3 status (2026-08-29, milestone 3.3):** the remaining 3.3 items landed
+> together with the 3.2 close-out. **Idempotency by (tenant, s3_key, etag):**
+> the worker stores `s3:{blob_key}:{etag}` as the dedupe key on jobs it creates
+> from S3 events and checks it before processing -- a re-delivered put-event for
+> an already-handled object version is acked as a `DUPLICATE` with no work (a
+> new etag re-indexes in place). **DLQ + retry drills:** recoverable-embed
+> failure drill (fails N times then succeeds → job indexed with retry_count),
+> and the SQS leg (worker + moto SQS + DLQ: visibility-timeout rejects exhaust
+> into the dead-letter queue with no half-state). **Job metrics:** the worker
+> keeps thread-safe counters (`processed/indexed/deleted/rejected/dead_lettered/
+> duplicates/malformed`) exposed via `stats()`. **10k-doc throughput load test:**
+> `scripts/load_test_ingestion.py` pushes N synthetic docs through submit →
+> queue → worker → store with a torch-free fake embedder and gates on zero
+> failures + a throughput floor; measured 10k docs at **~1,115 docs/sec, 0
+> failures** (8.97s total); CI runs a 500-doc smoke of the real script
+> (`tests/test_ingestion_load.py`). Full suite 181 passed / 12 skipped (PG-gated,
+> no local PG), ruff clean, foundation gates 0 blocking. **Phase 3 is complete;**
+> next is Phase 4 (tenancy, auth, audit).
 
 ---
 
