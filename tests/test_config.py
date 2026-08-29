@@ -133,3 +133,14 @@ def test_given_claim_acls_file_when_parsed_then_path_is_configured():
 def test_given_no_claim_acls_file_then_open_policy_is_the_default():
     settings = Settings.from_env({"APP_ENV": "development"})
     assert settings.claim_acls_file is None
+
+
+def test_given_audit_log_path_when_parsed_then_path_is_configured():
+    settings = Settings.from_env({"AUDIT_LOG_PATH": "./logs/audit.jsonl"})
+    assert settings.audit_log_path.name == "audit.jsonl"
+    assert settings.audit_log_path.parent.name == "logs"
+
+
+def test_given_no_audit_log_path_then_repo_root_default_is_used():
+    settings = Settings.from_env({"APP_ENV": "development"})
+    assert settings.audit_log_path.name == "audit.log.jsonl"

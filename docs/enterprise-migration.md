@@ -206,7 +206,7 @@ parity harness defines acceptable divergence (recall@k ≥ 0.9) *before* data mi
 |---|---|---|---|
 | 4.1 | SSO/OIDC (Okta/Entra/Google) + service accounts; FastAPI `get_current_tenant` on every route; frontend login + returnTo | No endpoint reachable without auth | **Done 2026-08-29** — provider-neutral `Authenticator` seam (dev / OIDC / service accounts / chain), `get_current_tenant` on every `/api/*` route, `/api/auth/me`, frontend login gate (see status below) |
 | 4.2 | RBAC: adjuster / supervisor / SIU / admin; claim-level ACLs | Permission matrix tested | **Done 2026-08-29** — `backend/rbac.py` permission matrix + `ClaimAccessPolicy` (claim-level ACLs from `CLAIM_ACLS_FILE`); enforced on every route (see status below) |
-| 4.3 | Immutable audit log: upload/delete/chat/download — who, tenant, claim, query, sources returned, timestamps | Completeness test on sampled actions; chat answers + source IDs logged | |
+| 4.3 | Immutable audit log: upload/delete/chat/download — who, tenant, claim, query, sources returned, timestamps | Completeness test on sampled actions; chat answers + source IDs logged | **Done 2026-08-29** — the Phase-0 `JsonlAuditSink` seam is now wired to every action route (see status below) |
 | 4.4 | Rate limiting, upload size caps, `/api/eval/search` gated to CI/internal, secrets via KMS | Abuse drill (huge `top_k`, giant uploads) → 429/413 | |
 
 > **Phase 4 status (2026-08-29, milestone 4.1):** every `/api/*` endpoint is now
@@ -253,6 +253,30 @@ parity harness defines acceptable divergence (recall@k ≥ 0.9) *before* data mi
 > (OIDC principals minted for each role; assigned vs unassigned adjuster both
 > directions; dev default untouched). Full suite 279 passed / 12 skipped, ruff
 > clean, gates 0 blocking. Next: 4.3 audit.
+
+> **Phase 4 status (2026-08-29, milestone 4.3):** the Phase-0 `JsonlAuditSink`
+> seam (append-only JSONL: atomic temp-file + fsync + rename, so a crash never
+> leaves a partial record and events are never rewritten in place) is now wired
+> to every action route via a single `_audit(request, principal, event, …)`
+> helper. Every event carries **who** (`subject`), **tenant** (`tenant_id`),
+> `request_id`, a UTC `recorded_at` timestamp, and an `outcome`:
+> **upload** (indexed / queued / failed — with filename, optional claim_id,
+> file_size, chunks_count, job_id) on `/api/upload` and `/api/upload-claim-file`
+> in both sync and async modes, **delete** (deleted / queued / not_found —
+> filename, job_id) on `/api/delete`, **chat** (query, claim_id, engine,
+> **answer**, and the **source filenames returned**) on `/api/chat`, and
+> **download** (served / redirected / not_found — filename) on
+> `/api/documents/download/{filename}`. Failed attempts (unsupported format,
+> empty/corrupt document, missing file, invalid filename) are recorded too, so
+> the log is a complete who-did-what trail rather than only successes. The log
+> lives at `AUDIT_LOG_PATH` (default `audit.log.jsonl`, gitignored); built by
+> `_build_audit_sink` in `app_factory.py` (mirrors the other builders) and
+> exposed on `AppDependencies`. Verified hermetically: 11 new API-level
+> completeness tests drive sampled actions through TestClient and assert the
+> full event stream — who/tenant/claim/query/answer/sources/timestamps per
+> action, append-only ordering, no partial writes — plus `read_events()` on the
+> sink and 2 config cases. Full suite 292 passed / 12 skipped, ruff clean,
+> gates 0 blocking. Next: 4.4 rate limiting / upload caps / KMS.
 
 **Note:** `tenant_id` + RLS land in Phase 1, *before* real tenants exist — retrofitting
 RLS onto live multi-tenant data is the most expensive mistake in this plan.

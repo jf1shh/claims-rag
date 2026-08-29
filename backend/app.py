@@ -4,6 +4,7 @@ os.environ["HF_HUB_OFFLINE"] = "1"
 os.environ["TRANSFORMERS_OFFLINE"] = "1"
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 
+import json
 import tempfile
 import requests
 import time
@@ -56,11 +57,12 @@ app.add_middleware(
 # lazy so importing the ASGI app does not require local model files. When an
 # object store (S3) is configured, add/delete/serve route source bytes through
 # it; otherwise the legacy filesystem storage_dir path is used unchanged.
-from app_factory import _build_blob_store, _build_authenticator, _build_claim_access_policy  # noqa: E402
+from app_factory import _build_blob_store, _build_authenticator, _build_claim_access_policy, _build_audit_sink  # noqa: E402
 
 _vector_blob_store = _build_blob_store(settings)
 _authenticator = _build_authenticator(settings)
 _claim_access_policy = _build_claim_access_policy(settings)
+_audit_sink = _build_audit_sink(settings)
 vector_store = SQLiteVectorStore(
     db_path=str(settings.rag_db_path),
     storage_dir=str(settings.stored_documents_dir),
@@ -160,6 +162,22 @@ def require_claim_access_403(principal, claim_id: str) -> None:
         raise HTTPException(status_code=403, detail=str(exc)) from None
 
 
+def _audit(request: Request, principal, event: str, **fields) -> None:
+    """Records an immutable, append-only audit event (Phase 4.3). Every
+    authenticated action carries who (subject), tenant, request_id, and a UTC
+    timestamp (added by the sink), plus action-specific fields (filename,
+    claim_id, query, sources, outcome)."""
+    _audit_sink.record(
+        {
+            "event": event,
+            "request_id": request.state.request_id,
+            "tenant_id": principal.tenant_id,
+            "subject": principal.subject,
+            **fields,
+        }
+    )
+
+
 def get_loaded_models(url: str) -> Optional[List[str]]:
     """Returns the loaded model ids, or None if LM Studio is unreachable.
     None-vs-empty-list distinguishes 'server down' from 'server up with no
@@ -248,7 +266,7 @@ def get_ingestion_job(job_id: str):
         raise HTTPException(status_code=403, detail="Forbidden.") from None
 
 @app.post("/api/upload", dependencies=[Depends(get_current_tenant)])
-async def upload_document(file: UploadFile = File(...), principal=Depends(get_current_tenant)):  # noqa: B008 - idiomatic FastAPI dependency injection
+async def upload_document(request: Request, file: UploadFile = File(...), principal=Depends(get_current_tenant)):  # noqa: B008 - idiomatic FastAPI dependency injection
 
     """Uploads and processes a claim reference document.
 
@@ -262,9 +280,11 @@ async def upload_document(file: UploadFile = File(...), principal=Depends(get_cu
     """
     require_permission_403(principal, "documents:upload")
     if not file.filename:
+        _audit(request, principal, "upload", outcome="failed", filename=None, reason="missing filename")
         raise HTTPException(status_code=400, detail="Missing filename.")
     file_ext = file.filename.split(".")[-1].lower()
     if file_ext not in ["pdf", "docx", "xlsx", "xls", "txt"]:
+        _audit(request, principal, "upload", outcome="failed", filename=file.filename, reason="unsupported format")
         raise HTTPException(
             status_code=400,
             detail="Unsupported file format. Please upload PDF, DOCX, Excel, or Text documents."
@@ -274,8 +294,12 @@ async def upload_document(file: UploadFile = File(...), principal=Depends(get_cu
 
     if settings.ingestion_mode == "async":
         if not content:
+            _audit(request, principal, "upload", outcome="failed", filename=file.filename, reason="empty document")
             raise HTTPException(status_code=400, detail="Document appears to be empty or unreadable.")
-        return _enqueue_upload(content, file.filename, file_ext, claim_id=None)
+        response = _enqueue_upload(content, file.filename, file_ext, claim_id=None)
+        _audit(request, principal, "upload", outcome="queued", filename=file.filename, claim_id=None,
+               job_id=json.loads(response.body)["job_id"])
+        return response
 
     start_time = time.time()
 
@@ -328,6 +352,9 @@ async def upload_document(file: UploadFile = File(...), principal=Depends(get_cu
             document_id=str(doc_id),
         )
 
+        _audit(request, principal, "upload", outcome="indexed", filename=file.filename, claim_id=None,
+               file_size=file_size, chunks_count=parent_count, job_id=job.job_id)
+
         return {
             "filename": file.filename,
             "chunks_count": parent_count,
@@ -339,17 +366,20 @@ async def upload_document(file: UploadFile = File(...), principal=Depends(get_cu
                 "db_storage_ms": round(db_time, 1)
             }
         }
-    except HTTPException:
+    except HTTPException as exc:
         # Deliberate 4xx responses (empty document, corrupt file, scope
         # conflict) must not be re-wrapped by the generic handler into a 500.
+        _audit(request, principal, "upload", outcome="failed", filename=file.filename, reason=str(exc.detail))
         raise
     except ValueError as e:
         # safe_filename() rejections and the per-scope filename-conflict guard
         # in add_document() are client errors, not server failures.
+        _audit(request, principal, "upload", outcome="failed", filename=file.filename, reason=str(e))
         raise HTTPException(status_code=400, detail=str(e)) from None
     except Exception as e:
         import traceback
         traceback.print_exc()
+        _audit(request, principal, "upload", outcome="failed", filename=file.filename, reason="internal error")
         raise HTTPException(status_code=500, detail=str(e)) from None
     finally:
         # Clean up temp file
@@ -357,16 +387,18 @@ async def upload_document(file: UploadFile = File(...), principal=Depends(get_cu
             os.remove(tmp_path)
 
 @app.post("/api/upload-claim-file", dependencies=[Depends(get_current_tenant)])
-async def upload_claim_document(claim_id: str = Form(...), file: UploadFile = File(...), principal=Depends(get_current_tenant)):  # noqa: B008 - idiomatic FastAPI dependency injection
+async def upload_claim_document(request: Request, claim_id: str = Form(...), file: UploadFile = File(...), principal=Depends(get_current_tenant)):  # noqa: B008 - idiomatic FastAPI dependency injection
 
     """Uploads and processes a document specifically for a given claim ID.
     Same sync/async split as /api/upload (see its docstring)."""
     require_permission_403(principal, "claims:write")
     require_claim_access_403(principal, claim_id)
     if not file.filename:
+        _audit(request, principal, "upload", outcome="failed", filename=None, claim_id=claim_id, reason="missing filename")
         raise HTTPException(status_code=400, detail="Missing filename.")
     file_ext = file.filename.split(".")[-1].lower()
     if file_ext not in ["pdf", "docx", "xlsx", "xls", "txt"]:
+        _audit(request, principal, "upload", outcome="failed", filename=file.filename, claim_id=claim_id, reason="unsupported format")
         raise HTTPException(
             status_code=400,
             detail="Unsupported format. Upload PDF, DOCX, Excel, or Text."
@@ -376,8 +408,12 @@ async def upload_claim_document(claim_id: str = Form(...), file: UploadFile = Fi
 
     if settings.ingestion_mode == "async":
         if not content:
+            _audit(request, principal, "upload", outcome="failed", filename=file.filename, claim_id=claim_id, reason="empty document")
             raise HTTPException(status_code=400, detail="Document appears to be empty or unreadable.")
-        return _enqueue_upload(content, file.filename, file_ext, claim_id=claim_id)
+        response = _enqueue_upload(content, file.filename, file_ext, claim_id=claim_id)
+        _audit(request, principal, "upload", outcome="queued", filename=file.filename, claim_id=claim_id,
+               job_id=json.loads(response.body)["job_id"])
+        return response
 
     start_time = time.time()
     with tempfile.NamedTemporaryFile(delete=False, suffix=f".{file_ext}") as tmp:
@@ -420,6 +456,9 @@ async def upload_claim_document(claim_id: str = Form(...), file: UploadFile = Fi
             document_id=str(doc_id),
         )
 
+        _audit(request, principal, "upload", outcome="indexed", filename=file.filename, claim_id=claim_id,
+               file_size=file_size, chunks_count=parent_count, job_id=job.job_id)
+
         return {
             "filename": file.filename,
             "claim_id": claim_id,
@@ -432,13 +471,16 @@ async def upload_claim_document(claim_id: str = Form(...), file: UploadFile = Fi
                 "db_storage_ms": round(db_time, 1)
             }
         }
-    except HTTPException:
+    except HTTPException as exc:
+        _audit(request, principal, "upload", outcome="failed", filename=file.filename, claim_id=claim_id, reason=str(exc.detail))
         raise
     except ValueError as e:
+        _audit(request, principal, "upload", outcome="failed", filename=file.filename, claim_id=claim_id, reason=str(e))
         raise HTTPException(status_code=400, detail=str(e)) from None
     except Exception as e:
         import traceback
         traceback.print_exc()
+        _audit(request, principal, "upload", outcome="failed", filename=file.filename, claim_id=claim_id, reason="internal error")
         raise HTTPException(status_code=500, detail=str(e)) from None
     finally:
         if os.path.exists(tmp_path):
@@ -468,7 +510,7 @@ def get_document_content(filename: str, principal=Depends(get_current_tenant)): 
     return {"filename": filename, "content": full_text}
 
 @app.get("/api/documents/download/{filename}", dependencies=[Depends(get_current_tenant)])
-def download_document(filename: str, principal=Depends(get_current_tenant)):  # noqa: B008 - idiomatic FastAPI dependency injection
+def download_document(request: Request, filename: str, principal=Depends(get_current_tenant)):  # noqa: B008 - idiomatic FastAPI dependency injection
     """Serves the physical document. With an object store configured this is a
     redirect to a presigned URL; otherwise the file streams from the local
     storage directory. Both paths keep the source bytes behind the store's
@@ -484,16 +526,20 @@ def download_document(filename: str, principal=Depends(get_current_tenant)):  # 
         # resolves it by looking the document up in the DB.
         key = vector_store.get_blob_key(filename)
         if key is None:
+            _audit(request, principal, "download", outcome="not_found", filename=filename)
             raise HTTPException(status_code=404, detail="File not found.")
         url = blob_store.create_download_url(key, 3600)
+        _audit(request, principal, "download", outcome="redirected", filename=filename)
         return RedirectResponse(url)
     file_path = os.path.join(vector_store.storage_dir, filename)
     if not os.path.exists(file_path):
+        _audit(request, principal, "download", outcome="not_found", filename=filename)
         raise HTTPException(status_code=404, detail="File not found.")
+    _audit(request, principal, "download", outcome="served", filename=filename)
     return FileResponse(file_path)
 
 @app.post("/api/delete", dependencies=[Depends(get_current_tenant)])
-def delete_document(req: DeleteRequest, principal=Depends(get_current_tenant)):  # noqa: B008 - idiomatic FastAPI dependency injection
+def delete_document(request: Request, req: DeleteRequest, principal=Depends(get_current_tenant)):  # noqa: B008 - idiomatic FastAPI dependency injection
     """Deletes a document from the store.
 
     Sync mode (default): deletes inline (404 when absent) and records a
@@ -504,10 +550,12 @@ def delete_document(req: DeleteRequest, principal=Depends(get_current_tenant)): 
     try:
         safe_filename(req.filename)
     except ValueError:
+        _audit(request, principal, "delete", outcome="failed", filename=req.filename, reason="invalid filename")
         raise HTTPException(status_code=400, detail="Invalid filename.") from None
 
     if settings.ingestion_mode == "async":
         job = ingestion_service.submit_delete(tenant_id=settings.tenant_id, filename=req.filename)
+        _audit(request, principal, "delete", outcome="queued", filename=req.filename, job_id=job.job_id)
         return JSONResponse(
             status_code=202,
             content={
@@ -519,6 +567,7 @@ def delete_document(req: DeleteRequest, principal=Depends(get_current_tenant)): 
 
     deleted = vector_store.delete_document(req.filename)
     if not deleted:
+        _audit(request, principal, "delete", outcome="not_found", filename=req.filename)
         raise HTTPException(status_code=404, detail="Document not found.")
     job = ingestion_service.record_result(
         tenant_id=settings.tenant_id,
@@ -526,6 +575,7 @@ def delete_document(req: DeleteRequest, principal=Depends(get_current_tenant)): 
         content=b"",
         status=IngestionStatus.deleted,
     )
+    _audit(request, principal, "delete", outcome="deleted", filename=req.filename, job_id=job.job_id)
     return {
         "message": f"Successfully deleted '{req.filename}'.",
         "job_id": job.job_id,
@@ -533,7 +583,7 @@ def delete_document(req: DeleteRequest, principal=Depends(get_current_tenant)): 
     }
 
 @app.post("/api/chat", dependencies=[Depends(get_current_tenant)])
-def chat_with_docs(req: ChatRequest, principal=Depends(get_current_tenant)):  # noqa: B008 - idiomatic FastAPI dependency injection
+def chat_with_docs(request: Request, req: ChatRequest, principal=Depends(get_current_tenant)):  # noqa: B008 - idiomatic FastAPI dependency injection
     """Answers a claims question using local Agentic RAG routing."""
     require_permission_403(principal, "documents:read")
     if req.claim_id:
@@ -546,6 +596,16 @@ def chat_with_docs(req: ChatRequest, principal=Depends(get_current_tenant)):  # 
         embedding_engine=_get_embedding_engine(),
         vector_store=vector_store,
         reranking_engine=_get_reranking_engine()
+    )
+    _audit(
+        request,
+        principal,
+        "chat",
+        query=req.query,
+        claim_id=req.claim_id,
+        engine=req.engine,
+        answer=result.get("answer"),
+        sources=[source.get("filename") for source in result.get("sources", [])],
     )
     return result
 

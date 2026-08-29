@@ -19,6 +19,7 @@ class AppDependencies:
     job_store: Any | None = None
     authenticator: Any | None = None
     claim_access_policy: Any | None = None
+    audit_sink: Any | None = None
 
 
 def _build_blob_store(settings: Settings):
@@ -94,6 +95,16 @@ def _build_claim_access_policy(settings: Settings):
     return ClaimAccessPolicy()
 
 
+def _build_audit_sink(settings: Settings):
+    """Immutable append-only audit sink (Phase 4.3). Writes JSONL events to
+    AUDIT_LOG_PATH; every upload/delete/chat/download action records who, what,
+    tenant, claim, query, sources returned, and a UTC timestamp. Mirrors the
+    other builders: config selects the destination, this returns the adapter."""
+    from backend.audit import JsonlAuditSink
+
+    return JsonlAuditSink(settings.audit_log_path)
+
+
 def build_dependencies(settings: Settings) -> AppDependencies:
     from backend.rag_engine import SQLiteVectorStore
 
@@ -122,6 +133,7 @@ def build_dependencies(settings: Settings) -> AppDependencies:
 
     authenticator = _build_authenticator(settings)
     claim_access_policy = _build_claim_access_policy(settings)
+    audit_sink = _build_audit_sink(settings)
 
     return AppDependencies(
         settings=settings,
@@ -130,6 +142,7 @@ def build_dependencies(settings: Settings) -> AppDependencies:
         job_store=job_store,
         authenticator=authenticator,
         claim_access_policy=claim_access_policy,
+        audit_sink=audit_sink,
     )
 
 
