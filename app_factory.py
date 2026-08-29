@@ -21,6 +21,7 @@ class AppDependencies:
     claim_access_policy: Any | None = None
     audit_sink: Any | None = None
     rate_limiter: Any | None = None
+    llm_client: Any | None = None
 
 
 def _build_blob_store(settings: Settings):
@@ -120,6 +121,28 @@ def _build_audit_sink(settings: Settings):
     return JsonlAuditSink(settings.audit_log_path)
 
 
+def _build_llm_client(settings: Settings):
+    """Provider-neutral LLM client (Phase 5.1). ``LLM_PROVIDER=none`` disables
+    the online path (simulation only); otherwise builds an OpenAI-compatible
+    client for the allowlisted LLM_BASE_URL with per-stage models. Mirrors the
+    other builders: config selects the provider, this returns the adapter."""
+    if settings.llm_provider in (None, "none"):
+        return None
+    from backend.llm_client import OpenAICompatibleClient
+
+    return OpenAICompatibleClient(
+        base_url=settings.llm_base_url,
+        default_model=settings.llm_model or "local-model",
+        planning_model=settings.planning_model,
+        synthesis_model=settings.synthesis_model,
+        eval_model=settings.eval_model,
+        api_key=settings.llm_api_key,
+        timeout=float(settings.llm_synthesis_timeout_seconds),
+        plan_timeout=float(settings.llm_plan_timeout_seconds),
+        models_ttl_seconds=float(settings.model_cache_ttl_seconds),
+    )
+
+
 def build_dependencies(settings: Settings) -> AppDependencies:
     from backend.rag_engine import SQLiteVectorStore
 
@@ -150,6 +173,7 @@ def build_dependencies(settings: Settings) -> AppDependencies:
     claim_access_policy = _build_claim_access_policy(settings)
     audit_sink = _build_audit_sink(settings)
     rate_limiter = _build_rate_limiter(settings)
+    llm_client = _build_llm_client(settings)
 
     return AppDependencies(
         settings=settings,
@@ -160,6 +184,7 @@ def build_dependencies(settings: Settings) -> AppDependencies:
         claim_access_policy=claim_access_policy,
         audit_sink=audit_sink,
         rate_limiter=rate_limiter,
+        llm_client=llm_client,
     )
 
 
