@@ -12,9 +12,9 @@ class RecordingClient(ChatClient):
         return ["M"]
     def model_for_stage(self, stage):
         return "M"
-    def complete(self, messages, *, model, temperature, max_tokens):
+    def complete(self, messages, *, model, temperature, max_tokens, stage="synthesis"):
         record = {"model": model, "temperature": temperature,
-                  "max_tokens": max_tokens, "messages": messages}
+                  "max_tokens": max_tokens, "messages": messages, "stage": stage}
         if "Claims Planner" in messages[0]["content"]:
             self.plans.append(record)
             return '{"needs_global_policies": true, "needs_claim_dossier": false, ' \
@@ -58,9 +58,11 @@ def test_online_path_uses_per_stage_models_and_returns_answer():
     assert client.plans[0]["model"] == "M"
     assert client.plans[0]["temperature"] == 0.0
     assert client.plans[0]["max_tokens"] == 150
+    assert client.plans[0]["stage"] == "planning"  # planner gets the short timeout
     assert client.synthesis[0]["model"] == "M"
     assert client.synthesis[0]["temperature"] == 0.1
     assert client.synthesis[0]["max_tokens"] == 1000
+    assert client.synthesis[0]["stage"] == "synthesis"
     assert "Nevada" in result["answer"]
 
 

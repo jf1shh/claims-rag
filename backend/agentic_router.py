@@ -361,6 +361,7 @@ class AgenticRAGRouter:
                 model=llm_client.model_for_stage("planning"),
                 temperature=0.0,
                 max_tokens=150,
+                stage="planning",
             ).strip()
             # Parse JSON out of response
             if "```json" in text:
