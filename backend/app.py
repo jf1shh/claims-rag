@@ -12,6 +12,7 @@ import uuid
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.responses import FileResponse
+from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -51,10 +52,16 @@ app.add_middleware(
 )
 
 # Initialize the lightweight storage adapter at import time. ML engines remain
-# lazy so importing the ASGI app does not require local model files.
+# lazy so importing the ASGI app does not require local model files. When an
+# object store (S3) is configured, add/delete/serve route source bytes through
+# it; otherwise the legacy filesystem storage_dir path is used unchanged.
+from app_factory import _build_blob_store  # noqa: E402
+
+_vector_blob_store = _build_blob_store(settings)
 vector_store = SQLiteVectorStore(
     db_path=str(settings.rag_db_path),
     storage_dir=str(settings.stored_documents_dir),
+    blob_store=_vector_blob_store,
 )
 embedding_engine = None
 reranking_engine = None
@@ -311,11 +318,23 @@ def get_document_content(filename: str):
 
 @app.get("/api/documents/download/{filename}")
 def download_document(filename: str):
-    """Serves the physical document from the store's storage directory."""
+    """Serves the physical document. With an object store configured this is a
+    redirect to a presigned URL; otherwise the file streams from the local
+    storage directory. Both paths keep the source bytes behind the store's
+    serving abstraction rather than exposing a raw filesystem path."""
     try:
         filename = safe_filename(filename)
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid filename.") from None
+    blob_store = getattr(vector_store, "blob_store", None)
+    if blob_store is not None:
+        # The scope (claim vs global) is encoded in the blob key; the store
+        # resolves it by looking the document up in the DB.
+        key = vector_store.get_blob_key(filename)
+        if key is None:
+            raise HTTPException(status_code=404, detail="File not found.")
+        url = blob_store.create_download_url(key, 3600)
+        return RedirectResponse(url)
     file_path = os.path.join(vector_store.storage_dir, filename)
     if not os.path.exists(file_path):
         raise HTTPException(status_code=404, detail="File not found.")

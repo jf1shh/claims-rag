@@ -11,6 +11,9 @@ numpy==2.5.1
 requests==2.34.2
 python-multipart==0.0.32
 
+# Object storage (Phase 2 S3; boto3 is the runtime adapter)
+boto3==1.43.83
+
 # Postgres + pgvector backend (Phase 1)
 sqlalchemy==2.0.52
 alembic==1.19.1
@@ -24,6 +27,7 @@ matplotlib==3.11.1
 
 # Tests (tests/)
 pytest==9.1.1
+moto==5.2.3    # in-process AWS mocks for S3 blob-store tests (no real cloud needed)
 
 # Lint gate (scripts + CI)
 ruff==0.16.5

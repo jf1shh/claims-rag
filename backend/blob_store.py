@@ -5,6 +5,8 @@ import tempfile
 from abc import ABC, abstractmethod
 from pathlib import Path
 
+import boto3
+
 
 class DocumentBlobStore(ABC):
     @abstractmethod
@@ -72,3 +74,76 @@ class LocalDocumentBlobStore(DocumentBlobStore):
             raise ValueError("expires_seconds must be positive")
         self._path(key)
         return f"/api/blobs/{key}"
+
+
+class S3DocumentBlobStore(DocumentBlobStore):
+    """Object-storage adapter backed by an S3-compatible service (AWS S3, MinIO,
+    LocalStack, …). Keys are addressed under a tenant-scoped prefix so one bucket
+    can host many tenants/claims without cross-tenant key collisions.
+
+    The client honors the standard AWS credential chain (env vars, shared config,
+    IAM role) and is therefore usable unchanged against a real bucket or a
+    mock -- moto for hermetic tests, or MinIO/LocalStack via ``S3_ENDPOINT_URL``.
+    """
+
+    def __init__(
+        self,
+        bucket: str,
+        tenant_id: str,
+        region: str = "us-east-1",
+        endpoint_url: str | None = None,
+        sse_kms_key_id: str | None = None,
+    ):
+        if not bucket.strip():
+            raise ValueError("S3 bucket name must not be empty")
+        if not tenant_id.strip():
+            raise ValueError("tenant_id must not be empty")
+        self.bucket = bucket
+        self.tenant_id = tenant_id
+        self.endpoint_url = endpoint_url
+        self.sse_kms_key_id = sse_kms_key_id
+        client_kwargs: dict = {"region_name": region, "endpoint_url": endpoint_url} if endpoint_url else {"region_name": region}
+        self._client = boto3.client("s3", **client_kwargs)
+
+    def _object_key(self, key: str) -> str:
+        if not key or "\x00" in key or key.startswith("/"):
+            raise ValueError("invalid blob key")
+        if any(part in {"", ".", ".."} for part in key.split("/")):
+            raise ValueError("blob key contains an invalid path segment")
+        # Namespace every object under the tenant so one bucket never mixes tenants.
+        return f"{self.tenant_id}/{key}"
+
+    def put(self, key: str, content: bytes, content_type: str) -> None:
+        params: dict = {
+            "Bucket": self.bucket,
+            "Key": self._object_key(key),
+            "Body": content,
+            "ContentType": content_type or "application/octet-stream",
+        }
+        if self.sse_kms_key_id:
+            params["ServerSideEncryption"] = "aws:kms"
+            params["SSEKMSKeyId"] = self.sse_kms_key_id
+        self._client.put_object(**params)
+
+    def get(self, key: str) -> bytes:
+        response = self._client.get_object(
+            Bucket=self.bucket, Key=self._object_key(key)
+        )
+        try:
+            return response["Body"].read()
+        finally:
+            response["Body"].close()
+
+    def delete(self, key: str) -> None:
+        # S3/DC delete is idempotent; deleting a missing object is a no-op,
+        # mirroring LocalDocumentBlobStore.delete.
+        self._client.delete_object(Bucket=self.bucket, Key=self._object_key(key))
+
+    def create_download_url(self, key: str, expires_seconds: int) -> str:
+        if expires_seconds <= 0:
+            raise ValueError("expires_seconds must be positive")
+        return self._client.generate_presigned_url(
+            "get_object",
+            Params={"Bucket": self.bucket, "Key": self._object_key(key)},
+            ExpiresIn=expires_seconds,
+        )
