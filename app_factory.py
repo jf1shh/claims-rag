@@ -17,6 +17,7 @@ class AppDependencies:
     agentic_router: Any | None = None
     queue: Any | None = None
     job_store: Any | None = None
+    authenticator: Any | None = None
 
 
 def _build_blob_store(settings: Settings):
@@ -69,6 +70,18 @@ def _build_job_store(settings: Settings):
     return SqliteJobStore(str(settings.jobs_db_path))
 
 
+def _build_authenticator(settings: Settings):
+    """Constructs the authentication chain for the configured providers
+    (``development`` | ``oidc`` | ``service-accounts``, comma-separated).
+    Mirrors _build_blob_store/_build_queue: config selects the provider, this
+    returns the adapter. Development keeps the explicit local identity;
+    OIDC verifies Bearer JWTs against the issuer's JWKS; service accounts
+    check X-API-Key against a JSON file."""
+    from backend.authn import build_authenticator
+
+    return build_authenticator(settings)
+
+
 def build_dependencies(settings: Settings) -> AppDependencies:
     from backend.rag_engine import SQLiteVectorStore
 
@@ -95,11 +108,14 @@ def build_dependencies(settings: Settings) -> AppDependencies:
             blob_store=blob_store,
         )
 
+    authenticator = _build_authenticator(settings)
+
     return AppDependencies(
         settings=settings,
         vector_store=vector_store,
         queue=queue,
         job_store=job_store,
+        authenticator=authenticator,
     )
 
 

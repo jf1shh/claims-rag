@@ -8,7 +8,7 @@ import tempfile
 import requests
 import time
 import uuid
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request, Depends
 from fastapi.responses import JSONResponse
 from fastapi.responses import FileResponse
 from fastapi.responses import RedirectResponse
@@ -23,6 +23,7 @@ from backend.agentic_router import AgenticRAGRouter, CLAIMS_DATA
 
 from config import get_settings
 from backend.health import live_status, ready_status
+from backend.authn import AuthenticationError  # noqa: E402
 
 app = FastAPI(title="Local Insurance RAG System API")
 
@@ -54,9 +55,10 @@ app.add_middleware(
 # lazy so importing the ASGI app does not require local model files. When an
 # object store (S3) is configured, add/delete/serve route source bytes through
 # it; otherwise the legacy filesystem storage_dir path is used unchanged.
-from app_factory import _build_blob_store  # noqa: E402
+from app_factory import _build_blob_store, _build_authenticator  # noqa: E402
 
 _vector_blob_store = _build_blob_store(settings)
+_authenticator = _build_authenticator(settings)
 vector_store = SQLiteVectorStore(
     db_path=str(settings.rag_db_path),
     storage_dir=str(settings.stored_documents_dir),
@@ -123,6 +125,23 @@ class ChatRequest(BaseModel):
 class DeleteRequest(BaseModel):
     filename: str
 
+def get_current_tenant(request: Request):
+    """FastAPI dependency resolving the authenticated principal (Phase 4.1).
+    Every /api/* route declares this so no endpoint is reachable without a
+    valid identity -- the configured provider chain (development / OIDC /
+    service accounts) decides what "valid" means. Missing/invalid credentials
+    map to 401; the resolved PrincipalContext is available to handlers that
+    declare it as a parameter."""
+    try:
+        return _authenticator.authenticate(request)
+    except AuthenticationError as exc:
+        raise HTTPException(
+            status_code=401,
+            detail=str(exc),
+            headers={"WWW-Authenticate": "Bearer"},
+        ) from None
+
+
 def get_loaded_models(url: str) -> Optional[List[str]]:
     """Returns the loaded model ids, or None if LM Studio is unreachable.
     None-vs-empty-list distinguishes 'server down' from 'server up with no
@@ -147,7 +166,20 @@ def health_ready():
     return JSONResponse(content=payload, status_code=status_code)
 
 
-@app.get("/api/status")
+@app.get("/api/auth/me", dependencies=[Depends(get_current_tenant)])
+def auth_me(principal=Depends(get_current_tenant)):  # noqa: B008 - idiomatic FastAPI dependency injection
+    """Returns the authenticated principal -- subject, tenant, roles. The
+    frontend calls this on load to decide whether to show the login gate and
+    to display who is signed in."""
+    return {
+        "subject": principal.subject,
+        "tenant_id": principal.tenant_id,
+        "roles": sorted(principal.roles),
+        "is_development_identity": principal.is_development_identity,
+    }
+
+
+@app.get("/api/status", dependencies=[Depends(get_current_tenant)])
 def get_status():
     """Checks the status of the local LLM servers."""
     lm_studio_models = get_loaded_models(settings.llm_base_url)
@@ -169,19 +201,19 @@ def get_status():
         }
     }
 
-@app.get("/api/documents")
+@app.get("/api/documents", dependencies=[Depends(get_current_tenant)])
 def list_documents():
     """Lists all processed documents."""
     return vector_store.get_all_documents()
 
-@app.get("/api/claims")
+@app.get("/api/claims", dependencies=[Depends(get_current_tenant)])
 def list_claims():
     """Serves the demo claims queue -- the single source of truth CLAIMS_DATA
     (backend/agentic_router.py) the agentic router already grounds claim-scoped
     answers in, so the frontend's claim cards can't drift out of sync with it."""
     return CLAIMS_DATA
 
-@app.get("/api/jobs/{job_id}")
+@app.get("/api/jobs/{job_id}", dependencies=[Depends(get_current_tenant)])
 def get_ingestion_job(job_id: str):
     """Returns the durable ingestion job record for an upload (Phase 3.2).
     The frontend polls this while an async upload runs, so the UI reflects
@@ -194,7 +226,7 @@ def get_ingestion_job(job_id: str):
     except PermissionError:
         raise HTTPException(status_code=403, detail="Forbidden.") from None
 
-@app.post("/api/upload")
+@app.post("/api/upload", dependencies=[Depends(get_current_tenant)])
 async def upload_document(file: UploadFile = File(...)):  # noqa: B008 - idiomatic FastAPI required form
 
     """Uploads and processes a claim reference document.
@@ -302,7 +334,7 @@ async def upload_document(file: UploadFile = File(...)):  # noqa: B008 - idiomat
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
 
-@app.post("/api/upload-claim-file")
+@app.post("/api/upload-claim-file", dependencies=[Depends(get_current_tenant)])
 async def upload_claim_document(claim_id: str = Form(...), file: UploadFile = File(...)):  # noqa: B008 - idiomatic FastAPI required form
 
     """Uploads and processes a document specifically for a given claim ID.
@@ -388,12 +420,12 @@ async def upload_claim_document(claim_id: str = Form(...), file: UploadFile = Fi
         if os.path.exists(tmp_path):
             os.remove(tmp_path)
 
-@app.get("/api/documents/claim/{claim_id}")
+@app.get("/api/documents/claim/{claim_id}", dependencies=[Depends(get_current_tenant)])
 def list_claim_documents(claim_id: str):
     """Lists all documents attached to a specific claim."""
     return vector_store.get_claim_documents(claim_id)
 
-@app.get("/api/documents/content/{filename}")
+@app.get("/api/documents/content/{filename}", dependencies=[Depends(get_current_tenant)])
 def get_document_content(filename: str):
     """Fetches the full text content of a document by joining all its parent chunks."""
     try:
@@ -408,7 +440,7 @@ def get_document_content(filename: str):
         raise HTTPException(status_code=404, detail="Document content not found.")
     return {"filename": filename, "content": full_text}
 
-@app.get("/api/documents/download/{filename}")
+@app.get("/api/documents/download/{filename}", dependencies=[Depends(get_current_tenant)])
 def download_document(filename: str):
     """Serves the physical document. With an object store configured this is a
     redirect to a presigned URL; otherwise the file streams from the local
@@ -432,7 +464,7 @@ def download_document(filename: str):
         raise HTTPException(status_code=404, detail="File not found.")
     return FileResponse(file_path)
 
-@app.post("/api/delete")
+@app.post("/api/delete", dependencies=[Depends(get_current_tenant)])
 def delete_document(req: DeleteRequest):
     """Deletes a document from the store.
 
@@ -471,7 +503,7 @@ def delete_document(req: DeleteRequest):
         "status": job.status.value,
     }
 
-@app.post("/api/chat")
+@app.post("/api/chat", dependencies=[Depends(get_current_tenant)])
 def chat_with_docs(req: ChatRequest):
     """Answers a claims question using local Agentic RAG routing."""
     result = agentic_router.run_query(
@@ -533,7 +565,7 @@ class SearchRequest(BaseModel):
             raise ValueError("top_k must be positive")
         return self
 
-@app.post("/api/eval/search")
+@app.post("/api/eval/search", dependencies=[Depends(get_current_tenant)])
 def eval_search(req: SearchRequest):
     """Raw retrieval endpoint (no LLM synthesis) for the eval harness to compare
     retrieval strategies. Not used by the frontend."""

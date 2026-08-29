@@ -82,6 +82,14 @@ class Settings:
     max_top_k: int = 50
     request_timeout_seconds: int = 120
     simulation_mode: bool = True
+    auth_providers: tuple[str, ...] = ("development",)  # "development" | "oidc" | "service-accounts" (Phase 4.1)
+    oidc_issuer: str | None = None
+    oidc_client_id: str | None = None
+    oidc_jwks_url: str | None = None
+    oidc_roles_claim: str = "roles"
+    oidc_tenant_claim: str = "tenant_id"
+    oidc_cache_ttl_seconds: int = 300
+    service_accounts_file: Path | None = None
 
     @classmethod
     def from_env(cls, environ: Mapping[str, str] | None = None) -> "Settings":
@@ -127,6 +135,18 @@ class Settings:
             max_top_k=_int(env.get("MAX_TOP_K"), 50, "MAX_TOP_K"),
             request_timeout_seconds=_int(env.get("REQUEST_TIMEOUT_SECONDS"), 120, "REQUEST_TIMEOUT_SECONDS"),
             simulation_mode=_bool(env.get("SIMULATION_MODE"), True),
+            auth_providers=tuple(
+                provider.strip().lower()
+                for provider in env.get("AUTH_PROVIDERS", "development").split(",")
+                if provider.strip()
+            ),
+            oidc_issuer=env.get("OIDC_ISSUER") or None,
+            oidc_client_id=env.get("OIDC_CLIENT_ID") or None,
+            oidc_jwks_url=env.get("OIDC_JWKS_URL") or None,
+            oidc_roles_claim=env.get("OIDC_ROLES_CLAIM", "roles").strip(),
+            oidc_tenant_claim=env.get("OIDC_TENANT_CLAIM", "tenant_id").strip(),
+            oidc_cache_ttl_seconds=_int(env.get("OIDC_CACHE_TTL_SECONDS"), 300, "OIDC_CACHE_TTL_SECONDS"),
+            service_accounts_file=Path(env["SERVICE_ACCOUNTS_FILE"]).expanduser() if env.get("SERVICE_ACCOUNTS_FILE") else None,
         )
 
     def validate_for_environment(self) -> None:
@@ -150,11 +170,22 @@ class Settings:
             raise ValueError("SQS_QUEUE_URL is required when QUEUE_PROVIDER is sqs")
         if self.ingestion_mode not in {"sync", "async"}:
             raise ValueError("INGESTION_MODE must be sync or async")
+        if not self.auth_providers:
+            raise ValueError("AUTH_PROVIDERS must contain at least one provider")
+        unknown_providers = set(self.auth_providers) - {"development", "oidc", "service-accounts"}
+        if unknown_providers:
+            raise ValueError(f"AUTH_PROVIDERS contains unknown providers: {sorted(unknown_providers)}")
+        if "oidc" in self.auth_providers and (not self.oidc_issuer or not self.oidc_client_id):
+            raise ValueError("OIDC_ISSUER and OIDC_CLIENT_ID are required when AUTH_PROVIDERS includes oidc")
+        if "service-accounts" in self.auth_providers and not self.service_accounts_file:
+            raise ValueError("SERVICE_ACCOUNTS_FILE is required when AUTH_PROVIDERS includes service-accounts")
         if self.llm_provider not in {"lm-studio", "openai-compatible", "none"}:
             raise ValueError("LLM_PROVIDER must be lm-studio, openai-compatible, or none")
         if self.app_env == "production":
             if self.simulation_mode:
                 raise ValueError("SIMULATION_MODE must be false in production")
+            if "development" in self.auth_providers:
+                raise ValueError("AUTH_PROVIDERS must not include development in production")
             if self.vector_store == "postgres" and not self.postgres_dsn:
                 raise ValueError("POSTGRES_DSN is required when VECTOR_STORE is postgres")
             if self.llm_provider == "openai-compatible" and not self.llm_base_url:
