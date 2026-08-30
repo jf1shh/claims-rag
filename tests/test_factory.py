@@ -1,5 +1,6 @@
 from config import Settings
-from app_factory import _build_llm_client
+from app_factory import _build_llm_client, _build_reranker
+from backend.reranker import FallbackReranker, LocalReranker, RemoteReranker
 
 
 def test_build_llm_client_returns_none_for_none_provider():
@@ -14,6 +15,17 @@ def test_build_llm_client_uses_stage_models_from_settings():
     assert client.base_url == "http://gw"
     assert client.model_for_stage("planning") == "p"
     assert client.model_for_stage("synthesis") == "sy"
+
+
+def test_build_reranker_local_returns_local():
+    assert isinstance(_build_reranker(Settings.from_env({})), LocalReranker)
+
+
+def test_build_reranker_remote_wraps_remote_with_local_fallback():
+    reranker = _build_reranker(Settings.from_env({"RERANK_PROVIDER": "remote", "RERANK_ENDPOINT": "http://rr"}))
+    assert isinstance(reranker, FallbackReranker)
+    assert isinstance(reranker._primary, RemoteReranker)
+    assert isinstance(reranker._fallback, LocalReranker)
 
 
 def test_app_dependencies_expose_llm_client():

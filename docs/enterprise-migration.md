@@ -319,10 +319,10 @@ RLS onto live multi-tenant data is the most expensive mistake in this plan.
 | Milestone | Deliverable | Exit criteria | Status |
 |---|---|---|---|
 | 5.1 | LM Studio → vLLM/TGI (self-hosted GPU) or hosted OpenAI-compatible endpoint; `engine` stays a server-side allowlist (SSRF constraint intact) | Planner + synthesis via new backend; model cache adapted | **Done 2026-08-29** — provider-neutral `ChatClient` seam (`backend/llm_client.py`), per-stage model catalog, wiring (see status below) |
-| 5.2 | Dedicated cross-encoder reranker service (GPU, batched); pgvector returns top 50–100 candidates, rerank cuts to `top_k` | Rerank cost bounded by candidate pool, not corpus | Planned (spec + plan merged in `docs/superpowers/specs|plans/2026-08-29-phase5-reranker-service*`) |
+| 5.2 | Dedicated cross-encoder reranker service (GPU, batched); pgvector returns top 50–100 candidates, rerank cuts to `top_k` | Rerank cost bounded by candidate pool, not corpus | **Done 2026-08-30** — provider-neutral `Reranker` seam, remote HTTP adapter, local fail-open fallback, configurable candidate pool, and hermetic verification complete |
 | 5.3 | `/api/chat` streamed (SSE) or worker-pool async; context assembly capped (dossier cap + global-match cap) | p95 time-to-first-token target; prompt-injection delimiters in place | Planned (spec + plan merged in `docs/superpowers/specs|plans/2026-08-29-phase5-streaming-context-caps*`) |
 
-> **Phase 5 status (2026-08-29, milestone 5.1):** the LLM seam is now real.
+> **Phase 5 status (2026-08-30, milestone 5.2):** the LLM and reranker seams are complete; the next milestone is streamed serving and capped context assembly.
 > `backend/llm_client.py` adds a provider-neutral `ChatClient` ABC (`models()`,
 > `complete()`) with one `OpenAICompatibleClient` that POSTs
 > `/v1/chat/completions` and GETs `/v1/models` against the allowlisted

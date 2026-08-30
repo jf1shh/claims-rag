@@ -1,0 +1,111 @@
+from __future__ import annotations
+
+from abc import ABC, abstractmethod
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+def _load_engine():
+    """Load the CPU cross-encoder lazily so imports remain torch-free."""
+    from backend.rag_engine import RerankingEngine
+
+    return RerankingEngine()
+
+
+class Reranker(ABC):
+    """Re-rank passages by relevance and return at most ``top_k`` items."""
+
+    @abstractmethod
+    def rerank(self, query: str, passages: list[dict], top_k: int = 4) -> list[dict]:
+        raise NotImplementedError
+
+
+class LocalReranker(Reranker):
+    """In-process CPU cross-encoder, retained as default and fallback."""
+
+    def __init__(self, engine=None):
+        self._engine = engine
+
+    def _engine_or_load(self):
+        if self._engine is None:
+            self._engine = _load_engine()
+        return self._engine
+
+    def rerank(self, query: str, passages: list[dict], top_k: int = 4) -> list[dict]:
+        if not passages:
+            return []
+        return list(self._engine_or_load().rerank(query, passages, top_k=top_k))
+
+
+class RemoteReranker(Reranker):
+    """HTTP adapter for a dedicated GPU reranker service."""
+
+    def __init__(self, endpoint: str, timeout: float = 10.0, api_key: str | None = None, http=None):
+        self.endpoint = endpoint.rstrip("/")
+        self.timeout = timeout
+        self.api_key = api_key
+        self._http = http
+
+    def _headers(self) -> dict[str, str]:
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        return headers
+
+    def _client(self):
+        if self._http is None:
+            import requests
+
+            self._http = requests
+        return self._http
+
+    def rerank(self, query: str, passages: list[dict], top_k: int = 4) -> list[dict]:
+        if not passages:
+            return []
+        response = self._client().post(
+            f"{self.endpoint}/rerank",
+            json={"query": query, "passages": [p["content"] for p in passages], "top_k": top_k},
+            headers=self._headers(),
+            timeout=self.timeout,
+        )
+        response.raise_for_status()
+        data = response.json()
+        results = data.get("results")
+        if not isinstance(results, list):
+            raise ValueError("reranker response must contain a results list")
+
+        output = []
+        seen = set()
+        for item in results:
+            if not isinstance(item, dict) or not isinstance(item.get("index"), int):
+                raise ValueError("reranker result has an invalid index")
+            index = item["index"]
+            if index < 0 or index >= len(passages) or index in seen:
+                raise ValueError("reranker result index is out of range or duplicated")
+            try:
+                score = float(item["score"])
+            except (KeyError, TypeError, ValueError) as exc:
+                raise ValueError("reranker result has an invalid score") from exc
+            passage = dict(passages[index])
+            passage["rerank_score"] = score
+            output.append(passage)
+            seen.add(index)
+            if len(output) == top_k:
+                break
+        return output
+
+
+class FallbackReranker(Reranker):
+    """Try a primary reranker and fail open to a local fallback."""
+
+    def __init__(self, primary: Reranker, fallback: Reranker):
+        self._primary = primary
+        self._fallback = fallback
+
+    def rerank(self, query: str, passages: list[dict], top_k: int = 4) -> list[dict]:
+        try:
+            return self._primary.rerank(query, passages, top_k=top_k)
+        except Exception:  # noqa: BLE001 - availability fallback is intentional
+            logger.warning("Remote reranker failed; using local fallback", exc_info=True)
+            return self._fallback.rerank(query, passages, top_k=top_k)

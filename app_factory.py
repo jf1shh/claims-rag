@@ -14,6 +14,7 @@ class AppDependencies:
     vector_store: Any
     embedding_engine: Any | None = None
     reranking_engine: Any | None = None
+    reranker: Any | None = None
     agentic_router: Any | None = None
     queue: Any | None = None
     job_store: Any | None = None
@@ -143,6 +144,20 @@ def _build_llm_client(settings: Settings):
     )
 
 
+def _build_reranker(settings: Settings):
+    from backend.reranker import FallbackReranker, LocalReranker, RemoteReranker
+
+    local = LocalReranker()
+    if settings.rerank_provider != "remote":
+        return local
+    remote = RemoteReranker(
+        endpoint=settings.rerank_endpoint,
+        timeout=float(settings.rerank_timeout_seconds),
+        api_key=settings.rerank_api_key,
+    )
+    return FallbackReranker(primary=remote, fallback=local)
+
+
 def build_dependencies(settings: Settings) -> AppDependencies:
     from backend.rag_engine import SQLiteVectorStore
 
@@ -174,6 +189,7 @@ def build_dependencies(settings: Settings) -> AppDependencies:
     audit_sink = _build_audit_sink(settings)
     rate_limiter = _build_rate_limiter(settings)
     llm_client = _build_llm_client(settings)
+    reranker = _build_reranker(settings)
 
     return AppDependencies(
         settings=settings,
@@ -185,6 +201,7 @@ def build_dependencies(settings: Settings) -> AppDependencies:
         audit_sink=audit_sink,
         rate_limiter=rate_limiter,
         llm_client=llm_client,
+        reranker=reranker,
     )
 
 

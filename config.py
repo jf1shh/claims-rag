@@ -74,6 +74,11 @@ class Settings:
     embedding_model: str = "all-MiniLM-L6-v2"
     embedding_dimensions: int = 384
     reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+    rerank_provider: str = "local"
+    rerank_endpoint: str | None = None
+    rerank_candidate_pool: int = 50
+    rerank_timeout_seconds: int = 10
+    rerank_api_key: str | None = None
     llm_provider: str = "lm-studio"
     llm_base_url: str = "http://127.0.0.1:1234"
     llm_model: str | None = None
@@ -138,6 +143,11 @@ class Settings:
             embedding_model=env.get("EMBEDDING_MODEL", "all-MiniLM-L6-v2"),
             embedding_dimensions=_int(env.get("EMBEDDING_DIMENSIONS"), 384, "EMBEDDING_DIMENSIONS"),
             reranker_model=env.get("RERANKER_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2"),
+            rerank_provider=env.get("RERANK_PROVIDER", "local").strip().lower(),
+            rerank_endpoint=env.get("RERANK_ENDPOINT") or None,
+            rerank_candidate_pool=_int(env.get("RERANK_CANDIDATE_POOL"), 50, "RERANK_CANDIDATE_POOL"),
+            rerank_timeout_seconds=_int(env.get("RERANK_TIMEOUT_SECONDS"), 10, "RERANK_TIMEOUT_SECONDS"),
+            rerank_api_key=env.get("RERANK_API_KEY") or None,
             llm_provider=env.get("LLM_PROVIDER", "lm-studio").strip().lower(),
             llm_base_url=env.get("LLM_BASE_URL", "http://127.0.0.1:1234").rstrip("/"),
             llm_model=env.get("LLM_MODEL") or None,
@@ -201,6 +211,14 @@ class Settings:
             raise ValueError("OIDC_ISSUER and OIDC_CLIENT_ID are required when AUTH_PROVIDERS includes oidc")
         if "service-accounts" in self.auth_providers and not self.service_accounts_file:
             raise ValueError("SERVICE_ACCOUNTS_FILE is required when AUTH_PROVIDERS includes service-accounts")
+        if self.rerank_provider not in {"local", "remote"}:
+            raise ValueError("RERANK_PROVIDER must be local or remote")
+        if self.rerank_provider == "remote":
+            if not self.rerank_endpoint:
+                raise ValueError("RERANK_ENDPOINT is required when RERANK_PROVIDER is remote")
+            parsed = urlparse(self.rerank_endpoint)
+            if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+                raise ValueError("RERANK_ENDPOINT must be an http(s) URL")
         if self.llm_provider not in {"lm-studio", "openai-compatible", "none"}:
             raise ValueError("LLM_PROVIDER must be lm-studio, openai-compatible, or none")
         if self.app_env == "production":

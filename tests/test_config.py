@@ -3,6 +3,33 @@ import pytest
 from config import Settings
 
 
+def test_given_remote_reranker_then_settings_are_parsed():
+    settings = Settings.from_env({
+        "RERANK_PROVIDER": "remote",
+        "RERANK_ENDPOINT": "https://reranker.internal",
+        "RERANK_CANDIDATE_POOL": "75",
+        "RERANK_TIMEOUT_SECONDS": "7",
+        "RERANK_API_KEY": "secret",
+    })
+    assert settings.rerank_provider == "remote"
+    assert settings.rerank_endpoint == "https://reranker.internal"
+    assert settings.rerank_candidate_pool == 75
+    assert settings.rerank_timeout_seconds == 7
+    assert settings.rerank_api_key == "secret"
+
+
+def test_given_remote_reranker_without_endpoint_then_validation_fails():
+    settings = Settings.from_env({"RERANK_PROVIDER": "remote"})
+    with pytest.raises(ValueError, match="RERANK_ENDPOINT"):
+        settings.validate_for_environment()
+
+
+def test_given_invalid_reranker_provider_then_validation_fails():
+    settings = Settings.from_env({"RERANK_PROVIDER": "cpu"})
+    with pytest.raises(ValueError, match="RERANK_PROVIDER"):
+        settings.validate_for_environment()
+
+
 def test_given_empty_development_environment_then_local_defaults_are_explicit():
     settings = Settings.from_env({"APP_ENV": "development"})
     assert settings.app_env == "development"

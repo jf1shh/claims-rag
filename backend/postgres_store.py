@@ -377,7 +377,7 @@ class PostgresVectorStore:
     # Interface: hybrid retrieval (vector + FTS + RRF, optional rerank)
     # ------------------------------------------------------------------ #
 
-    def search_similarity(self, query_embedding, query_text, claim_id=None, reranking_engine=None, top_k=15, use_fts=True):
+    def search_similarity(self, query_embedding, query_text, claim_id=None, reranking_engine=None, top_k=15, use_fts=True, candidate_pool=50):
         """Hybrid retrieval with RRF and optional cross-encoder rerank, scoped by
         tenant and (optionally) claim. Result shape identical to SQLiteVectorStore.
         use_fts=False returns a pure vector-only baseline (the eval harness's
@@ -385,7 +385,7 @@ class PostgresVectorStore:
         conn = self._connect()
         try:
             query = np.asarray(query_embedding, dtype=np.float32)
-            pool = max(15, top_k)
+            pool = candidate_pool
 
             # --- 1. Vector leg: max child cosine per parent (exact, matching
             # the SQLite brute-force behavior) ------------------------------ #
@@ -475,7 +475,7 @@ class PostgresVectorStore:
                      "file_type": meta["file_type"], "score": score}
                 )
             fused.sort(key=lambda x: x["score"], reverse=True)
-            candidates = fused[:pool]
+            candidates = fused[:candidate_pool]
         finally:
             conn.close()
 

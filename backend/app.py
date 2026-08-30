@@ -18,7 +18,7 @@ from pydantic import BaseModel
 from typing import Optional
 
 # Import our RAG Engine classes
-from backend.rag_engine import DocumentParser, EmbeddingEngine, SQLiteVectorStore, RerankingEngine, safe_filename, _blob_key
+from backend.rag_engine import DocumentParser, EmbeddingEngine, SQLiteVectorStore, safe_filename, _blob_key
 from backend.agentic_router import AgenticRAGRouter, CLAIMS_DATA
 
 from config import get_settings
@@ -57,7 +57,7 @@ app.add_middleware(
 # lazy so importing the ASGI app does not require local model files. When an
 # object store (S3) is configured, add/delete/serve route source bytes through
 # it; otherwise the legacy filesystem storage_dir path is used unchanged.
-from app_factory import _build_blob_store, _build_authenticator, _build_claim_access_policy, _build_audit_sink, _build_rate_limiter, _build_llm_client  # noqa: E402
+from app_factory import _build_blob_store, _build_authenticator, _build_claim_access_policy, _build_audit_sink, _build_rate_limiter, _build_llm_client, _build_reranker  # noqa: E402
 
 _vector_blob_store = _build_blob_store(settings)
 _authenticator = _build_authenticator(settings)
@@ -65,13 +65,13 @@ _claim_access_policy = _build_claim_access_policy(settings)
 _audit_sink = _build_audit_sink(settings)
 _rate_limiter = _build_rate_limiter(settings)
 _llm_client = _build_llm_client(settings)
+_reranker = _build_reranker(settings)
 vector_store = SQLiteVectorStore(
     db_path=str(settings.rag_db_path),
     storage_dir=str(settings.stored_documents_dir),
     blob_store=_vector_blob_store,
 )
 embedding_engine = None
-reranking_engine = None
 agentic_router = AgenticRAGRouter()
 
 
@@ -81,12 +81,6 @@ def _get_embedding_engine():
         embedding_engine = EmbeddingEngine(model_name=settings.embedding_model)
     return embedding_engine
 
-
-def _get_reranking_engine():
-    global reranking_engine
-    if reranking_engine is None:
-        reranking_engine = RerankingEngine(model_name=settings.reranker_model)
-    return reranking_engine
 
 # Phase 3 async ingestion (milestone 3.2): durable job records + queue.
 # Sync mode (default) keeps the historical inline upload pipeline; async mode
@@ -620,7 +614,7 @@ def chat_with_docs(request: Request, req: ChatRequest, principal=Depends(get_cur
         engine=req.engine,
         embedding_engine=_get_embedding_engine(),
         vector_store=vector_store,
-        reranking_engine=_get_reranking_engine(),
+        reranking_engine=_reranker,
         llm_client=_llm_client,
     )
     _audit(
@@ -705,8 +699,9 @@ def eval_search(req: SearchRequest, principal=Depends(get_current_tenant)):  # n
         query_emb,
         req.query,
         claim_id=req.claim_id,
-        reranking_engine=_get_reranking_engine() if req.mode == "hybrid_rerank" else None,
+        reranking_engine=_reranker if req.mode == "hybrid_rerank" else None,
         top_k=req.top_k,
+        candidate_pool=settings.rerank_candidate_pool,
         use_fts=(req.mode != "naive"),
     )
     return {"mode": req.mode, "matches": matches}

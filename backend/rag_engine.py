@@ -236,7 +236,7 @@ class VectorStore(ABC):
         """Reconstructs a document's full text by joining its parent chunks in order."""
 
     @abstractmethod
-    def search_similarity(self, query_embedding, query_text, claim_id=None, reranking_engine=None, top_k=15, use_fts=True):
+    def search_similarity(self, query_embedding, query_text, claim_id=None, reranking_engine=None, top_k=15, use_fts=True, candidate_pool=50):
         """Hybrid retrieval (vector + keyword + RRF), optionally reranked."""
 
 
@@ -641,7 +641,7 @@ class SQLiteVectorStore(VectorStore):
             return None
         return _blob_key(row[0], filename)
 
-    def search_similarity(self, query_embedding, query_text, claim_id=None, reranking_engine=None, top_k=15, use_fts=True):
+    def search_similarity(self, query_embedding, query_text, claim_id=None, reranking_engine=None, top_k=15, use_fts=True, candidate_pool=50):
         """Computes hybrid similarity (Vector + FTS5) with RRF and optional Cross-Encoder reranking scoped by claim_id.
 
         use_fts=False skips keyword search/RRF entirely and returns pure vector-only
@@ -768,9 +768,8 @@ class SQLiteVectorStore(VectorStore):
             })
 
         fused_results.sort(key=lambda x: x["score"], reverse=True)
-        # Keep a candidate pool at least as large as the requested top_k so the
-        # reranker (and non-reranked path) can actually return top_k results.
-        top_candidates = fused_results[:max(15, top_k)]
+        # Bound reranking work by the configured candidate pool.
+        top_candidates = fused_results[:candidate_pool]
 
         # --- 4. Cross-Encoder Reranking ---
         if reranking_engine and top_candidates:
