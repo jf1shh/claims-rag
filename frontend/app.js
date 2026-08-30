@@ -754,21 +754,17 @@ function finalizeStreamingBubble(id, result) {
     scrollChatToBottom();
 }
 
-// Streaming counterpart to apiFetch (Phase 5.3): apiFetch can't be reused
-// as-is because callers need the raw Response to read its body as a
-// stream, but this attaches the same stored credential and reacts to a 401
-// the same way apiFetch does.
+// Streaming counterpart to apiFetch (Phase 5.3): apiFetch's `.then()` never
+// reads or locks the response body, so its returned Response is still safe
+// to stream from -- reuse it here for the credential attach + 401 handling
+// instead of duplicating that logic, and layer on the non-ok -> throw
+// behavior streamChat needs before it starts reading the body.
 async function apiFetchStream(path, body) {
-    const headers = { 'Content-Type': 'application/json' };
-    if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
-    const resp = await fetch(path, {
+    const resp = await apiFetch(path, {
         method: 'POST',
-        headers,
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
     });
-    if (resp.status === 401) {
-        showLoginGate();
-    }
     if (!resp.ok) {
         const err = await resp.json().catch(() => ({}));
         throw new Error(err.detail || `HTTP ${resp.status}`);
