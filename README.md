@@ -20,7 +20,7 @@ Everything in this repo runs on synthetic, generated seed data — no proprietar
 
 ## What it does
 
-- Natural-language search over auto insurance guidelines, endorsements, state statutes, and adjuster reports (PDF/DOCX/XLSX/TXT)
+- Natural-language search over auto insurance guidelines, endorsements, state statutes, and adjuster reports (PDF/DOCX/XLSX/TXT), with hybrid retrieval and pool-bounded cross-encoder reranking
 - Per-claim document scoping — upload a claim's own dossier (police report, telematics, shop estimates) and query it alongside global policy documents in the same conversation
 - An agentic router that plans multi-step retrieval, self-corrects when the first pass comes back empty, and **refuses to answer rather than let the model fabricate one** when nothing relevant was found
 - Runs entirely locally: embedding, reranking, vector search, and generation (via LM Studio) all execute on-device — no document content or query ever leaves the machine
@@ -56,7 +56,7 @@ EmbeddingEngine (all-MiniLM-L6-v2, local)
 SQLiteVectorStore
   ├─ dense vector search (child chunks, in-memory normalized cache)
   ├─ FTS5 keyword search (parent chunks)
-  └─ Reciprocal Rank Fusion ──▶ RerankingEngine (cross-encoder, local)
+  └─ Reciprocal Rank Fusion ──▶ Reranker (local CPU or remote GPU, pool-bounded)
         │
         ▼
 AgenticRAGRouter
@@ -66,7 +66,7 @@ AgenticRAGRouter
 FastAPI ──▶ frontend (claims queue, per-claim folders, chat, pipeline logs)
 ```
 
-**Hybrid retrieval**: dense embeddings are good at paraphrase but weak on exact structured lookups — a query like "what's the comprehensive deductible" can under-rank a deductibles *spreadsheet* in favor of a narratively-similar case study PDF. SQLite FTS5 keyword search catches that case; the two signals are fused with Reciprocal Rank Fusion (no score calibration needed) and reordered by a local cross-encoder reranker.
+**Hybrid retrieval**: dense embeddings are good at paraphrase but weak on exact structured lookups — a query like "what's the comprehensive deductible" can under-rank a deductibles *spreadsheet* in favor of a narratively-similar case study PDF. SQLite FTS5 keyword search catches that case; the two signals are fused with Reciprocal Rank Fusion (no score calibration needed) and reordered by a cross-encoder reranker. The reranker is provider-neutral: local CPU is the default, while production can point at a dedicated GPU HTTP service; a configurable candidate pool bounds reranking cost and remote failures fall back locally.
 
 **Agentic planning**: each query is decomposed into targeted sub-queries scoped to global policy, the active claim's dossier, or both. If retrieval comes back empty, a self-correction step retries with a rewritten query; if it's still empty, synthesis is skipped entirely and the system says so, rather than letting the LLM answer from its own knowledge and cite sources that don't exist.
 
@@ -79,7 +79,7 @@ This architecture is built for one adjuster's local corpus — hundreds of docum
 - **Vector search is brute-force, not ANN.** `search_similarity` matrix-multiplies the query against every cached embedding in scope (`matrix @ query`) — no HNSW/IVF index. Fine into the tens of thousands of chunks; the first real bottleneck at real scale.
 - **The embedding cache rebuilds in full on every write.** Any add/delete invalidates the whole in-memory matrix, and the next query rebuilds it from a full table scan — O(n) per write, not incremental. This is the actual ingestion-throughput ceiling, not the vector math.
 - **Everything lives in one process's RAM**, backed by a single SQLite file with no built-in horizontal scaling or concurrent-writer support (already out of scope for the MVP, see above).
-- **What wouldn't need to change**: FTS5's inverted index scales sub-linearly with corpus size, and reranking cost is bounded by the candidate pool (`top_k`), not total corpus size.
+- **What wouldn't need to change**: FTS5's inverted index scales sub-linearly with corpus size, and reranking cost is bounded by the configured candidate pool (`RERANK_CANDIDATE_POOL`), not total corpus size. The provider-neutral reranker seam also lets the CPU implementation move to a dedicated GPU service without changing retrieval callers.
 - **What I'd swap in at real scale**: an ANN index (FAISS/HNSW or a managed vector DB) with incremental upsert instead of full-cache rebuild. The other two swaps are already built behind seams and live in the repo — a `PostgresVectorStore` (Postgres + pgvector, tenant RLS, HNSW index) behind the `VectorStore` interface, and an `S3DocumentBlobStore` behind the `DocumentBlobStore` interface with presigned serving — selectable via config without touching the retrieval/agent pipeline. See `docs/enterprise-migration.md` for the phased roadmap.
 
 ## Evaluation — because "it looks right" isn't good enough

@@ -61,7 +61,7 @@ The project moves forward along the plan — never sideways or backwards.
 * **DocumentParser** ([backend/rag_engine.py](file:///C:/PERSONAL/backend/rag_engine.py)): Extracts text from PDF (`pypdf`), DOCX (`python-docx`), Excel (`pandas`/`openpyxl`), and TXT files.
 * **TextChunker** ([backend/rag_engine.py](file:///C:/PERSONAL/backend/rag_engine.py)): Hierarchical parent/child chunking. Parent chunks (~1200 chars / 200 overlap) preserve context and back the FTS5 index; child chunks (~250 chars / 50 overlap) are embedded for precise vector matching. Boundaries snap to whitespace.
 * **EmbeddingEngine** ([backend/rag_engine.py](file:///C:/PERSONAL/backend/rag_engine.py)): Instantiates `sentence-transformers/all-MiniLM-L6-v2` locally to generate 384-dimensional vectors. Imported lazily so the vector store can be used without loading torch.
-* **RerankingEngine** ([backend/rag_engine.py](file:///C:/PERSONAL/backend/rag_engine.py)): Local `cross-encoder/ms-marco-MiniLM-L-6-v2` on CPU. Re-scores the fused candidate pool against the raw query for final ordering.
+* **Reranker** ([backend/reranker.py](file:///C:/PERSONAL/backend/reranker.py)): Provider-neutral cross-encoder seam. `LocalReranker` preserves the lazy CPU implementation; `RemoteReranker` sends a bounded candidate pool to a dedicated GPU HTTP service; `FallbackReranker` fails open to local.
 * **SQLiteVectorStore** ([backend/rag_engine.py](file:///C:/PERSONAL/backend/rag_engine.py)): Stores documents, parent/child chunks, embedding BLOBs, and an FTS5 index. `search_similarity` runs **hybrid retrieval**: vectorized cosine over child chunks (mapped up to best parent) + FTS5 keyword search, fused via RRF, then cross-encoder reranked. Embeddings are held in an **in-memory, pre-normalized matrix cache** (built lazily, invalidated on add/delete) so queries avoid re-reading BLOBs and recomputing corpus norms.
 * **AgenticRAGRouter** ([backend/agentic_router.py](file:///C:/PERSONAL/backend/agentic_router.py)): Orchestrates each query. Online mode asks the LLM for a JSON plan (which stores to search + sub-queries), retrieves per sub-query, self-corrects on empty results, and synthesizes a grounded answer. Simulated mode runs local retrieval plus a Python rule engine keyed to demo claims/audit types. Emits step-by-step `pipeline_logs`.
 * **FastAPI Server** ([backend/app.py](file:///C:/PERSONAL/backend/app.py)): Exposes REST endpoints for global + per-claim upload, listing, deletion, document content/download, agentic chat, and LLM connection status.
@@ -91,6 +91,7 @@ C:\PERSONAL\
 │   ├── app.py                  ← FastAPI REST API + per-claim endpoints
 │   ├── rag_engine.py           ← Parsing, chunking, embedding, reranking, hybrid store
 │   ├── agentic_router.py       ← Agentic planner/retriever/synthesizer + simulation engine
+│   ├── reranker.py             ← Local/remote provider-neutral cross-encoder reranking seam
 │   ├── postgres_store.py       ← Postgres + pgvector backend behind the VectorStore interface (Phase 1)
 │   ├── blob_store.py           ← DocumentBlobStore ABC: local + S3 adapters (Phase 2)
 │   ├── queue.py                ← Queue ABC: in-process + SQS adapters, DLQ (Phase 3)
@@ -685,6 +686,16 @@ http://localhost:8000
   * Existing router tests (`tests/test_agentic_router.py`) reconstituted against a stub ChatClient (they had mocked `backend.agentic_router.requests`, which no longer exists) — planner validation, engine allowlist, and claim-dossier markdown preserved.
 * **Verification (recorded)**: 13 new tests — `tests/test_llm_client.py` (8: ABC shape, per-stage resolution + fallback, posts-to-`/v1/chat/completions` with the right model/temperature/max_tokens, Bearer sent only when configured, missing-content → ChatClientError, models TTL caching, failure-not-cached) + `tests/test_factory.py` (3: none-provider → None, stage models from settings, AppDependencies) + `tests/test_agentic_router_llm.py` (2: online path runs planner+synthesis through the injected client per-stage; engine allowlist rejects without any call) + `tests/test_api_status.py` (1: `/api/status` reports gateway models via the client) — with 15 router suite tests reconstituted. Full suite **329 passed / 12 skipped**, `ruff check .` clean, `compileall` clean, foundation gates 0 findings / 0 blocking.
 * **Plan changes**: migration doc milestone 5.1 → **Done 2026-08-29** with a status paragraph and a Status column added to the Phase-5 table; What's Next #2 → **Phase 5.2 — dedicated cross-encoder reranker service** (`Reranker` seam: local CPU fallback + remote GPU `POST /rerank` + fail-open `FallbackReranker`; `RERANK_CANDIDATE_POOL` default 50 replaces the hardcoded `max(15, top_k)` on both backends so rerank cost is bounded by pool, not corpus). Standing workflow per user: commit + PR + CI on the self-hosted runner after every milestone.
+
+### 2026-08-30 (session 25 — Phase 5.2 reranker service close-out)
+* **Phase**: Phase 5 (serving & LLM layer) — milestone 5.2, dedicated cross-encoder reranker service.
+* **Attempted & succeeded**:
+  * Added `backend/reranker.py` with the provider-neutral `Reranker` contract, lazy CPU `LocalReranker`, batched HTTP `RemoteReranker`, and `FallbackReranker` that fails open to local reranking.
+  * Added server-side configuration for `RERANK_PROVIDER`, `RERANK_ENDPOINT`, `RERANK_CANDIDATE_POOL` (default 50), `RERANK_TIMEOUT_SECONDS`, and `RERANK_API_KEY`; remote endpoints are validated as HTTP(S) URLs and client input never shapes the target URL.
+  * Wired the reranker through `app_factory.py` and `backend/app.py`; SQLite and Postgres retrieval now accept the configurable candidate pool before reranking. Remote requests send passage content only and optional credentials as a Bearer header.
+  * Added hermetic tests for remote payload/index mapping, auth headers, malformed responses, local fallback, config validation, factory selection, and pool forwarding.
+* **Verification**: Full suite **342 passed / 12 skipped**, Ruff clean, foundation gates **0 findings / 0 blocking**, compileall clean, and parity **mean recall@4 = 1.0000**. Committed as `7762ed2` (`feat(rerank): add provider-neutral reranker service seam`). A PR was not created because the commit was already on `main`; GitHub rejects a `main`→`main` pull request. No merge action was needed because the commit is already on the target branch.
+* **Next**: Phase 5.3 — streamed `/api/chat`, capped context assembly, and prompt-injection delimiters.
 
 ### 2026-08-29 (session 24 — Phase 5.1 close-out: code review, planner-timeout fix, front-facing doc sweep)
 * **Phase**: Phase 5 (serving & LLM layer) — milestone 5.1 close-out: review, one fix from it, and syncing the portfolio-facing docs so they match the merged 5.1 seam.
