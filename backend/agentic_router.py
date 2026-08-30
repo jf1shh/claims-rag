@@ -214,18 +214,27 @@ class AgenticRAGRouter:
 
         return self._run_online_agent(query_text, claim_id, vector_store, embedding_engine, reranking_engine, logs, start_time, llm_client, caps)
 
-    def _run_online_agent(
+    def _online_pipeline(
         self,
         query_text: str,
         claim_id: Optional[str],
         vector_store: Any,
         embedding_engine: Any,
         reranking_engine: Any,
+        llm_client: Any,
+        caps: Any,
         logs: List[str],
         start_time: float,
-        llm_client: Any,
-        caps: Any = None,
-    ) -> Dict[str, Any]:
+    ) -> tuple:
+        """Shared planning + retrieval + self-correction pipeline for the
+        online ("lm-studio") path. Used by BOTH the JSON entrypoint
+        (`_run_online_agent`) and the streaming entrypoint
+        (`run_query_stream`) so the two can never silently drift from each
+        other -- this is the one and only implementation of Steps 1-3;
+        do not re-inline a copy of this logic elsewhere.
+
+        Returns (plan, all_matches, claim_chunks).
+        """
         # Step 1: Query Decomposition (Planner Call)
         logs.append("📋 [Step 1: Planning] Decomposing query into target sub-queries...")
         model_name = llm_client.models()[0]
@@ -286,6 +295,14 @@ class AgenticRAGRouter:
         # fallback search. Must still trigger for global-only queries where
         # the planner's sub-queries came up empty -- see the zero-context
         # hallucination bug this was built to fix.
+        #
+        # Two distinct branches, not one collapsed case: when a claim is
+        # active, the fallback query is rewritten to target that claim's own
+        # documents (f"claim details {claim_id}"); when there's no claim,
+        # the ORIGINAL query_text is retried scoped globally (claim_id=None).
+        # See CLAUDE.md Debugging History (2026-07-17) -- this two-branch
+        # shape is itself the fix for a previously-shipped zero-context
+        # hallucination bug. Do not simplify to a single branch.
         if not all_matches and not claim_chunks:
             if claim_id:
                 logs.append("⚠️ [Self-Correction] Zero search matches returned. Executing Query Translation fallback...")
@@ -315,6 +332,25 @@ class AgenticRAGRouter:
                 )
                 all_matches.extend(fallback_matches)
                 logs.append(f"🔄 [Self-Correction] Recovered {len(fallback_matches)} global policy sources.")
+
+        return plan, all_matches, claim_chunks
+
+    def _run_online_agent(
+        self,
+        query_text: str,
+        claim_id: Optional[str],
+        vector_store: Any,
+        embedding_engine: Any,
+        reranking_engine: Any,
+        logs: List[str],
+        start_time: float,
+        llm_client: Any,
+        caps: Any = None,
+    ) -> Dict[str, Any]:
+        _plan, all_matches, claim_chunks = self._online_pipeline(
+            query_text, claim_id, vector_store, embedding_engine,
+            reranking_engine, llm_client, caps, logs, start_time,
+        )
 
         # Hard stop: never let the LLM synthesize freely with zero retrieved
         # context. Without this, an ungrounded call reliably fabricates both
@@ -387,6 +423,133 @@ class AgenticRAGRouter:
             "engine": "lm-studio (agentic)",
             "pipeline_logs": logs
         }
+
+    def run_query_stream(
+        self,
+        *,
+        query_text: str,
+        claim_id: Optional[str],
+        engine: str,
+        embedding_engine: Any,
+        vector_store: Any,
+        reranking_engine: Any = None,
+        llm_client: Any = None,
+        caps: Any = None,
+    ):
+        """Streaming counterpart to `run_query`: yields {"type": "chunk", ...}
+        events as synthesis tokens arrive, then exactly one
+        {"type": "final", ...} event carrying the assembled answer, sources,
+        engine label, pipeline logs, and time-to-first-token (ttf_ms).
+
+        Shares planning/retrieval/self-correction with the JSON path via
+        `_online_pipeline`, and context assembly via `_assemble_context` --
+        this is intentional so the two entrypoints stay in lockstep and
+        never silently drift.
+        """
+        logs: List[str] = []
+        start_time = time.time()
+
+        def _final(answer: str, sources: List[Dict[str, Any]], eng: str, status: str = "ok") -> Dict[str, Any]:
+            return {
+                "type": "final",
+                "answer": answer,
+                "sources": sources,
+                "engine": eng,
+                "pipeline_logs": logs,
+                "ttf_ms": round((time.time() - start_time) * 1000, 1),
+                "status": status,
+            }
+
+        logs.append(f"🧠 [Agentic Coordinator] Initializing planner for query: '{query_text}'")
+        if claim_id:
+            logs.append(f"🔍 [Agentic Coordinator] Active claim folder scope: {claim_id}")
+
+        # Simulated mode (and the no-client case) has no token stream to
+        # relay -- run the existing JSON path and emit its result as a
+        # single final event so callers get a uniform event stream either way.
+        if engine == "simulated" or llm_client is None:
+            res = self.run_query(query_text, claim_id, engine, embedding_engine,
+                                  vector_store, reranking_engine)
+            yield _final(res.get("answer"), res.get("sources") or [], res.get("engine"), "simulated")
+            return
+
+        # Same engine allowlist as run_query -- see the SSRF comment there for
+        # why only "lm-studio" is accepted as an online engine.
+        if engine != "lm-studio":
+            logs.append(f"❌ [Config Error] Unknown engine '{engine}'. Only 'simulated' and 'lm-studio' are supported.")
+            yield _final(
+                f"Unknown engine '{engine}'. Please select 'simulated' or 'lm-studio'.",
+                [], engine, "rejected",
+            )
+            return
+
+        _plan, all_matches, claim_chunks = self._online_pipeline(
+            query_text, claim_id, vector_store, embedding_engine,
+            reranking_engine, llm_client, caps, logs, start_time,
+        )
+
+        # Same pre-cap hard stop as _run_online_agent: refuse to synthesize
+        # ungrounded on the raw retrieval results before capping, not on the
+        # capped `top_matches` from _assemble_context -- caps never turn a
+        # non-empty pair empty, and this keeps one check style for the same
+        # concept across both entrypoints.
+        if not claim_chunks and not all_matches:
+            logs.append("❌ [Synthesis Skipped] No supporting documents found after self-correction; refusing to answer ungrounded.")
+            yield _final(
+                "I couldn't find any supporting documents for this question in the available guidelines"
+                + (f" or claim {claim_id} dossier" if claim_id else "") + ". "
+                "Please rephrase the question or confirm the relevant policy/claim documents have been uploaded.",
+                [], "lm-studio (agentic)", "refused",
+            )
+            return
+
+        logs.append("✍️ [Step 2: Synthesis] Invoking local LLM to generate context-grounded audit response (streaming)...")
+
+        system_prompt, user_prompt, top_matches, filenames = self._assemble_context(
+            claim_chunks, all_matches, query_text, claim_id, caps
+        )
+
+        chunks: List[str] = []
+        try:
+            # Timeouts are owned by the injected client, same as the JSON path.
+            for token in llm_client.complete_stream(
+                [{"role": "system", "content": system_prompt},
+                 {"role": "user", "content": user_prompt}],
+                model=llm_client.model_for_stage("synthesis"),
+                temperature=0.1,
+                max_tokens=1000,
+            ):
+                chunks.append(token)
+                yield {"type": "chunk", "text": token}
+        except Exception as exc:  # noqa: BLE001 -- surfaced to the caller as a partial + error final event
+            logs.append(f"❌ [Synthesis Error] LLM streaming failed: {exc}. Finalizing with partial answer.")
+            yield _final(
+                "".join(chunks),
+                [
+                    {"filename": fn, "content": "", "file_type": "txt", "score": 0.0}
+                    for fn in filenames
+                ],
+                "lm-studio (agentic)",
+                "error",
+            )
+            return
+
+        elapsed = (time.time() - start_time) * 1000
+        logs.append(f"✅ [Agentic Coordinator] Completed reasoning cycle in {elapsed:.1f}ms")
+
+        yield _final(
+            "".join(chunks),
+            [
+                {
+                    "filename": m["filename"],
+                    "file_type": m.get("file_type", "txt"),
+                    "content": m["content"],
+                    "score": round(m.get("score", 0.0), 3),
+                }
+                for m in top_matches
+            ],
+            "lm-studio (agentic)",
+        )
 
     def _get_llm_plan(self, query_text: str, claim_id: Optional[str], llm_client: Any, model_name: str) -> Dict[str, Any]:
         """Requests a structured JSON plan from the LLM via the injected client."""
