@@ -3,7 +3,9 @@ from backend.llm_client import OpenAICompatibleClient, ChatClientError
 
 
 class StreamHTTP:
-    def __init__(self, lines): self.lines = lines; self.posted = []
+    def __init__(self, lines):
+        self.lines = lines
+        self.posted = []
     def post(self, url, json=None, headers=None, timeout=None, stream=False, **kw):
         self.posted.append({"url": url, "json": json, "stream": stream})
         return _StreamResponse(self.lines)
@@ -11,7 +13,9 @@ class StreamHTTP:
 
 
 class _StreamResponse:
-    def __init__(self, lines): self._lines = lines; self.status_code = 200
+    def __init__(self, lines):
+        self._lines = lines
+        self.status_code = 200
     def raise_for_status(self): pass
     def iter_lines(self, decode_unicode=False):
         for l in self._lines:

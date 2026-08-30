@@ -4,7 +4,6 @@ from fastapi.testclient import TestClient
 import backend.app as app_module
 from backend.app import app
 from backend.audit import JsonlAuditSink
-from tests.test_router_stream import StreamingClient
 
 
 @pytest.fixture

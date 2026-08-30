@@ -155,7 +155,7 @@ class AgenticRAGRouter:
         # Prompt-budget guardrail: trim from the lowest-scored global sources
         # first, then truncate excerpts, so a huge dossier can't blow context.
         while len(source_text) > max_chars and matches:
-            dropped = matches.pop()
+            matches.pop()
             top_matches = dossier + matches
             filenames = [m["filename"] for m in top_matches]
             blocks = [_render_source_block(m) for m in top_matches]

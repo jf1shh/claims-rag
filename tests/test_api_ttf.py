@@ -1,5 +1,4 @@
 import time
-import pytest
 from fastapi.testclient import TestClient
 import backend.app as app_module
 from backend.app import app
