@@ -21,6 +21,9 @@ class RecordingClient(ChatClient):
                    '"sub_queries": ["labor"]}'
         self.synthesis.append(record)
         return "The Nevada mechanical cap is $110/hr."
+    def complete_stream(self, messages, *, model, temperature, max_tokens, stage="synthesis"):
+        yield self.complete(messages, model=model, temperature=temperature,
+                             max_tokens=max_tokens, stage=stage)
 
 
 class FakeVectorStore:
