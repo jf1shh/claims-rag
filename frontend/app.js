@@ -141,6 +141,7 @@ const chatMessages = document.getElementById('chat-messages');
 const chatForm = document.getElementById('chat-form');
 const queryInput = document.getElementById('query-input');
 const sendBtn = document.getElementById('send-btn');
+const stopBtn = document.getElementById('stop-btn');
 const chatWelcome = document.getElementById('chat-welcome');
 
 const traceTimeline = document.getElementById('trace-timeline');
@@ -514,25 +515,62 @@ chatForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     const query = queryInput.value.trim();
     if (!query) return;
-    
+
     queryInput.value = '';
-    
+
     // Hide welcome card if open
     if (chatWelcome) {
         chatWelcome.style.display = 'none';
     }
-    
+
     // Append User Message bubble
     addMessageBubble('user', query);
-    
-    // Append Loading Assistant bubble
-    const loadingMessageId = addLoadingBubble();
-    
+
     // Clear log trace
     clearTraceLogs();
     logSystemEvent(`Processing query: "${query}"`);
     logSystemEvent(`Target LLM: ${currentEngine.toUpperCase()}`);
-    
+
+    // Simulated mode has no token stream to relay (the backend collapses it
+    // to a single "final" SSE event anyway -- see run_query_stream), so it
+    // isn't worth the extra round trip; every other engine streams.
+    if (currentEngine === 'simulated') {
+        await sendJsonQuery(query);
+    } else {
+        await sendStreamingQuery(query);
+    }
+});
+
+if (stopBtn) {
+    stopBtn.addEventListener('click', stopStreaming);
+}
+
+// Shared by both the JSON and streaming chat paths: logs pipeline_logs to
+// the trace timeline and syncs the Prompt Preview tab, exactly as the
+// original JSON-only handler did.
+function logChatPipeline(query, result) {
+    (result.pipeline_logs || []).forEach(log => {
+        if (log.includes('Generating query vector') || log.includes('Generated query vector')) {
+            logSystemEvent(log, 'system');
+        } else if (log.includes('similarity search completed') || log.includes('Vector database similarity search')) {
+            logSystemEvent(log, 'system');
+        } else if (log.includes('response in') || log.includes('generated response in')) {
+            logSystemEvent(log, 'success');
+        } else if (log.includes('failed') || log.includes('Error')) {
+            logSystemEvent(log, 'error');
+        } else {
+            logSystemEvent(log);
+        }
+    });
+
+    updatePromptPreview(query, result.sources || []);
+}
+
+// JSON /api/chat path (Phase 4-era, unchanged behavior): used for the
+// simulated engine, and as the streaming path's fallback when the SSE
+// connection can't be established or fails before any tokens arrive.
+async function sendJsonQuery(query) {
+    const loadingMessageId = addLoadingBubble();
     try {
         const response = await apiFetch('/api/chat', {
             method: 'POST',
@@ -543,43 +581,252 @@ chatForm.addEventListener('submit', async (e) => {
                 claim_id: activeCase ? activeCase.id : null
             })
         });
-        
+
         if (!response.ok) {
             const err = await response.json();
             throw new Error(err.detail || 'Chat query failed');
         }
-        
+
         const result = await response.json();
-        
+
         // Remove loading bubble and append result
         removeLoadingBubble(loadingMessageId);
         addMessageBubble('assistant', result.answer, result.sources, result.engine);
-        
-        // Log trace steps to the pipeline visualizer
-        result.pipeline_logs.forEach(log => {
-            if (log.includes('Generating query vector') || log.includes('Generated query vector')) {
-                logSystemEvent(log, 'system');
-            } else if (log.includes('similarity search completed') || log.includes('Vector database similarity search')) {
-                logSystemEvent(log, 'system');
-            } else if (log.includes('response in') || log.includes('generated response in')) {
-                logSystemEvent(log, 'success');
-            } else if (log.includes('failed') || log.includes('Error')) {
-                logSystemEvent(log, 'error');
-            } else {
-                logSystemEvent(log);
-            }
-        });
-        
-        // Show Prompt Preview details
-        updatePromptPreview(query, result.sources);
-        
+        logChatPipeline(query, result);
+
     } catch (error) {
         console.error('Error during chat query:', error);
         removeLoadingBubble(loadingMessageId);
         addMessageBubble('assistant', `⚠️ **Error processing query:** ${error.message}. Please verify the backend and chosen LLM server status.`);
         logSystemEvent(`RAG Query pipeline error: ${error.message}`, 'error');
     }
-});
+}
+
+// Phase 5.3: streams POST /api/chat/stream (Task 5) and renders token
+// deltas into an open bubble as they arrive. Falls back to sendJsonQuery if
+// no bytes arrive within 5s (the connection stalled, or e.g. a proxy is
+// buffering the SSE response) or if the stream errors before any tokens
+// were received -- either way the user still gets an answer, just without
+// the incremental render.
+async function sendStreamingQuery(query) {
+    const loadingMessageId = addLoadingBubble();
+    let streamingId = null;
+    let accumulated = '';
+    let gotBytes = false;
+    let finished = false;
+
+    const fallbackTimer = setTimeout(() => {
+        if (gotBytes || finished) return;
+        finished = true;
+        stopStreaming();
+        setStreamingActive(false);
+        logSystemEvent('No streaming response after 5s; falling back to standard request', 'system');
+        removeLoadingBubble(loadingMessageId);
+        sendJsonQuery(query);
+    }, 5000);
+
+    setStreamingActive(true);
+
+    await streamChat(
+        query,
+        activeCase ? activeCase.id : null,
+        currentEngine,
+        (deltaText) => {
+            if (finished) return;
+            if (!gotBytes) {
+                gotBytes = true;
+                clearTimeout(fallbackTimer);
+                removeLoadingBubble(loadingMessageId);
+                streamingId = addStreamingBubble();
+            }
+            accumulated += deltaText;
+            updateStreamingBubble(streamingId, accumulated);
+        },
+        (result) => {
+            if (finished) return;
+            finished = true;
+            clearTimeout(fallbackTimer);
+            setStreamingActive(false);
+            if (streamingId) {
+                finalizeStreamingBubble(streamingId, result);
+            } else {
+                // Final arrived with no preceding chunk events (e.g. an
+                // immediate refusal with no supporting documents) -- render
+                // it the same way the JSON path does.
+                removeLoadingBubble(loadingMessageId);
+                addMessageBubble('assistant', result.answer, result.sources, result.engine);
+            }
+            logChatPipeline(query, result);
+        },
+        (error) => {
+            if (finished) return;
+            finished = true;
+            clearTimeout(fallbackTimer);
+            setStreamingActive(false);
+            console.error('Error during streaming chat query:', error);
+            if (!gotBytes) {
+                // Nothing rendered yet -- fall back to the JSON endpoint
+                // rather than showing an empty/broken bubble.
+                removeLoadingBubble(loadingMessageId);
+                logSystemEvent(`Streaming failed (${error.message}); falling back to standard request`, 'error');
+                sendJsonQuery(query);
+                return;
+            }
+            if (streamingId) {
+                updateStreamingBubble(streamingId, accumulated + `\n\n⚠️ **Stream error:** ${error.message}`);
+            }
+            logSystemEvent(`RAG Query pipeline error: ${error.message}`, 'error');
+        }
+    );
+
+    // If nothing above ran (e.g. the user hit Stop: the reader was
+    // cancelled, so streamChat's read loop exited normally with neither
+    // onFinal nor onError firing), tidy up here.
+    if (!finished) {
+        finished = true;
+        clearTimeout(fallbackTimer);
+        setStreamingActive(false);
+        removeLoadingBubble(loadingMessageId);
+        logSystemEvent('Streaming stopped by user', 'system');
+    }
+}
+
+// Toggles Stop-button visibility while a stream is in flight.
+function setStreamingActive(active) {
+    if (stopBtn) stopBtn.style.display = active ? 'inline-block' : 'none';
+}
+
+// Creates an empty assistant bubble to render streamed token deltas into,
+// mirroring addMessageBubble's markup so the finished bubble (after
+// finalizeStreamingBubble runs) looks identical to the non-streaming path.
+function addStreamingBubble() {
+    const id = 'stream-' + Date.now();
+    const msgDiv = document.createElement('div');
+    msgDiv.className = 'message assistant';
+    msgDiv.id = id;
+    msgDiv.innerHTML = `
+        <div class="message-label">
+            <span>Claims Assistant</span>
+        </div>
+        <div class="message-bubble"></div>
+    `;
+    chatMessages.appendChild(msgDiv);
+    scrollChatToBottom();
+    return id;
+}
+
+// Re-renders the bubble's accumulated text through formatMarkdown on every
+// chunk -- the same escape-then-format path addMessageBubble uses for the
+// JSON path, so streamed LLM output (which quotes retrieved document
+// content verbatim) is never assigned to innerHTML unescaped.
+function updateStreamingBubble(id, accumulatedText) {
+    const msgDiv = document.getElementById(id);
+    if (!msgDiv) return;
+    msgDiv.querySelector('.message-bubble').innerHTML = formatMarkdown(accumulatedText);
+    scrollChatToBottom();
+}
+
+// Stamps the engine tag and source citations onto a streaming bubble once
+// the final SSE event arrives -- the streaming-path equivalent of what
+// addMessageBubble does in one shot for the JSON path. Sources are built as
+// real DOM nodes via renderSources() (not string-interpolated), same as
+// addMessageBubble.
+function finalizeStreamingBubble(id, result) {
+    const msgDiv = document.getElementById(id);
+    if (!msgDiv) return;
+
+    const bubble = msgDiv.querySelector('.message-bubble');
+    bubble.innerHTML = formatMarkdown(result.answer || '');
+
+    if (result.engine) {
+        const label = msgDiv.querySelector('.message-label');
+        const tag = document.createElement('span');
+        tag.className = result.engine === 'simulated' ? 'tag-status badge' : 'tag-status';
+        tag.style.marginLeft = '8px';
+        tag.style.fontSize = '9px';
+        tag.textContent = result.engine.toUpperCase();
+        label.appendChild(tag);
+    }
+
+    const sourcesEl = renderSources(result.sources);
+    if (sourcesEl) bubble.appendChild(sourcesEl);
+
+    scrollChatToBottom();
+}
+
+// Streaming counterpart to apiFetch (Phase 5.3): apiFetch can't be reused
+// as-is because callers need the raw Response to read its body as a
+// stream, but this attaches the same stored credential and reacts to a 401
+// the same way apiFetch does.
+async function apiFetchStream(path, body) {
+    const headers = { 'Content-Type': 'application/json' };
+    if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+    const resp = await fetch(path, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body),
+    });
+    if (resp.status === 401) {
+        showLoginGate();
+    }
+    if (!resp.ok) {
+        const err = await resp.json().catch(() => ({}));
+        throw new Error(err.detail || `HTTP ${resp.status}`);
+    }
+    return resp;
+}
+
+// Reader for the in-flight chat stream, so stopStreaming() can cancel it.
+let chatStreamReader = null;
+
+// Reads the POST /api/chat/stream SSE body (Task 5): calls onChunk(text)
+// for each token-delta frame (`data: {"text": "..."}`) and onFinal(event)
+// once for the terminal frame carrying the assembled
+// answer/sources/engine/pipeline_logs/status -- the same shape the JSON
+// /api/chat endpoint returns in one shot. onError fires for network/parse
+// failures; a request-level 401/403/429 rejects before any bytes arrive and
+// is surfaced there too (see agentic_router.run_query_stream: every
+// server-side failure mode, including a mid-stream LLM error, is still
+// surfaced as a "final" event, never a bare error frame).
+async function streamChat(query, claimId, engine, onChunk, onFinal, onError) {
+    let reader;
+    try {
+        const resp = await apiFetchStream('/api/chat/stream', { query, engine, claim_id: claimId || null });
+        reader = resp.body.getReader();
+        chatStreamReader = reader;
+        const decoder = new TextDecoder();
+        let buffer = '';
+        for (;;) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const frames = buffer.split('\n\n');
+            buffer = frames.pop();
+            for (const frame of frames) {
+                const line = frame.split('\n').find(l => l.startsWith('data: '));
+                if (!line) continue;
+                const data = line.slice(6).trim();
+                if (data === '[DONE]') continue;
+                const evt = JSON.parse(data);
+                if (evt.answer !== undefined) onFinal(evt);
+                else if (evt.text) onChunk(evt.text);
+            }
+        }
+    } catch (e) {
+        onError(e);
+    } finally {
+        if (chatStreamReader === reader) chatStreamReader = null;
+    }
+}
+
+// Bound to the Stop button: cancels the in-flight stream's reader, which
+// ends the fetch body read (the for-loop above sees `done` and returns) --
+// there is no separate AbortController to manage.
+function stopStreaming() {
+    if (chatStreamReader) {
+        chatStreamReader.cancel().catch(() => {});
+    }
+}
 
 function addMessageBubble(role, content, sources = [], engine = '') {
     const msgDiv = document.createElement('div');
