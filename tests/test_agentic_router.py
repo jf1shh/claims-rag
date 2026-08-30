@@ -111,6 +111,32 @@ class TestEngineAllowlist:
         assert result["sources"] == []
         assert "Unknown engine" in result["answer"]
 
+    @pytest.mark.parametrize("bad_engine", [
+        "http://attacker.example/collect",
+        "https://127.0.0.1:9999",
+        "ollama",
+        "",
+    ])
+    def test_unknown_engine_rejected_without_any_request_streaming(self, router, bad_engine):
+        # Same allowlist, exercised via the streaming entrypoint -- Task 4's
+        # run_query_stream re-implements this check outside the shared
+        # _online_pipeline, so it needs its own regression coverage (a
+        # whole-branch-review finding: this previously only covered
+        # run_query).
+        client = _StubClient("should not be called")
+        events = list(router.run_query_stream(
+            query_text="q", claim_id=None, engine=bad_engine,
+            embedding_engine=None, vector_store=None, reranking_engine=None,
+            llm_client=client,
+        ))
+        assert client.calls == []
+        assert len(events) == 1
+        final = events[0]
+        assert final["type"] == "final"
+        assert final["status"] == "rejected"
+        assert final["sources"] == []
+        assert "Unknown engine" in final["answer"]
+
 
 # ---------------------------------------------------------------------------
 # Claim dossier markdown

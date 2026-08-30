@@ -617,6 +617,7 @@ def chat_with_docs(request: Request, req: ChatRequest, principal=Depends(get_cur
         vector_store=vector_store,
         reranking_engine=_reranker,
         llm_client=_llm_client,
+        caps=settings,
     )
     _audit(
         request,
