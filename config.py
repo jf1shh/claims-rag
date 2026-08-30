@@ -106,6 +106,9 @@ class Settings:
     oidc_cache_ttl_seconds: int = 300
     service_accounts_file: Path | None = None
     claim_acls_file: Path | None = None  # Phase 4.2 RBAC: claim_id -> [subjects]
+    context_max_claim_chunks: int = 8      # Phase 5.3 dossier cap
+    context_max_global_matches: int = 4    # global/claim match cap (was hardcoded :4)
+    context_max_prompt_chars: int = 60_000 # total user-prompt budget guardrail
 
     @classmethod
     def from_env(cls, environ: Mapping[str, str] | None = None) -> "Settings":
@@ -179,6 +182,9 @@ class Settings:
             oidc_cache_ttl_seconds=_int(env.get("OIDC_CACHE_TTL_SECONDS"), 300, "OIDC_CACHE_TTL_SECONDS"),
             service_accounts_file=Path(env["SERVICE_ACCOUNTS_FILE"]).expanduser() if env.get("SERVICE_ACCOUNTS_FILE") else None,
             claim_acls_file=Path(env["CLAIM_ACLS_FILE"]).expanduser() if env.get("CLAIM_ACLS_FILE") else None,
+            context_max_claim_chunks=_int(env.get("CONTEXT_MAX_CLAIM_CHUNKS"), 8, "CONTEXT_MAX_CLAIM_CHUNKS"),
+            context_max_global_matches=_int(env.get("CONTEXT_MAX_GLOBAL_MATCHES"), 4, "CONTEXT_MAX_GLOBAL_MATCHES"),
+            context_max_prompt_chars=_int(env.get("CONTEXT_MAX_PROMPT_CHARS"), 60_000, "CONTEXT_MAX_PROMPT_CHARS"),
         )
 
     def validate_for_environment(self) -> None:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 from abc import ABC, abstractmethod
-from typing import Callable
+from typing import Callable, Iterator
 
 
 class ChatClientError(Exception):
@@ -29,6 +29,18 @@ class ChatClient(ABC):
         max_tokens: int,
         stage: str = "synthesis",
     ) -> str:
+        raise NotImplementedError
+
+    @abstractmethod
+    def complete_stream(
+        self,
+        messages: list[dict[str, str]],
+        *,
+        model: str,
+        temperature: float,
+        max_tokens: int,
+        stage: str = "synthesis",
+    ) -> Iterator[str]:
         raise NotImplementedError
 
 
@@ -105,6 +117,43 @@ class OpenAICompatibleClient(ChatClient):
             raise
         except Exception as exc:
             raise ChatClientError("LLM request failed") from exc
+
+    def complete_stream(self, messages, *, model, temperature, max_tokens, stage="synthesis"):
+        # Timeout follows the stage, not the resolved model name — see the
+        # comment on complete() above for why comparing against
+        # self.planning_model is a bug when PLANNING_MODEL is unset.
+        timeout = self.plan_timeout if stage == "planning" else self.timeout
+        try:
+            resp = self._http.post(
+                f"{self.base_url}/v1/chat/completions",
+                json={
+                    "model": model,
+                    "messages": messages,
+                    "temperature": temperature,
+                    "max_tokens": max_tokens,
+                    "stream": True,
+                },
+                headers=self._headers(),
+                timeout=timeout,
+                stream=True,
+            )
+            resp.raise_for_status()
+            for line in resp.iter_lines(decode_unicode=True):
+                if not line or not line.startswith("data:"):
+                    continue
+                data = line[len("data:"):].strip()
+                if data == "[DONE]":
+                    return
+                import json as _json
+                chunk = _json.loads(data)
+                delta = chunk["choices"][0]["delta"]
+                content = delta.get("content")
+                if content:
+                    yield content
+        except ChatClientError:
+            raise
+        except Exception as exc:
+            raise ChatClientError("LLM stream failed") from exc
 
     def models(self) -> list[str]:
         now = self._clock()

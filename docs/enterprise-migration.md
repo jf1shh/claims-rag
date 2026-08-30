@@ -1,6 +1,6 @@
 # Enterprise Migration Plan — SQLite → Postgres + pgvector + S3 + Async Ingest
 
-> **Status: Phase 4 complete / Phase 5 in progress (2026-08-29).** This
+> **Status: Phase 4 complete / Phase 5 complete (2026-08-30).** This
 > document supersedes the "Enterprise multi-tenant scaling (DEFERRED)" note in
 > CLAUDE.md's What's Next and is the source of truth for the migration. Each phase
 > updates its milestone statuses here.
@@ -320,9 +320,70 @@ RLS onto live multi-tenant data is the most expensive mistake in this plan.
 |---|---|---|---|
 | 5.1 | LM Studio → vLLM/TGI (self-hosted GPU) or hosted OpenAI-compatible endpoint; `engine` stays a server-side allowlist (SSRF constraint intact) | Planner + synthesis via new backend; model cache adapted | **Done 2026-08-29** — provider-neutral `ChatClient` seam (`backend/llm_client.py`), per-stage model catalog, wiring (see status below) |
 | 5.2 | Dedicated cross-encoder reranker service (GPU, batched); pgvector returns top 50–100 candidates, rerank cuts to `top_k` | Rerank cost bounded by candidate pool, not corpus | **Done 2026-08-30** — provider-neutral `Reranker` seam, remote HTTP adapter, local fail-open fallback, configurable candidate pool, and hermetic verification complete |
-| 5.3 | `/api/chat` streamed (SSE) or worker-pool async; context assembly capped (dossier cap + global-match cap) | p95 time-to-first-token target; prompt-injection delimiters in place | Planned (spec + plan merged in `docs/superpowers/specs|plans/2026-08-29-phase5-streaming-context-caps*`) |
+| 5.3 | `/api/chat` streamed (SSE) or worker-pool async; context assembly capped (dossier cap + global-match cap) | p95 time-to-first-token target; prompt-injection delimiters in place | **Done 2026-08-30** — `/api/chat/stream` SSE endpoint, capped + injection-delimited context assembly, `ttf_ms` reporting, frontend streaming reader with JSON fallback (see status below) |
 
-> **Phase 5 status (2026-08-30, milestone 5.2):** the LLM and reranker seams are complete; the next milestone is streamed serving and capped context assembly.
+> **Phase 5 status (2026-08-30, milestone 5.3 — Phase 5 complete):** the LLM,
+> reranker, and streaming/context-cap seams are all done; Phase 5 (serving &
+> LLM layer) is closed out. `backend/llm_client.py`'s `ChatClient` gained
+> `complete_stream()` (abstract on the ABC; `OpenAICompatibleClient` posts
+> `stream: true` and parses OpenAI-compatible SSE `data:` lines into content
+> deltas, terminating on `[DONE]`, wrapping transport failures in
+> `ChatClientError`) with the same stage-based timeout selection as
+> `complete()`. `config.py`/`.env.example` add `CONTEXT_MAX_CLAIM_CHUNKS`
+> (default 8), `CONTEXT_MAX_GLOBAL_MATCHES` (default 4, was hardcoded `:4`),
+> and `CONTEXT_MAX_PROMPT_CHARS` (default 60000). `AgenticRAGRouter` gained
+> `_assemble_context()` — builds the capped, `<source file="..." score="...">`
+> -delimited prompt (dossier chunks first, uncapped by score; then the
+> highest-scored global matches up to the cap; trims lowest-scored global
+> matches first, then hard-truncates, to respect the char budget) with a
+> system-prompt rule that source-block text is data, never instructions.
+> Filename/content are HTML-escaped (`<` → `&lt;`, `"` → `&quot;`) before
+> interpolation so a document containing a literal `</source>` or
+> `<source ...>` can't break out of its own delimiter — a real bug found and
+> fixed mid-implementation (initial version was vulnerable; a regression test
+> with a crafted `</source>` embedded in content now locks in the escaping,
+> and the existing containment test was strengthened from three independent
+> substring checks to an actual open-before-content-before-close ordering
+> assertion). Planning/retrieval/self-correction was extracted out of
+> `_run_online_agent` into a shared `_online_pipeline()` so the JSON
+> (`run_query`/`_run_online_agent`) and new streaming (`run_query_stream`)
+> entrypoints share one implementation and can't drift — including the
+> two-branch self-correction fallback (claim-scoped query rewrite vs. global
+> retry) that fixed the 2026-07-17 zero-context hallucination bug, preserved
+> exactly. `run_query_stream` yields `{"type": "chunk"}` events as
+> `complete_stream()` tokens arrive, then one `{"type": "final"}` event with
+> the joined answer, sources, engine, pipeline logs, and `ttf_ms`
+> (time-to-first-token). New `POST /api/chat/stream` in `backend/app.py`
+> mirrors `/api/chat`'s auth/RBAC/rate-limit checks synchronously *before*
+> the generator starts (so 401/403/429 stay normal HTTP statuses, never
+> swallowed mid-stream) and audits the assembled final answer exactly once,
+> on the `final` event. Frontend (`frontend/app.js`, `app.js?v=1.0.8`):
+> `apiFetchStream` reuses `apiFetch` for credential-attach/401-handling
+> (fixed post-review — an earlier version duplicated that logic instead of
+> reusing it) and only layers on non-ok → throw before reading the SSE body;
+> token deltas render incrementally into an open assistant bubble via the
+> existing `formatMarkdown` escape-first path; the final event stamps
+> sources/engine/pipeline-logs through the same `logChatPipeline()` helper
+> the JSON path uses; a 5s no-bytes-or-error window falls back to the JSON
+> `/api/chat` call; a Stop button cancels the SSE reader; simulated engine
+> keeps the JSON path unchanged. Verified hermetically (fake HTTP / stub
+> clients / stubbed router, no ML/network): 12 new tests — context-cap
+> assembly + dossier/global-match precedence, `complete_stream` SSE parsing
+> (2), `run_query_stream` chunk-then-final ordering, `/api/chat/stream` SSE
+> emission + audit (2), prompt-injection containment + delimiter-escaping
+> regression (2), `ttf_ms` reported and precedes `final` + a p95-leniency
+> statistical guard (2), config parsing (2) — plus a pre-flight review
+> catch: the plan's scripted-latency TTF test took a `monkeypatch` fixture
+> but never called `monkeypatch.setattr`, which would have sent 20 requests
+> through the real agentic router / embedding engine / vector store; fixed
+> before landing to stub the router the same way the other streaming tests
+> do, keeping the whole suite hermetic. Full suite **354 passed / 12
+> skipped**, ruff clean (5 lint findings surfaced and fixed during this
+> Task 8 close-out verification pass: an unused local in the truncation
+> loop, an unused import in two test files, and two semicolon-joined
+> one-liners in a third), gates 0 blocking, `node --check frontend/app.js`
+> clean, `compileall` clean. **Phase 5 is complete** — next is Phase 6
+> (scale, drift monitoring, compliance, cutover).
 > `backend/llm_client.py` adds a provider-neutral `ChatClient` ABC (`models()`,
 > `complete()`) with one `OpenAICompatibleClient` that POSTs
 > `/v1/chat/completions` and GETs `/v1/models` against the allowlisted
@@ -365,10 +426,10 @@ RLS onto live multi-tenant data is the most expensive mistake in this plan.
 
 | Finding | Owner | Reason | Review date |
 |---|---|---|---|
-| Phase 6 (scale, drift monitoring, compliance, cutover) + deployment-wiring items (live S3→Lambda→SQS hop, live OIDC redirect, real KMS, Redis rate-limit state, connecting a bought/built model on the company's GPU gateway, golden eval against a live judge, SOC2-type evidence) | Repository maintainer (Jared Fisher) | Sequenced roadmap; hermetic code lands first, then live-infrastructure + compliance verification (needs provisioning and human/security review, not just code) | Start of each milestone (next: Phase 5.3) |
+| Phase 6 (scale, drift monitoring, compliance, cutover) + deployment-wiring items (live S3→Lambda→SQS hop, live OIDC redirect, real KMS, Redis rate-limit state, connecting a bought/built model on the company's GPU gateway, golden eval against a live judge, SOC2-type evidence) | Repository maintainer (Jared Fisher) | Sequenced roadmap; hermetic code lands first, then live-infrastructure + compliance verification (needs provisioning and human/security review, not just code) | Start of each milestone (next: Phase 6) |
 | Dependency audit (`pip-audit`) wired into the harness | Repository maintainer (Jared Fisher) | Plan Task 8 listed it as a P0 gate; the shipped harness runs secrets/specs/docs gates, and CI runs the isolation/grounding tests — the audit remains advisory until wired | Phase 1 planning |
 | Static security analysis (bandit) as a harness sensor | Repository maintainer (Jared Fisher) | Plan Task 8 listed it as a P1 sensor; not yet invoked by the harness | Phase 1 planning |
-| Docker packaging | Repository maintainer (Jared Fisher) | Optional distribution work; revisit during Phase 5 serving work | Phase 5.3 / release packaging |
+| Docker packaging | Repository maintainer (Jared Fisher) | Optional distribution work; Phase 5 serving work (5.1-5.3) is now complete without it | Phase 6 / release packaging |
 | Golden evaluation with a live LM Studio judge | Repository maintainer (Jared Fisher) | Requires a running local model server; automated suite covers the remaining release checks | Before first production release |
 
 ## Order rationale & effort

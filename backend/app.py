@@ -12,6 +12,7 @@ from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Request, Dep
 from fastapi.responses import JSONResponse
 from fastapi.responses import FileResponse
 from fastapi.responses import RedirectResponse
+from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -616,6 +617,7 @@ def chat_with_docs(request: Request, req: ChatRequest, principal=Depends(get_cur
         vector_store=vector_store,
         reranking_engine=_reranker,
         llm_client=_llm_client,
+        caps=settings,
     )
     _audit(
         request,
@@ -628,6 +630,38 @@ def chat_with_docs(request: Request, req: ChatRequest, principal=Depends(get_cur
         sources=[source.get("filename") for source in result.get("sources", [])],
     )
     return result
+
+@app.post("/api/chat/stream", dependencies=[Depends(get_current_tenant)])
+def chat_stream(request: Request, req: ChatRequest, principal=Depends(get_current_tenant)):  # noqa: B008 - idiomatic FastAPI dependency injection
+    """SSE counterpart to /api/chat: same auth/RBAC/rate-limit checks run
+    synchronously before the generator starts (so a 401/403/429 is a normal
+    HTTP status, not something swallowed once the stream has begun), then
+    streams synthesis chunks and audits the assembled final answer exactly
+    once, on the `final` event -- never per-chunk."""
+    require_permission_403(principal, "documents:read")
+    _rate_limit_429(principal)
+    if req.claim_id:
+        require_permission_403(principal, "claims:read")
+        require_claim_access_403(principal, req.claim_id)
+
+    def gen():
+        for event in agentic_router.run_query_stream(
+                query_text=req.query, claim_id=req.claim_id, engine=req.engine,
+                embedding_engine=_get_embedding_engine(), vector_store=vector_store,
+                reranking_engine=_reranker, llm_client=_llm_client, caps=settings):
+            if event["type"] == "chunk":
+                yield f"data: {json.dumps({'text': event['text']})}\n\n"
+            elif event["type"] == "final":
+                _audit(request, principal, "chat",
+                       query=req.query, claim_id=req.claim_id, engine=event.get("engine"),
+                       answer=event.get("answer"),
+                       sources=[s.get("filename") for s in (event.get("sources") or [])],
+                       status=event.get("status"))
+                yield f"data: {json.dumps({k: v for k, v in event.items() if k != 'type'})}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(gen(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 def _enqueue_upload(content: bytes, filename: str, file_ext: str, claim_id: str | None) -> JSONResponse:
     """Async-mode upload: stage the source bytes in the blob store, enqueue an

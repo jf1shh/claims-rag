@@ -220,3 +220,21 @@ def test_given_no_stage_models_then_defaults_fall_back_to_single_model():
     assert s.llm_synthesis_timeout_seconds == 120
     assert s.llm_plan_timeout_seconds == 5
     assert s.model_cache_ttl_seconds == 10
+
+
+def test_given_context_caps_when_parsed_then_configured():
+    s = Settings.from_env({
+        "CONTEXT_MAX_CLAIM_CHUNKS": "6",
+        "CONTEXT_MAX_GLOBAL_MATCHES": "3",
+        "CONTEXT_MAX_PROMPT_CHARS": "50000",
+    })
+    assert s.context_max_claim_chunks == 6
+    assert s.context_max_global_matches == 3
+    assert s.context_max_prompt_chars == 50000
+
+
+def test_given_no_context_caps_then_defaults_used():
+    s = Settings.from_env({"APP_ENV": "development"})
+    assert s.context_max_claim_chunks == 8
+    assert s.context_max_global_matches == 4
+    assert s.context_max_prompt_chars == 60000
