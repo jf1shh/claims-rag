@@ -135,12 +135,21 @@ class AgenticRAGRouter:
             "filenames in your explanation."
         )
 
-        blocks = []
-        for idx, match in enumerate(top_matches):
-            blocks.append(
-                f"<source file=\"{match['filename']}\" score=\"{match.get('score', 0.0):.3f}\">\n"
-                f"{match['content']}\n</source>"
-            )
+        def _escape_source_field(value: Any) -> str:
+            # Neutralize characters that would let a document's own content
+            # break out of the <source file="..."> ... </source> delimiter:
+            # "<" prevents a literal "</source>" or "<source ...>" inside
+            # `content` from reading as real tag syntax to the LLM, and """
+            # prevents a literal quote inside `filename` from prematurely
+            # closing the file="..." attribute.
+            return str(value).replace("<", "&lt;").replace('"', "&quot;")
+
+        def _render_source_block(match: Dict[str, Any]) -> str:
+            filename = _escape_source_field(match["filename"])
+            content = _escape_source_field(match["content"])
+            return f"<source file=\"{filename}\" score=\"{match.get('score', 0.0):.3f}\">\n{content}\n</source>"
+
+        blocks = [_render_source_block(match) for match in top_matches]
         source_text = "\n".join(blocks)
 
         # Prompt-budget guardrail: trim from the lowest-scored global sources
@@ -149,7 +158,7 @@ class AgenticRAGRouter:
             dropped = matches.pop()
             top_matches = dossier + matches
             filenames = [m["filename"] for m in top_matches]
-            blocks = [f"<source file=\"{m['filename']}\" score=\"{m.get('score',0.0):.3f}\">\n{m['content']}\n</source>" for m in top_matches]
+            blocks = [_render_source_block(m) for m in top_matches]
             source_text = "\n".join(blocks)
         if len(source_text) > max_chars:
             source_text = source_text[:max_chars]
