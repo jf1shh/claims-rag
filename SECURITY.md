@@ -12,6 +12,7 @@ AutoClaimsRAG handles claims-like documents and must treat all uploaded content 
 - Upload bytes, extracted text, query length, and retrieval counts must be bounded; the upload and `/api/eval/search` input caps are enforced (413 above the cap).
 - Sensitive and costly endpoints are rate-limited per authenticated principal via a sliding window (429 with `Retry-After`); a single tenant/subject exhausting its allowance cannot starve others.
 - The assistant must refuse synthesis without supporting evidence.
+- Retrieved document content is delimited (escaped, wrapped in `<source>` blocks) and the system prompt instructs the model to treat it as data, never as instructions — a claim document's own text cannot redirect the assistant's behavior. Context assembly (dossier chunks, global matches, total prompt size) is bounded via server-side config, not client-controlled.
 - Assistant output is an interpretation for human review, not an autonomous coverage, fraud, payment, denial, or referral decision.
 - Production errors must not disclose stack traces, filesystem paths, credentials, or raw sensitive document content.
 

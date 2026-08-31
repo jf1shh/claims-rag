@@ -399,8 +399,13 @@ class AgenticRAGRouter:
         # Hard stop: never let the LLM synthesize freely with zero retrieved
         # context. Without this, an ungrounded call reliably fabricates both
         # an answer and citations to filenames that don't exist in the corpus.
-        # (Equivalent to the post-cap emptiness check this replaces: caps never
-        # turn a non-empty claim_chunks/all_matches pair into an empty one.)
+        # This check runs on raw retrieval, before _assemble_context's caps
+        # apply. At sane cap values a non-empty pair here always survives
+        # capping too, but at a misconfigured CONTEXT_MAX_PROMPT_CHARS (well
+        # below the default -- smaller than one source block's own delimiter
+        # overhead), the per-block truncation in _assemble_context can still
+        # drop every source, leaving synthesis ungrounded despite this check
+        # passing. Not re-checked post-cap; config.py only enforces > 0.
         if not claim_chunks and not all_matches:
             logs.append("❌ [Synthesis Skipped] No supporting documents found after self-correction; refusing to answer ungrounded.")
             elapsed = (time.time() - start_time) * 1000
@@ -542,11 +547,12 @@ class AgenticRAGRouter:
                 reranking_engine, llm_client, caps, logs, start_time,
             )
 
-            # Same pre-cap hard stop as _run_online_agent: refuse to synthesize
-            # ungrounded on the raw retrieval results before capping, not on the
-            # capped `top_matches` from _assemble_context -- caps never turn a
-            # non-empty pair empty, and this keeps one check style for the same
-            # concept across both entrypoints.
+            # Same pre-cap hard stop as _run_online_agent, for the same reason
+            # (see its comment): a misconfigured CONTEXT_MAX_PROMPT_CHARS can
+            # still let _assemble_context's per-block truncation drop every
+            # source post-cap, so this check is a floor, not a guarantee, at
+            # extreme settings -- kept as one check style for the same concept
+            # across both entrypoints.
             if not claim_chunks and not all_matches:
                 logs.append("❌ [Synthesis Skipped] No supporting documents found after self-correction; refusing to answer ungrounded.")
                 yield _final(

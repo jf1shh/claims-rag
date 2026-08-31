@@ -407,7 +407,8 @@ RLS onto live multi-tenant data is the most expensive mistake in this plan.
 > wiring, router planner/synthesis through the injected client, engine
 > allowlist, `/api/status` — reconstituting the existing router tests against
 > the injected seam. Full suite **329 passed / 12 skipped**, ruff clean, gates 0
-> blocking. Next: 5.2 reranker service.
+> blocking. (Written at 5.1 close-out; superseded by the Phase 5 completion
+> status above once 5.2 and 5.3 landed.)
 
 ---
 

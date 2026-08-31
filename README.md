@@ -24,6 +24,7 @@ Everything in this repo runs on synthetic, generated seed data — no proprietar
 - Per-claim document scoping — upload a claim's own dossier (police report, telematics, shop estimates) and query it alongside global policy documents in the same conversation
 - An agentic router that plans multi-step retrieval, self-corrects when the first pass comes back empty, and **refuses to answer rather than let the model fabricate one** when nothing relevant was found
 - Runs entirely locally: embedding, reranking, vector search, and generation (via LM Studio) all execute on-device — no document content or query ever leaves the machine
+- Answers stream token-by-token over SSE instead of waiting for the full response, with bounded/capped context assembly and prompt-injection-delimited source blocks so retrieved document content can never be read as an instruction
 
 ## FAQ (plain English)
 
@@ -161,7 +162,7 @@ Run these commands from the repository root and report their actual output:
 
 ## Tech stack
 
-FastAPI · SQLite (custom hybrid vector + FTS5 store, default) with a Postgres + pgvector backend behind the same `VectorStore` interface · filesystem storage (default) with an S3-compatible `DocumentBlobStore` behind the same interface · OIDC/JWT + service-account authentication (`PyJWT`) · role-based access control with claim-level ACLs · sentence-transformers (`all-MiniLM-L6-v2`) · cross-encoder reranking (`ms-marco-MiniLM-L-6-v2`) · provider-neutral OpenAI-compatible LLM client (LM Studio locally; a private vLLM/TGI/SGLang gateway at enterprise scale) · Ragas (local evaluation) · vanilla JS frontend
+FastAPI (JSON + SSE streaming) · SQLite (custom hybrid vector + FTS5 store, default) with a Postgres + pgvector backend behind the same `VectorStore` interface · filesystem storage (default) with an S3-compatible `DocumentBlobStore` behind the same interface · OIDC/JWT + service-account authentication (`PyJWT`) · role-based access control with claim-level ACLs · sentence-transformers (`all-MiniLM-L6-v2`) · cross-encoder reranking (`ms-marco-MiniLM-L-6-v2`) · provider-neutral OpenAI-compatible LLM client with streaming completions (LM Studio locally; a private vLLM/TGI/SGLang gateway at enterprise scale) · Ragas (local evaluation) · vanilla JS frontend
 
 ## About
 
