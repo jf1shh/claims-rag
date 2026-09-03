@@ -19,10 +19,10 @@ Read `IDENTITY.md` and `CONTEXT.md` before exploring the repository. They provid
 
 
 1. This file — architecture, constraints, and current state.
-2. [backend/rag_engine.py](file:///C:/PERSONAL/backend/rag_engine.py) — Document parsing, parent/child chunking, embedding, cross-encoder reranking, and the hybrid (vector + FTS5 + RRF) vector store with an in-memory normalized embedding cache.
-3. [backend/agentic_router.py](file:///C:/PERSONAL/backend/agentic_router.py) — Stateful agentic RAG router: query planning/decomposition, multi-sub-query retrieval, self-correction fallback, LLM synthesis, and the rule-based simulation engine (with demo `CLAIMS_DATA`).
-4. [backend/app.py](file:///C:/PERSONAL/backend/app.py) — FastAPI routing endpoints, per-claim document scoping, physical file serving, LLM status checks, and OpenAI compatibility layers.
-5. [README.md](file:///C:/PERSONAL/README.md) — the portfolio-facing case study (architecture, eval methodology/results, setup). Keep it in sync with this file's Build Plan/Current State when either changes — this file is the working memory, README.md is the public-facing summary of it.
+2. [backend/rag_engine.py](backend/rag_engine.py) — Document parsing, parent/child chunking, embedding, cross-encoder reranking, and the hybrid (vector + FTS5 + RRF) vector store with an in-memory normalized embedding cache.
+3. [backend/agentic_router.py](backend/agentic_router.py) — Stateful agentic RAG router: query planning/decomposition, multi-sub-query retrieval, self-correction fallback, LLM synthesis, and the rule-based simulation engine (with demo `CLAIMS_DATA`).
+4. [backend/app.py](backend/app.py) — FastAPI routing endpoints, per-claim document scoping, physical file serving, LLM status checks, and OpenAI compatibility layers.
+5. [README.md](README.md) — the portfolio-facing case study (architecture, eval methodology/results, setup). Keep it in sync with this file's Build Plan/Current State when either changes — this file is the working memory, README.md is the public-facing summary of it.
 
 ---
 
@@ -58,26 +58,26 @@ The project moves forward along the plan — never sideways or backwards.
 
 ### Components
 
-* **DocumentParser** ([backend/rag_engine.py](file:///C:/PERSONAL/backend/rag_engine.py)): Extracts text from PDF (`pypdf`), DOCX (`python-docx`), Excel (`pandas`/`openpyxl`), and TXT files.
-* **TextChunker** ([backend/rag_engine.py](file:///C:/PERSONAL/backend/rag_engine.py)): Hierarchical parent/child chunking. Parent chunks (~1200 chars / 200 overlap) preserve context and back the FTS5 index; child chunks (~250 chars / 50 overlap) are embedded for precise vector matching. Boundaries snap to whitespace.
-* **EmbeddingEngine** ([backend/rag_engine.py](file:///C:/PERSONAL/backend/rag_engine.py)): Instantiates `sentence-transformers/all-MiniLM-L6-v2` locally to generate 384-dimensional vectors. Imported lazily so the vector store can be used without loading torch.
-* **Reranker** ([backend/reranker.py](file:///C:/PERSONAL/backend/reranker.py)): Provider-neutral cross-encoder seam. `LocalReranker` preserves the lazy CPU implementation; `RemoteReranker` sends a bounded candidate pool to a dedicated GPU HTTP service; `FallbackReranker` fails open to local.
-* **SQLiteVectorStore** ([backend/rag_engine.py](file:///C:/PERSONAL/backend/rag_engine.py)): Stores documents, parent/child chunks, embedding BLOBs, and an FTS5 index. `search_similarity` runs **hybrid retrieval**: vectorized cosine over child chunks (mapped up to best parent) + FTS5 keyword search, fused via RRF, then cross-encoder reranked. Embeddings are held in an **in-memory, pre-normalized matrix cache** (built lazily, invalidated on add/delete) so queries avoid re-reading BLOBs and recomputing corpus norms.
-* **AgenticRAGRouter** ([backend/agentic_router.py](file:///C:/PERSONAL/backend/agentic_router.py)): Orchestrates each query. Online mode asks the LLM for a JSON plan (which stores to search + sub-queries), retrieves per sub-query, self-corrects on empty results, and synthesizes a grounded answer. Simulated mode runs local retrieval plus a Python rule engine keyed to demo claims/audit types. Emits step-by-step `pipeline_logs`.
-* **FastAPI Server** ([backend/app.py](file:///C:/PERSONAL/backend/app.py)): Exposes REST endpoints for global + per-claim upload, listing, deletion, document content/download, agentic chat, and LLM connection status.
-* **Frontend Web Dashboard** ([frontend/index.html](file:///C:/PERSONAL/frontend/index.html)): HTML/CSS/JS UI with a claims queue, per-claim document folders, claims chat, clickable/viewable document citations, and real-time RAG pipeline logs.
+* **DocumentParser** ([backend/rag_engine.py](backend/rag_engine.py)): Extracts text from PDF (`pypdf`), DOCX (`python-docx`), Excel (`pandas`/`openpyxl`), and TXT files.
+* **TextChunker** ([backend/rag_engine.py](backend/rag_engine.py)): Hierarchical parent/child chunking. Parent chunks (~1200 chars / 200 overlap) preserve context and back the FTS5 index; child chunks (~250 chars / 50 overlap) are embedded for precise vector matching. Boundaries snap to whitespace.
+* **EmbeddingEngine** ([backend/rag_engine.py](backend/rag_engine.py)): Instantiates `sentence-transformers/all-MiniLM-L6-v2` locally to generate 384-dimensional vectors. Imported lazily so the vector store can be used without loading torch.
+* **Reranker** ([backend/reranker.py](backend/reranker.py)): Provider-neutral cross-encoder seam. `LocalReranker` preserves the lazy CPU implementation; `RemoteReranker` sends a bounded candidate pool to a dedicated GPU HTTP service; `FallbackReranker` fails open to local.
+* **SQLiteVectorStore** ([backend/rag_engine.py](backend/rag_engine.py)): Stores documents, parent/child chunks, embedding BLOBs, and an FTS5 index. `search_similarity` runs **hybrid retrieval**: vectorized cosine over child chunks (mapped up to best parent) + FTS5 keyword search, fused via RRF, then cross-encoder reranked. Embeddings are held in an **in-memory, pre-normalized matrix cache** (built lazily, invalidated on add/delete) so queries avoid re-reading BLOBs and recomputing corpus norms.
+* **AgenticRAGRouter** ([backend/agentic_router.py](backend/agentic_router.py)): Orchestrates each query. Online mode asks the LLM for a JSON plan (which stores to search + sub-queries), retrieves per sub-query, self-corrects on empty results, and synthesizes a grounded answer. Simulated mode runs local retrieval plus a Python rule engine keyed to demo claims/audit types. Emits step-by-step `pipeline_logs`.
+* **FastAPI Server** ([backend/app.py](backend/app.py)): Exposes REST endpoints for global + per-claim upload, listing, deletion, document content/download, agentic chat, and LLM connection status.
+* **Frontend Web Dashboard** ([frontend/index.html](frontend/index.html)): HTML/CSS/JS UI with a claims queue, per-claim document folders, claims chat, clickable/viewable document citations, and real-time RAG pipeline logs.
 
 ### File Structure
 
 ```
-C:\PERSONAL\
+auto-claims-rag/
 ├── requirements.txt            ← Python project dependencies
+├── config.py / app_factory.py  ← Typed settings + dependency-injected app factory (Phase 0)
+├── Dockerfile / docker-compose.yml  ← Self-contained container image (Phase 6 infra)
 ├── rag_store.db                ← SQLite vector database (git-ignored)
-├── create_sample_files.py      ← Programmatic auto claims guidelines generator
+├── create_sample_files.py      ← Programmatic DOCX/XLSX/TXT guidelines generator
 ├── generate_auto_pdfs.py       ← reportlab PDF document generator
-├── generate_massive_dataset.py ← Bulk seed-data generator (PDF/DOCX/XLSX/TXT)
 ├── ingest_all.py               ← Script to batch-index all sample documents
-├── test_rag_pipeline.py        ← CLI hybrid-search verification script
 ├── sample_guidelines/          ← Generated source documents (git-ignored)
 ├── stored_documents/           ← Physical copies served to the UI (viewer/download)
 ├── assets/
@@ -118,24 +118,26 @@ C:\PERSONAL\
 
 ## Running the Project
 
-Ensure the virtual environment is used to run all python scripts.
+Ensure the virtual environment is used to run all python scripts. The project runs
+on Linux (self-hosted CI, all dev sessions since 2026-08-29) -- use `.venv/bin/`,
+not `.venv\Scripts\`.
 
-```powershell
-# 1. Start the FastAPI backend server (listens on port 8000)
-.venv\Scripts\python -m uvicorn backend.app:app --reload --port 8000
+```bash
+# 1. Generate synthetic seed guidelines (PDF + DOCX/XLSX/TXT) and ingest them
+.venv/bin/python generate_auto_pdfs.py
+.venv/bin/python create_sample_files.py
+.venv/bin/python ingest_all.py
 
-# 2. Access the interactive web interface in your browser
-http://localhost:8000
+# 2. Start the FastAPI backend server (serves the frontend too, port 8000)
+.venv/bin/python -m uvicorn backend.app:app --reload --port 8000
+# -> http://localhost:8000
 
-# 3. Generate sample auto insurance guidelines (PDF)
-.venv\Scripts\python generate_auto_pdfs.py
-
-# 4. Batch-index all guidelines into the vector database
-.venv\Scripts\python ingest_all.py
-
-# 5. Run the CLI pipeline verification tests
-.venv\Scripts\python test_rag_pipeline.py
+# 3. Verify
+.venv/bin/python -m pytest tests/ -q
+.venv/bin/python scripts/run_foundation_gates.py --mode gate
 ```
+
+Or in Docker: `docker compose up --build` (see `docs/operations/local-and-production.md`).
 
 ---
 
@@ -770,6 +772,22 @@ http://localhost:8000
   * `docker compose` itself (the plugin) isn't installed on this host — only bare `docker build`/`docker run` were used for verification, plus a Python `yaml.safe_load` parse of `docker-compose.yml` to confirm it's syntactically valid and its env vars/volume config exactly match what was smoke-tested via `docker run -e ... -v ...`. Recorded honestly as a verification gap, not silently passed over.
   * Docs: README gained a "Or run it in Docker" subsection; `docs/operations/local-and-production.md` gained a "Docker" section (image design, the two bugs found, the dev/portfolio-profile boundary); `CONTEXT.md`'s routing table gained a Docker row.
 * **Plan changes**: migration doc's Docker-packaging and golden-eval deferred-finding rows both marked Done; live OIDC (and the other Phase-6 deployment-wiring items) remain open, explicitly deferred by user choice rather than skipped by default. Of the original 2026-08-28 deferred-findings list, only genuinely external-account/infra items remain (live OIDC, live S3→Lambda→SQS hop, real KMS, Redis rate-limit state, SOC2 evidence). Phase 6 (load test) is next per the migration doc.
+
+### 2026-09-02 (session 31 — full repo audit and cleanup for hiring-manager readiness)
+* **Phase**: Repo hygiene/cleanliness audit (no Build Plan phase). User said "perform full repo audit and cleanup i want it clean for a possible job offer." Ran three parallel read-only audits (documentation staleness, security re-verification beyond the automated harness, repo hygiene/dead code), then applied the safe fixes directly and brought two decisions to the user rather than resolving them unilaterally.
+* **Found & fixed**:
+  * **Stale Windows/PowerShell instructions**, inconsistent with the project's actual environment for months (self-hosted Linux CI since session 18): README's "Try it locally" and CLAUDE.md's "Running the Project" both used `.venv\Scripts\python` PowerShell syntax. Converted both to `.venv/bin/python` bash, matching what CONTRIBUTING.md and docs/operations/local-and-production.md already used.
+  * **Real functional gap in the documented setup flow, not just a syntax issue**: README/CLAUDE.md's setup steps only ran `generate_auto_pdfs.py` (PDF-only) before `ingest_all.py` — never `create_sample_files.py`, which is the *only* source of `Auto_Claims_Guidelines.docx` and `Auto_Deductibles_And_Limits.xlsx` (the one real table document, load-bearing for the `plan-a-comprehensive-deductible` golden query per session 12's chunking research). A fresh clone following the documented steps literally would never reproduce the full DOCX/XLSX-covering corpus this repo claims to demonstrate. Verified the two generator scripts produce zero overlapping filenames (grep, no collisions) before adding the missing step to both docs.
+  * **Dead `file:///C:/PERSONAL/...` links** throughout CLAUDE.md's Architecture Overview (a scaffold leftover never adapted to this repo) — replaced with working relative repo paths; File Structure tree's `C:\PERSONAL\` header replaced with `auto-claims-rag/`.
+  * **Real company named in synthetic demo output**: `backend/agentic_router.py:831`'s simulated subrogation narrative named "State Farm Insurance" as the fictional third-party carrier — removed the real name, kept "the third-party carrier."
+  * **`.gitignore` had 6 duplicate entries** (`.env`, `.venv`/`.venv/`, `*.sqlite`/`*.sqlite3`, `stored_documents/`, `audit.log.jsonl`, `downloads/`) from being appended to across sessions rather than edited in place — deduplicated. Also softened a comment that asserted "(public) portfolio repo" when the repo is currently private (verified live via `gh repo view` — visibility hasn't changed since the PIP-driven decision to keep it private).
+  * **Two dead root scripts removed** (user confirmed): `generate_massive_dataset.py` (54KB, zero references anywhere except historical comments explaining it was superseded by `generate_auto_pdfs.py` + `create_sample_files.py` back in Phase 10/15) and `test_rag_pipeline.py` (a pre-pytest-suite CLI script that writes directly to the real `rag_store.db`, non-hermetic, redundant with the 376-case `tests/` suite). CLAUDE.md's File Structure tree updated to match; the Debugging History row that mentions `test_rag_pipeline.py` was left as an accurate historical record, not touched.
+  * **`CONTRIBUTING.md`'s Verification section** now names `scripts/run_foundation_gates.py --mode gate` explicitly instead of "when it exists" (it's been a stable, named command since session 8).
+  * **Flagged the self-hosted-runner + public-repo risk explicitly**: `tests.yml` triggers on plain `pull_request` against Jared's own self-hosted runner — safe only because the repo is private today. Added an explicit warning to `docs/operations/local-and-production.md`'s CI section with concrete mitigation options (fork-PR approval gate, or move to GitHub-hosted for public visibility) to check *before* any future visibility change — directly relevant given "possible job offer" was the stated reason for this cleanup.
+* **Brought to the user rather than resolved unilaterally** (both confirmed): (1) whether to delete the two dead scripts — yes; (2) `CONTRIBUTING.md` literally said "contributors and coding agents do not self-merge," which the actual git history (sessions 27-30, all self-merged per the user's own "make that a last step always" instruction) directly contradicts — a reviewer evaluating this repo's agentic workflow specifically would notice the mismatch. User chose to update the doc to honestly describe the actual maintainer-authorized agent-merge workflow rather than either silently keep the false claim or revert to requiring manual merge approval.
+* **Verification (recorded)**: full suite `pytest tests/ -q` → **376 passed / 12 skipped** (unchanged — nothing functional touched); `ruff check .` clean; `compileall` clean across all remaining root scripts; foundation gate → 10 findings / 0 blocking (unchanged). Also caught and fixed a transient CI failure unrelated to code: the PR #24 merge-to-main run failed on `actions/checkout@v4` with a DNS resolution error on the self-hosted runner (`Could not resolve host: github.com`) — a one-off network blip, re-ran via `gh run rerun` and confirmed green, so Actions history no longer shows a spurious red X next to a real, already-merged, already-CI-passed change.
+* **Confirmed clean (audits found nothing wrong)**: no secrets/credential patterns beyond what the harness already catches, no personal machine paths/emails leaked into tracked files, no real claims data (spot-checked `sample_guidelines/` content), `requirements.txt` fully pinned, no dead backend/scripts/eval modules, no stray backup/swap/OS files, README's eval-numbers table matches `eval/results.json` exactly, no TODO/FIXME markers anywhere in tracked source, all internal doc cross-references resolve to real files.
+* **Plan changes**: none to the Build Plan — this was a cleanliness pass, not new feature work.
 
 ---
 

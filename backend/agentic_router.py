@@ -828,7 +828,7 @@ class AgenticRAGRouter:
                     "",
                     "Under the *Rider_OEM_Parts_Guarantee.pdf*, factory-original OEM parts have been fully approved.",
                     "",
-                    "Since you were rear-ended while stationary, our recovery unit is actively pursuing subrogation against State Farm Insurance (the third-party carrier) to recover the repair costs and refund your $500.00 deductible.",
+                    "Since you were rear-ended while stationary, our recovery unit is actively pursuing subrogation against the third-party carrier to recover the repair costs and refund your $500.00 deductible.",
                     "",
                     "Sincerely,",
                     "**Claims Adjuster Copilot**",
