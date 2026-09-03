@@ -39,7 +39,9 @@ class _FakeEmbedder:
 
     @staticmethod
     def _vec(text: str):
-        digest = hashlib.md5((text or "").encode()).digest()
+        # usedforsecurity=False: this hash only needs to be a fast, deterministic
+        # fingerprint for fake embedding vectors, never a security control.
+        digest = hashlib.md5((text or "").encode(), usedforsecurity=False).digest()
         return [digest[i % len(digest)] / 255.0 for i in range(16)]
 
     def embed_chunks(self, chunks):
