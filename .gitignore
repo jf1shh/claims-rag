@@ -23,28 +23,18 @@ share/python-wheels/
 .installed.cfg
 *.egg
 MANIFEST
-
-# Virtual Environment
-.env
-.venv
 pip-log.txt
 pip-delete-this-directory.txt
 
-# Databases and Local Storage
+# Databases and local storage
 *.db
 *.sqlite
 *.sqlite3
 .env
-.venv/
-stored_documents/
-audit.log.jsonl
-.superpowers/
-
-*.sqlite
-*.sqlite3
 sample_guidelines/
 stored_documents/
 audit.log.jsonl
+.superpowers/
 
 # Claude Code local settings (machine-specific, not shared)
 .claude/settings.local.json
@@ -59,7 +49,7 @@ audit.log.jsonl
 *.sw?
 
 # Unrelated projects living in this working directory -- must never be
-# committed to this (public) portfolio repo
+# committed to this repo
 Restaurant App/
 
 # OS Files
@@ -69,7 +59,6 @@ Thumbs.db
 # HuggingFace Cache
 .cache/
 huggingface/
-downloads/
 
 # Gemini System Logs / Artifacts
 .gemini/

@@ -122,22 +122,23 @@ This repository contains synthetic data only. Review [`SECURITY.md`](SECURITY.md
 
 ## Try it locally
 
-```powershell
-# 1. Create and activate a virtual environment, then install dependencies
-python -m venv .venv
-.venv\Scripts\pip install -r requirements.txt
+```bash
+# 1. Create a virtual environment, then install dependencies
+python3.12 -m venv .venv
+.venv/bin/pip install -r requirements.txt
 
-# 2. Generate synthetic seed guidelines and ingest them
-.venv\Scripts\python generate_auto_pdfs.py
-.venv\Scripts\python ingest_all.py
+# 2. Generate synthetic seed guidelines (PDF + DOCX/XLSX/TXT) and ingest them
+.venv/bin/python generate_auto_pdfs.py
+.venv/bin/python create_sample_files.py
+.venv/bin/python ingest_all.py
 
 # 3. Start the backend (serves the frontend too)
-.venv\Scripts\python -m uvicorn backend.app:app --reload --port 8000
+.venv/bin/python -m uvicorn backend.app:app --reload --port 8000
 # → http://localhost:8000
 
 # 4. (Optional) Point LM Studio at port 1234 with any OpenAI-compatible chat model
 #    loaded, then run the eval harness:
-.venv\Scripts\python eval/run_eval.py
+.venv/bin/python eval/run_eval.py
 ```
 
 Without an LM Studio server running, the app falls back to a rule-based simulation mode so the UI and retrieval pipeline are still fully explorable.
