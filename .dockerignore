@@ -1,0 +1,33 @@
+.git/
+.github/
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.claude/
+.superpowers/
+
+# Runtime data -- never bake real/synthetic corpora or generated state into
+# the image; mount them as volumes instead (see docker-compose.yml).
+*.db
+*.sqlite
+*.sqlite3
+audit.log.jsonl
+stored_documents/
+sample_guidelines/
+.cache/
+huggingface/
+
+# Docs/dev-only content not needed at runtime
+docs/
+CLAUDE.md
+CONTEXT.md
+CONTRIBUTING.md
+IDENTITY.md
+stages/
+assets/
+
+# Unrelated project that must never end up in any build context
+Restaurant App/

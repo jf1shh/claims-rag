@@ -12,6 +12,21 @@ uv pip install --python .venv/bin/python -r requirements.txt
 
 Local mode uses SQLite, the configured filesystem directory, local embeddings/reranking, and optional LM Studio. The repository’s sample data is synthetic.
 
+## Docker
+
+```bash
+docker compose up --build
+```
+
+`Dockerfile` is a single-stage `python:3.12-slim` image. Two things worth knowing:
+
+- The app forces Hugging Face offline mode at import time (`HF_HUB_OFFLINE=1` in `backend/app.py`), so the embedding + reranker models must already be cached before the server can start. The build runs `scripts/precache_models.py` (network required at **build** time only) so the resulting image needs zero network access to boot.
+- LM Studio is a native desktop app and can't live in the container. `docker-compose.yml` sets `LLM_BASE_URL=http://host.docker.internal:1234` and adds the `host.docker.internal:host-gateway` mapping Linux needs (Docker Desktop on Mac/Windows already resolves it). With no LM Studio running, the app still serves — `SIMULATION_MODE=true` stands in for a live model.
+
+Runtime state (`rag_store.db`, `stored_documents/`, `jobs.db`, `audit.log.jsonl`) is routed via `RAG_DB_PATH`/`STORED_DOCUMENTS_DIR`/`JOBS_DB_PATH`/`AUDIT_LOG_PATH` into `/app/data`, backed by one named volume — deliberately not a bind mount per file, since Docker creates a directory (not a file) when a bind-mounted host path doesn't already exist.
+
+This image is a development/portfolio-demo profile, same as local SQLite mode (see Production boundary below) — it isn't a production deployment artifact on its own.
+
 ## Local CI (self-hosted runner)
 
 CI for this repo runs on a **self-hosted GitHub Actions runner** (`runs-on: [self-hosted, linux, autoclaimsrag]`), not a GitHub-hosted VM — the repo is private, GitHub-hosted minutes are capped, and self-hosted matches the project's "runs entirely on my own machine, no cloud" design constraint. See `.github/workflows/tests.yml` and CLAUDE.md (Current State) for the full history and rationale.

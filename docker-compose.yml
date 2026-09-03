@@ -1,0 +1,36 @@
+# Local single-container run of AutoClaimsRAG (SQLite/filesystem profile,
+# matching the app's own MVP default -- see docs/enterprise-migration.md for
+# the Postgres/S3/SQS profile, which is opt-in via the same env vars .env.example
+# documents and isn't wired into this file to keep the default path simple).
+#
+# LM Studio runs natively on the host, not in a container. `extra_hosts` below
+# maps host.docker.internal to the host gateway (works on Docker Desktop
+# Mac/Windows already; needed explicitly on Linux) so LLM_BASE_URL can reach
+# it. Without LM Studio running, the app still serves — SIMULATION_MODE
+# answers stand in for a live model.
+
+services:
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      APP_ENV: development
+      LLM_PROVIDER: lm-studio
+      LLM_BASE_URL: http://host.docker.internal:1234
+      SIMULATION_MODE: "true"
+      # Route every piece of runtime state into the one mounted volume below
+      # instead of leaving it under the container's writable layer (lost on
+      # rebuild) or bind-mounting individual files (Docker creates a directory,
+      # not a file, when the host path doesn't already exist -- a classic trap).
+      RAG_DB_PATH: /app/data/rag_store.db
+      STORED_DOCUMENTS_DIR: /app/data/stored_documents
+      JOBS_DB_PATH: /app/data/jobs.db
+      AUDIT_LOG_PATH: /app/data/audit.log.jsonl
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - autoclaimsrag-data:/app/data
+
+volumes:
+  autoclaimsrag-data:
