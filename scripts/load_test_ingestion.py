@@ -3,13 +3,19 @@
 Pushes ``--count`` synthetic documents through the full async path --
 ``IngestionService.submit`` (dedupe + enqueue) -> in-process queue ->
 ``IngestionWorker`` (fetch blob -> parse -> chunk -> embed -> upsert) ->
-``SQLiteVectorStore`` -- using a torch-free deterministic fake embedder so the
+a vector store -- using a torch-free deterministic fake embedder so the
 measurement is of the pipeline machinery, not the ML stack. Reports docs/sec,
 enqueue time, processing time, and the worker's job-metrics counters. Exits
 non-zero when any message failed/dead-lettered or throughput is below
 ``--floor-docs-per-sec``.
 
+Backend defaults to SQLite (Phase 3.3's original target); ``--backend
+postgres`` points the same tool at a real Postgres + pgvector instance
+instead (Phase 6.1: answers "ingest throughput sustained" at the
+Postgres/HNSW scale by reusing this proven tool, not building a second one).
+
 Run:  python scripts/load_test_ingestion.py --count 10000
+      python scripts/load_test_ingestion.py --count 10000 --backend postgres --postgres-dsn postgresql://...
 """
 
 from __future__ import annotations
@@ -32,17 +38,25 @@ from backend.ingestion_worker import IngestionWorker  # noqa: E402
 from backend.job_store import SqliteJobStore  # noqa: E402
 from backend.queue import InProcessQueue  # noqa: E402
 from backend.rag_engine import SQLiteVectorStore  # noqa: E402
+from backend.postgres_store import PostgresVectorStore  # noqa: E402
 
 
 class _FakeEmbedder:
-    """Deterministic, torch-free embedder (mirrors the test suites)."""
+    """Deterministic, torch-free embedder (mirrors the test suites).
+
+    Produces 384-dim vectors -- matching all-MiniLM-L6-v2's real
+    dimensionality -- unconditionally, not just for the Postgres backend:
+    PostgresVectorStore's `vector(384)` schema column requires an exact match
+    (Phase 6.1 needs this), and there's no reason for the SQLite path to use a
+    different, less realistic dimensionality either.
+    """
 
     @staticmethod
     def _vec(text: str):
         # usedforsecurity=False: this hash only needs to be a fast, deterministic
         # fingerprint for fake embedding vectors, never a security control.
         digest = hashlib.md5((text or "").encode(), usedforsecurity=False).digest()
-        return [digest[i % len(digest)] / 255.0 for i in range(16)]
+        return [digest[i % len(digest)] / 255.0 for i in range(384)]
 
     def embed_chunks(self, chunks):
         return [self._vec(c) for c in chunks]
@@ -69,14 +83,23 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--count", type=int, default=10_000, help="number of documents to ingest")
     parser.add_argument("--floor-docs-per-sec", type=float, default=50.0, help="minimum throughput to pass")
+    parser.add_argument("--backend", choices=("sqlite", "postgres"), default="sqlite", help="vector store backend")
+    parser.add_argument("--postgres-dsn", default=None, help="required when --backend postgres")
     args = parser.parse_args(argv)
     if args.count <= 0:
         parser.error("--count must be positive")
+    if args.backend == "postgres" and not args.postgres_dsn:
+        parser.error("--postgres-dsn is required with --backend postgres")
+
+    tenant_id = "tenant-a" if args.backend == "sqlite" else "loadtest-tenant-a"
 
     with tempfile.TemporaryDirectory() as tmp:
         root = Path(tmp)
         blob = LocalDocumentBlobStore(root / "blobs")
-        store = SQLiteVectorStore(db_path=str(root / "test.db"), storage_dir=str(root / "docs"), blob_store=blob)
+        if args.backend == "postgres":
+            store = PostgresVectorStore(dsn=args.postgres_dsn, tenant_id=tenant_id, blob_store=blob)
+        else:
+            store = SQLiteVectorStore(db_path=str(root / "test.db"), storage_dir=str(root / "docs"), blob_store=blob)
         job_store = SqliteJobStore(str(root / "jobs.db"))
         queue = InProcessQueue()
         service = IngestionService(queue=queue, job_store=job_store)
@@ -93,7 +116,7 @@ def main(argv: list[str] | None = None) -> int:
             filename = f"doc_{index:05d}.txt"
             content = _synthetic_text(index).encode()
             blob.put(f"global/{filename}", content, "text/plain")
-            service.submit(tenant_id="tenant-a", filename=filename, content=content)
+            service.submit(tenant_id=tenant_id, filename=filename, content=content)
         enqueue_done = time.perf_counter()
 
         processed = worker.run_once()

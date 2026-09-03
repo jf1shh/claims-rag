@@ -40,3 +40,6 @@ ruff==0.16.5
 # (scripts/run_foundation_gates.py: dependency-audit, static-security)
 pip-audit==2.10.1
 bandit==1.9.4
+
+# Retrieval load testing (Phase 6.1: scripts/run_retrieval_load_test.py)
+locust==2.46.4
