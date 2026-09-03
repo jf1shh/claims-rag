@@ -142,6 +142,15 @@ python -m venv .venv
 
 Without an LM Studio server running, the app falls back to a rule-based simulation mode so the UI and retrieval pipeline are still fully explorable.
 
+### Or run it in Docker
+
+```bash
+docker compose up --build
+# → http://localhost:8000
+```
+
+Builds a self-contained image (models pre-cached at build time — the app forces Hugging Face offline mode, so it never needs network at runtime), persists `rag_store.db`/`stored_documents/`/`jobs.db`/`audit.log.jsonl` in a named volume, and reaches a native LM Studio on the host via `host.docker.internal`. See `docker-compose.yml` and `Dockerfile`.
+
 ### Verify locally
 
 Run these commands from the repository root and report their actual output:
