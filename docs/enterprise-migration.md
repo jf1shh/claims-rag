@@ -481,6 +481,59 @@ RLS onto live multi-tenant data is the most expensive mistake in this plan.
 > Spec: `docs/superpowers/specs/2026-09-02-phase6-load-test-design.md`. Next:
 > 6.2 (drift monitoring) — or, if prioritized ahead of the roadmap order,
 > standing up a real `RemoteReranker` GPU service to close this exact gap.
+>
+> **Follow-up (2026-09-03): partial fix shipped, root cause narrowed further.**
+> No GPU is available in this dev environment to stand up `RemoteReranker`
+> (AMD card, no ROCm toolchain — installing it would mean invasive
+> system-level driver changes on the maintainer's own gaming machine, out of
+> scope without explicit sign-off). Instead: `RERANK_CANDIDATE_POOL` default
+> lowered (`config.py`, `.env.example`), cutting **sequential** live retrieval
+> latency at some cost to how wide a net reranking casts.
+>
+> **Two pool values were tried, and the first one was reverted after the full
+> eval suite (not just the golden-query spot check) caught a real
+> regression.** `pool=8` cut sequential latency the most (~365ms → ~80ms,
+> ~4.7x) but the full 19-query eval suite — not just the 18-query
+> golden-query recall@4 check, which only caught 1 of the 2 real misses —
+> showed live `/api/chat` correctness dropping hard on two queries:
+> `sterling-shop-estimate-detail` (0.75 → 0.0) and, more seriously,
+> `chen-custom-equipment-cap` (1.0 → 0.25) — the exact query Phase 9's
+> guaranteed-dossier-inclusion fix was built around. Presented to the
+> maintainer with the full before/after; **`pool=15` was chosen instead**,
+> verified to preserve both queries (`chen-custom-equipment-cap` correctness
+> fully recovered to 1.0, matching the `pool=50` baseline exactly;
+> `sterling-shop-estimate-detail`'s retrieval also recovered — same source
+> document, hybrid recall back to 1.0 — its correctness delta, 0.75 → 0.33,
+> is very likely LLM-judge run-to-run variance given identical retrieval, not
+> a retrieval-quality regression). Full-suite aggregate at `pool=15`: naive
+> Context Precision/Recall unchanged (0.797/0.912, as expected — pool doesn't
+> touch the naive path); hybrid Context Precision 0.849 → 0.876, Context
+> Recall 1.000 → 0.947, Faithfulness 0.754 → 0.887, Correctness 0.689 → 0.658
+> — every metric lands within this repo's own already-documented normal
+> judge-noise band (see Known Issues), none showing the kind of sharp,
+> query-specific drop `pool=8` did. `pool=15` cuts sequential latency to
+> ~155-167ms — a real, smaller win than `pool=8`'s, with no eval-verified
+> quality cost. **Lesson for any future candidate-pool or reranker-model
+> tuning on this app**: a golden-query recall@4 spot check is not a
+> substitute for the full eval suite — it caught only half of `pool=8`'s real
+> regressions.
+>
+> **This does not close the concurrent-load p95 finding above.** Tested three
+> separate angles, live, against the real corpus: candidate pool size (50→8:
+> concurrent p95 ~3800ms → ~3700ms, no meaningful change), PyTorch thread
+> count (`OMP_NUM_THREADS=1`: no meaningful change), and an **11x-faster**
+> cross-encoder model (`cross-encoder/ms-marco-TinyBERT-L-2-v2`: sequential
+> latency ~370ms — statistically identical to the original model at the same
+> pool, and concurrent p95 also unchanged). Naive/hybrid mode (no reranking)
+> has *zero* concurrency problem at any pool size. Ruling out both pool size
+> and raw model compute this cleanly narrows the real bottleneck to something
+> in the rerank call path itself under concurrent sync requests — plausibly
+> tokenization overhead or a GIL-blocking pattern specific to how
+> `sentence-transformers`/`CrossEncoder.predict()` is invoked from FastAPI's
+> threadpool — not something a config change can fix. Real profiling
+> (`py-spy` under concurrent load) is the next step if this is prioritized;
+> tracked as open, not silently left implied-fixed by the pool-size change
+> above.
 
 ---
 
