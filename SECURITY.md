@@ -15,6 +15,7 @@ AutoClaimsRAG handles claims-like documents and must treat all uploaded content 
 - Retrieved document content is delimited (escaped, wrapped in `<source>` blocks) and the system prompt instructs the model to treat it as data, never as instructions — a claim document's own text cannot redirect the assistant's behavior. Context assembly (dossier chunks, global matches, total prompt size) is bounded via server-side config, not client-controlled.
 - Assistant output is an interpretation for human review, not an autonomous coverage, fraud, payment, denial, or referral decision.
 - Production errors must not disclose stack traces, filesystem paths, credentials, or raw sensitive document content.
+- **CI infrastructure**: `.github/workflows/tests.yml` currently runs on a self-hosted runner, safe only while this repository is private (no untrusted `pull_request` can reach it). Making the repo public requires switching to GitHub-hosted runners first — see the checklist in `docs/operations/local-and-production.md` (Docker/Local CI section) and the inline comment at each `runs-on:` line in the workflow file.
 
 ## Reporting a vulnerability
 

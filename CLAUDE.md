@@ -789,6 +789,17 @@ Or in Docker: `docker compose up --build` (see `docs/operations/local-and-produc
 * **Confirmed clean (audits found nothing wrong)**: no secrets/credential patterns beyond what the harness already catches, no personal machine paths/emails leaked into tracked files, no real claims data (spot-checked `sample_guidelines/` content), `requirements.txt` fully pinned, no dead backend/scripts/eval modules, no stray backup/swap/OS files, README's eval-numbers table matches `eval/results.json` exactly, no TODO/FIXME markers anywhere in tracked source, all internal doc cross-references resolve to real files.
 * **Plan changes**: none to the Build Plan — this was a cleanliness pass, not new feature work.
 
+### 2026-09-02 (session 32 — future-proofed the self-hosted-runner + public-repo CI risk)
+* **Phase**: Follow-up to session 31's audit (no Build Plan phase). User asked "how do we future-proof that" about the self-hosted-runner risk flagged in the audit.
+* **Key insight, not just a mitigation**: self-hosted was adopted *only* because GitHub-hosted Actions minutes are capped on private repos (session 18) — that cap doesn't exist for public repos (GitHub Actions is free/unlimited on standard hosted runners for public repos). So switching `runs-on` to `ubuntu-latest` at the exact moment the repo goes public removes the security risk *and* the original reason self-hosted was needed, simultaneously, with no cost tradeoff to weigh — not a compromise between security and CI cost, a strict improvement on both axes once public.
+* **Implemented a 3-layer guardrail so this can't be missed or done out of order**, rather than just documenting it once:
+  1. `.github/workflows/tests.yml`: an inline `>>> BEFORE MAKING THIS REPO PUBLIC` comment directly above each `runs-on: [self-hosted, ...]` line (both jobs) — placed exactly where the future edit would happen, so whoever (human or a future agent session) touches this line for that purpose can't miss the instruction.
+  2. `docs/operations/local-and-production.md`: the prior prose warning rewritten into a concrete 3-step checklist (change `runs-on`, confirm green on hosted runners, optionally stop the runner service) tied explicitly to happening *together with* the visibility flip, not before or as a separate later task.
+  3. `SECURITY.md`: added a "CI infrastructure" bullet to the Current security boundaries list pointing to both of the above — this is the doc a security-focused reviewer (or a future session following CONTRIBUTING.md's "read SECURITY.md" instruction) would actually read.
+* **Deliberately not done**: did not configure GitHub's fork-PR-approval-required setting (repo Settings → Actions → General) as additional defense-in-depth — the `runs-on: ubuntu-latest` switch alone is sufficient (GitHub-hosted runners are ephemeral/isolated regardless of who opens the PR), so adding a second gate would be redundant complexity for an already-solved problem, not matching this repo's stated preference for lightweight gates over "opinionated churn" (see `pyproject.toml`'s ruff config comment for the same philosophy applied elsewhere).
+* **Verification (recorded)**: workflow YAML re-validated (`yaml.safe_load`) after the comment edits; full suite unchanged at 376 passed / 12 skipped; `ruff check .` clean; foundation gate 10 findings / 0 blocking.
+* **Plan changes**: none — infra/documentation hardening only.
+
 ---
 
 ## Authoritative Sources
