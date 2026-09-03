@@ -421,6 +421,67 @@ RLS onto live multi-tenant data is the most expensive mistake in this plan.
 | 6.3 | Compliance: encryption in transit/at rest, retention/deletion (S3 lifecycle + PG archival), access reviews, incident runbook | Evidence pack for SOC2-type review |
 | 6.4 | Cutover: both backends feature-flagged, parity in staging, blue/green, rollback drill | Production on Postgres; rollback < 1 hr |
 
+> **Phase 6.1 status (2026-09-02): measured, bar not met — root cause identified,
+> not a corpus-scale problem.** `scripts/seed_retrieval_load_corpus.py` bulk-seeds
+> a multi-tenant Postgres+pgvector corpus (bypassing HTTP/ML for speed);
+> `scripts/locustfile_retrieval.py` + `scripts/run_retrieval_load_test.py` drive
+> real concurrent multi-tenant HTTP load against a live `backend.app:app` and
+> report p95 via Locust's own stats; `load_test_ingestion.py` gained
+> `--backend postgres` to reuse the Phase 3.3 tool rather than duplicating it.
+>
+> **Measured, real 100k-doc run**: 100,000 docs across 8 tenants seeded at
+> **60.9 docs/sec sustained** (ingest throughput leg: met, no corpus-scale
+> degradation — rate held steady from 10k through 100k). Retrieval: **p95 =
+> 3800ms under 10 concurrent users — does not meet the 100ms bar.**
+>
+> **Root cause, isolated by direct measurement, not assumed**: it is *not*
+> corpus scale or the vector index. Sequential single-request latency was
+> measured identically at 200 docs, 20,000 docs, and 100,000 docs — no
+> corpus-size effect at all. Splitting `/api/eval/search`'s `naive`/`hybrid`
+> (no rerank) vs `hybrid_rerank` modes at 20k docs isolated the real cost:
+> naive/hybrid = **~15ms**, `hybrid_rerank` = **~380-400ms** — the CPU
+> cross-encoder reranking step, which every `/api/chat` request goes through,
+> already exceeds the 100ms bar **before any concurrency or corpus-size factor
+> is even in play**. Under concurrent load, that per-request CPU cost
+> compounds — 5 concurrent requests each took ~1.7s (vs. ~0.4s sequential),
+> roughly proportional to concurrent count, consistent with CPU-bound rerank
+> work serializing rather than parallelizing in this single-process
+> deployment (a `--workers 4` retest showed mixed, inconclusive improvement,
+> confounded by this sandbox's own variable load — see caveat below).
+>
+> **This is not a new problem — it's the exact gap Phase 5.2 already
+> designed for and didn't need to close yet.** `backend/reranker.py`'s
+> `RemoteReranker` (a dedicated GPU cross-encoder service, batched, POST
+> `/rerank`) exists precisely to move this cost off the request-handling CPU
+> path; it was never deployed because no live GPU reranker service has been
+> stood up. This measurement is the empirical case for standing one up,
+> not evidence of a code defect to fix within 6.1's own scope (matching this
+> spec's own non-goal: "if the bar isn't met, the finding... is the
+> deliverable, not a guaranteed fix").
+>
+> **Honest caveat on the concurrency numbers**: this load test ran on Jared's
+> own machine — the same box running his desktop session (Firefox, Steam, KDE
+> Plasma) throughout, not dedicated/isolated infrastructure. The **sequential,
+> per-request findings are robust** (repeated 3+ times, consistent within
+> ~5%, and isolate cleanly via the naive-vs-rerank comparison, which doesn't
+> depend on clean concurrency measurement at all). The **absolute concurrent
+> p95 number (3800ms) is directional, not SLO-grade** — real production
+> concurrent-throughput capacity should be re-measured on dedicated,
+> unshared infrastructure before being treated as a hard number (see spec
+> Section 9, deployment wiring appendix).
+>
+> CI: `tests/test_retrieval_load_smoke.py` runs the harness itself (200 docs,
+> 3 users, 10s) against the `postgres` job's own service container on every
+> push — proves the tool works, does not gate on the 100ms bar at trivial
+> scale. Full suite **392 passed / 1 skipped with the PG leg** (376 passed /
+> 17 skipped without it), `ruff check .` clean, foundation gate 25 findings /
+> 0 blocking (new advisory findings are `random`/`subprocess`/`urlopen` usage
+> in the load-test tooling itself, all reviewed — none HIGH/HIGH).
+>
+> Spec: `docs/superpowers/specs/2026-09-02-phase6-load-test-design.md`. Next:
+> 6.2 (drift monitoring) — or, if prioritized ahead of the roadmap order,
+> standing up a real `RemoteReranker` GPU service to close this exact gap.
+
 ---
 
 ## Deferred findings (close-out record, 2026-08-28)

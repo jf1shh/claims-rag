@@ -103,8 +103,14 @@ jobs:
       - name: Run linter
         run: .venv/bin/ruff check .
 
-      - name: Run Postgres backend tests (migrations + store + RLS)
-        run: .venv/bin/pytest tests/test_postgres_store.py -v
+      # Runs the whole suite (not just test_postgres_store.py) so every
+      # PG-gated case -- wherever its file lives -- actually executes here
+      # instead of silently skipping (the only place POSTGRES_DSN is set).
+      # The SQLite-only tests re-run too; that's ~8s of harmless redundancy,
+      # not a maintenance trap where a new PG-gated file needs a second
+      # explicit path added to this step to ever run in CI.
+      - name: Run Postgres backend tests (migrations + store + RLS + PG-gated cases)
+        run: .venv/bin/pytest tests/ -v
 
       - name: Inter-backend retrieval parity (Postgres vs SQLite)
         run: .venv/bin/python eval/parity_runner.py --backend-b postgres --tolerance 0.9

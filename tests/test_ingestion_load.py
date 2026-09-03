@@ -6,12 +6,21 @@ itself (not a reimplementation) is exercised on every CI run; the full
 embedder completes in ~1-2s.
 """
 
+import os
 import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts" / "load_test_ingestion.py"
+
+POSTGRES_DSN = os.environ.get("POSTGRES_DSN")
+needs_postgres = pytest.mark.skipif(
+    not POSTGRES_DSN,
+    reason="POSTGRES_DSN not set; set it to a reachable Postgres + pgvector to run this case",
+)
 
 
 def test_given_small_load_when_async_ingested_then_no_failures_and_throughput_ok():
@@ -25,3 +34,30 @@ def test_given_small_load_when_async_ingested_then_no_failures_and_throughput_ok
     assert "LOAD TEST PASSED" in result.stdout
     # Sanity: the script reported the counts it actually processed.
     assert "processed=500" in result.stdout
+
+
+@needs_postgres
+def test_given_backend_postgres_flag_when_small_load_run_then_no_failures():
+    """Phase 6.1: the same script, pointed at Postgres instead of the hardcoded
+    SQLite store, so the one proven ingest-throughput tool also answers the
+    Postgres/HNSW-scale question rather than needing a second harness."""
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(SCRIPT),
+            "--count",
+            "50",
+            "--floor-docs-per-sec",
+            "10.0",
+            "--backend",
+            "postgres",
+            "--postgres-dsn",
+            POSTGRES_DSN,
+        ],
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert result.returncode == 0, f"load test failed:\n{result.stdout}\n{result.stderr}"
+    assert "LOAD TEST PASSED" in result.stdout
+    assert "processed=50" in result.stdout
