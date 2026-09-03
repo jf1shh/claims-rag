@@ -89,10 +89,10 @@ This architecture is built for one adjuster's local corpus — hundreds of docum
 
 | Metric | What it checks | Naive | Hybrid + Rerank |
 |---|---|---|---|
-| Context Precision | Retrieved chunks are actually relevant | 0.797 | 0.849 |
-| Context Recall | Nothing relevant was missed | 0.912 | 1.000 |
-| Faithfulness | Answer is grounded in retrieved context | — | 0.754 |
-| Factual Correctness | Answer covers what the verified reference requires | — | 0.689 |
+| Context Precision | Retrieved chunks are actually relevant | 0.797 | 0.876 |
+| Context Recall | Nothing relevant was missed | 0.912 | 0.947 |
+| Faithfulness | Answer is grounded in retrieved context | — | 0.887 |
+| Factual Correctness | Answer covers what the verified reference requires | — | 0.658 |
 
 ![Evaluation results chart](assets/eval_results.png)
 

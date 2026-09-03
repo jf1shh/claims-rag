@@ -76,7 +76,22 @@ class Settings:
     reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
     rerank_provider: str = "local"
     rerank_endpoint: str | None = None
-    rerank_candidate_pool: int = 50
+    # Was 50; lowered per the Phase 6.1 load-test finding (docs/enterprise-migration.md):
+    # the CPU cross-encoder rerank step, not corpus scale or the vector index, is what
+    # exceeds the 100ms p95 bar. pool=8 was tried first and cuts sequential latency
+    # the most (~365ms -> ~80ms), but the full eval suite showed it costs more than
+    # the quick golden-query check suggested: two queries' live /api/chat correctness
+    # dropped hard (0.75->0.0, 1.0->0.25), one of them chen-custom-equipment-cap --
+    # the exact query Phase 9's guaranteed-dossier-inclusion fix was built around.
+    # pool=15 was chosen instead: verified to preserve full golden-query recall@4
+    # (identical to pool=50, no regression) at a smaller but still real sequential
+    # latency win (~365ms -> ~155-167ms). This closes part of the *sequential*
+    # latency gap without an eval-suite-verified quality regression; it does NOT
+    # close the *concurrent*-load p95 (~3800ms regardless of pool size, model size,
+    # or torch thread count -- all tested) -- that bottleneck is specific to the
+    # rerank call path under concurrency and remains open, tracked as a separate
+    # follow-up (see docs/enterprise-migration.md Phase 6.1).
+    rerank_candidate_pool: int = 15
     rerank_timeout_seconds: int = 10
     rerank_api_key: str | None = None
     llm_provider: str = "lm-studio"
@@ -148,7 +163,7 @@ class Settings:
             reranker_model=env.get("RERANKER_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2"),
             rerank_provider=env.get("RERANK_PROVIDER", "local").strip().lower(),
             rerank_endpoint=env.get("RERANK_ENDPOINT") or None,
-            rerank_candidate_pool=_int(env.get("RERANK_CANDIDATE_POOL"), 50, "RERANK_CANDIDATE_POOL"),
+            rerank_candidate_pool=_int(env.get("RERANK_CANDIDATE_POOL"), 15, "RERANK_CANDIDATE_POOL"),
             rerank_timeout_seconds=_int(env.get("RERANK_TIMEOUT_SECONDS"), 10, "RERANK_TIMEOUT_SECONDS"),
             rerank_api_key=env.get("RERANK_API_KEY") or None,
             llm_provider=env.get("LLM_PROVIDER", "lm-studio").strip().lower(),
