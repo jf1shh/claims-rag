@@ -33,6 +33,14 @@ jobs:
       - name: Run linter
         run: .venv/bin/ruff check .
 
+      # Deterministic foundation gates (backend/harness.py): secrets/specs/docs/
+      # lint plus the dependency-audit (pip-audit) and static-security (bandit)
+      # sensors. Advisory findings print but don't fail the build; only a
+      # blocking finding (currently: any HIGH severity + HIGH confidence bandit
+      # result) does.
+      - name: Run foundation gates
+        run: .venv/bin/python scripts/run_foundation_gates.py --mode gate
+
       - name: Run unit tests
         run: .venv/bin/pytest tests/ -v
 

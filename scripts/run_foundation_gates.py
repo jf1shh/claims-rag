@@ -11,7 +11,7 @@ if str(ROOT) not in sys.path:
 from backend.harness import Finding, run_gate  # noqa: E402 - needs ROOT on sys.path above
 
 
-GATES = ("secrets", "specs", "docs", "lint")
+GATES = ("secrets", "specs", "docs", "lint", "dependency-audit", "static-security")
 
 
 def format_finding(finding: Finding) -> str:

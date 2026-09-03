@@ -35,3 +35,8 @@ moto==5.2.3    # in-process AWS mocks for S3 blob-store tests (no real cloud nee
 
 # Lint gate (scripts + CI)
 ruff==0.16.5
+
+# Dependency vulnerability audit + static security analysis gates
+# (scripts/run_foundation_gates.py: dependency-audit, static-security)
+pip-audit==2.10.1
+bandit==1.9.4
