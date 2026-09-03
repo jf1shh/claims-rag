@@ -89,14 +89,14 @@ This architecture is built for one adjuster's local corpus — hundreds of docum
 
 | Metric | What it checks | Naive | Hybrid + Rerank |
 |---|---|---|---|
-| Context Precision | Retrieved chunks are actually relevant | 0.797 | 0.876 |
-| Context Recall | Nothing relevant was missed | 0.912 | 0.947 |
-| Faithfulness | Answer is grounded in retrieved context | — | 0.823 |
-| Factual Correctness | Answer covers what the verified reference requires | — | 0.663 |
+| Context Precision | Retrieved chunks are actually relevant | 0.797 | 0.849 |
+| Context Recall | Nothing relevant was missed | 0.912 | 1.000 |
+| Faithfulness | Answer is grounded in retrieved context | — | 0.754 |
+| Factual Correctness | Answer covers what the verified reference requires | — | 0.689 |
 
 ![Evaluation results chart](assets/eval_results.png)
 
-**What stood out**: hybrid clearly wins on claim-scoped queries where naive vector search misses a source entirely (e.g. a shop-estimate document, 0.0→1.0 recall), and is reported honestly where it's *worse* (two queries where naive actually beat it — no cherry-picking). The most interesting result wasn't a hybrid-vs-naive story at all: one query needs two documents surfaced together (an endorsement cap *and* a claim's own receipt total), which single-shot retrieval never manages in either mode — that's the exact reason the agentic planner's guaranteed dossier-inclusion exists, and scored against the real pipeline it hits 1.0 Factual Correctness despite 0.0/0.0 on the isolated retrieval endpoint. The ~16-point Faithfulness/Correctness gap is the metric doing its job: the same answers, judged two different ways, showing where "grounded" and "complete" diverge.
+**What stood out**: hybrid clearly wins on claim-scoped queries where naive vector search misses a source entirely (e.g. a shop-estimate document, 0.0→1.0 recall), and is reported honestly where it's *worse* (two queries where naive actually beat it — no cherry-picking). The most interesting result wasn't a hybrid-vs-naive story at all: one query needs two documents surfaced together (an endorsement cap *and* a claim's own receipt total), which single-shot retrieval never manages in either mode — that's the exact reason the agentic planner's guaranteed dossier-inclusion exists, and scored against the real pipeline it hits 1.0 Factual Correctness despite 0.0/0.0 on the isolated retrieval endpoint. The Faithfulness/Correctness gap is the metric doing its job: the same answers, judged two different ways, showing where "grounded" and "complete" diverge (the local 14B judge has real run-to-run variance on these two live-answer metrics — see Known Limitations).
 
 ### Bugs this eval harness actually found and fixed
 
