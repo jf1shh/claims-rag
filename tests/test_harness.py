@@ -66,6 +66,27 @@ def test_given_pip_audit_reports_a_vulnerability_when_dependency_audit_gate_runs
     assert "PYSEC-2019-133" in finding.evidence
 
 
+def test_given_a_reviewed_exception_vuln_id_when_dependency_audit_gate_runs_then_message_is_annotated(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    (tmp_path / "requirements.txt").write_text("ragas==0.4.3\n", encoding="utf-8")
+    fake_report = {
+        "dependencies": [
+            {"name": "ragas", "version": "0.4.3", "vulns": [{"id": "PYSEC-2026-3046", "fix_versions": []}]}
+        ]
+    }
+
+    def fake_run(*args, **kwargs):
+        return subprocess.CompletedProcess(args, 1, stdout=json.dumps(fake_report), stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    findings = run_gate("dependency-audit", tmp_path)
+    assert len(findings) == 1
+    assert not findings[0].blocking
+    assert "reviewed 2026-09-02" in findings[0].message
+    assert "multi_modal_faithfulness" in findings[0].message
+
+
 def test_given_pip_audit_finds_nothing_when_dependency_audit_gate_runs_then_no_finding_is_returned(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):

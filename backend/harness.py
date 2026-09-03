@@ -82,14 +82,40 @@ def check_lint(root: Path) -> list[Finding]:
     return [Finding("lint", "error", True, "ruff check found violations", tuple(lines[:3]))]
 
 
+# Reviewed dependency-audit exceptions: known vulnerabilities with no upstream
+# fix, where the vulnerable code path was traced by hand and confirmed
+# unreachable from this app's actual usage (not just "no fix yet, ignore it").
+# Findings are still reported (never silently suppressed) so the gate output
+# stays a complete audit trail; the annotation is the evidence the F8 matrix
+# calls for. Re-review whenever requirements.txt's ragas/diskcache pins move,
+# or a fix_versions entry appears for either id. See docs/enterprise-migration.md
+# deferred findings for the full review record.
+_DEPENDENCY_AUDIT_REVIEWED_EXCEPTIONS = {
+    "PYSEC-2026-3046": (
+        "reviewed 2026-09-02: SSRF is in ragas.metrics.collections."
+        "multi_modal_faithfulness.util (_try_process_local_file/_try_process_url); "
+        "eval/run_eval.py only imports ContextPrecision/ContextRecall/Faithfulness/"
+        "FactualCorrectness from ragas.metrics.collections -- the multi-modal module "
+        "is never imported, so the vulnerable functions are unreachable"
+    ),
+    "PYSEC-2026-2447": (
+        "reviewed 2026-09-02: pickle RCE requires ragas.cache.DiskCacheBackend to be "
+        "explicitly constructed with a cache_dir; grepped eval/run_eval.py and "
+        "eval/ragas_lm_studio.py -- neither constructs it, so diskcache is an "
+        "installed-but-never-invoked transitive dependency"
+    ),
+}
+
+
 def check_dependency_audit(root: Path) -> list[Finding]:
     """Runs `pip-audit` against requirements.txt (F8: P0 dependency vulnerability
     audit). pip-audit's default (PyPI Advisory DB) JSON output carries no
     severity field, so there is no reliable signal to tier findings into
     critical/high vs low/medium — every finding is reported as advisory
-    (non-blocking) until a severity source is wired in. See the deferred
-    findings in docs/enterprise-migration.md. `--ignore-vuln` is available on
-    the underlying tool for reviewed exceptions once any are needed."""
+    (non-blocking) until a severity source is wired in. Findings with no
+    upstream fix and a hand-verified unreachable code path are annotated as
+    reviewed exceptions (_DEPENDENCY_AUDIT_REVIEWED_EXCEPTIONS) rather than
+    silently ignored. See the deferred findings in docs/enterprise-migration.md."""
     requirements = root / "requirements.txt"
     if not requirements.exists():
         return []
@@ -115,12 +141,14 @@ def check_dependency_audit(root: Path) -> list[Finding]:
             vuln_id = vuln.get("id", "unknown")
             fix_versions = vuln.get("fix_versions") or []
             fix = f"fix: {', '.join(fix_versions)}" if fix_versions else "no fix published yet"
+            exception = _DEPENDENCY_AUDIT_REVIEWED_EXCEPTIONS.get(vuln_id)
+            suffix = f"; {exception}" if exception else ""
             findings.append(
                 Finding(
                     "dependency-audit",
                     "warning",
                     False,
-                    f"{name}=={version} has known vulnerability {vuln_id} ({fix})",
+                    f"{name}=={version} has known vulnerability {vuln_id} ({fix}){suffix}",
                     (vuln_id,),
                 )
             )
