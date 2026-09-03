@@ -12,6 +12,17 @@ jobs:
   # avoids the cap entirely and matches the project's own "runs entirely on
   # my own machine, no cloud" design constraint. See ~/actions-runner and the
   # systemd unit actions.runner.jf1shh-auto-claims-rag.*.service.
+  #
+  # >>> BEFORE MAKING THIS REPO PUBLIC: change `runs-on` in both jobs below
+  # to `ubuntu-latest` (and re-add a windows-latest leg if desired -- the
+  # postgres service container works on GitHub-hosted Linux too). This
+  # trigger is plain `pull_request`, which self-hosted runners must never
+  # execute for a public repo (an external PR's code would run on this
+  # machine). The private-repo minutes cap that justified self-hosted in the
+  # first place disappears the moment the repo goes public -- GitHub Actions
+  # is free/unlimited on standard hosted runners for public repos -- so this
+  # switch is a pure win with no cost tradeoff, not a compromise. See
+  # docs/operations/local-and-production.md for the full checklist.
   pytest-linux:
     runs-on: [self-hosted, linux, autoclaimsrag]
     steps:
@@ -58,6 +69,8 @@ jobs:
   # `alembic upgrade head`, and the golden parity harness is pointed at Postgres
   # with the looser 0.9 tolerance (pgvector HNSW is approximate vs SQLite's
   # exact brute-force search).
+  # >>> BEFORE MAKING THIS REPO PUBLIC: same change as pytest-linux above --
+  # switch `runs-on` to `ubuntu-latest`. See that comment for why.
   postgres:
     runs-on: [self-hosted, linux, autoclaimsrag]
     services:
