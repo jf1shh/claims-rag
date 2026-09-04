@@ -589,6 +589,67 @@ RLS onto live multi-tenant data is the most expensive mistake in this plan.
 > skipped**, `ruff check .` clean, foundation gate 25 findings / 0 blocking
 > (unchanged).
 
+> **Follow-up (2026-09-03, session 36): ROCm installed, local GPU reranking
+> shipped — the sequential leg of the 100ms bar is now met.** The blocker every
+> entry above ends on ("no GPU/ROCm in this dev environment") is gone: the
+> maintainer installed ROCm 7.2.4, which sees the RX 9070 XT as `gfx1201`. The
+> stock venv still had torch's **CUDA** build (`2.13.0+cu130`), which reports
+> `cuda.is_available() == False` on an AMD card — replaced with the matching
+> ROCm wheel (`2.13.0+rocm7.2`, same torch version, so nothing else moved).
+>
+> **The fix taken was `LocalReranker` on the GPU, not `RemoteReranker`.** Every
+> prior entry named the remote GPU service as "the actual fix", but that
+> framing came from *not having a local GPU* — it was the only shape a GPU
+> could take. With one in the box, a device string is the whole change; a
+> separate HTTP service would add a network hop and an operational component to
+> reach the same silicon. `RemoteReranker` keeps its own justification
+> (multi-instance deployments sharing one GPU pool) and is untouched. New
+> setting: `RERANK_DEVICE` (`config.py`, `.env.example`, default `auto` — GPU
+> when torch sees one, CPU fallback otherwise, so CI and CPU-only boxes are
+> unaffected; ROCm addresses AMD cards as `cuda`, there is no `rocm` device).
+>
+> **Measured, same-machine A/B (only `RERANK_DEVICE` changed):**
+>
+> | Measurement | CPU | GPU (gfx1201) | Change |
+> |---|---|---|---|
+> | Rerank call, pool=15 (mean) | 149ms | 53ms | 2.8x |
+> | Rerank call, pool=50 (mean) | 436ms | 135ms | 3.2x |
+> | End-to-end `/api/eval/search` `hybrid_rerank` p95 | 179ms | **65ms** | 2.8x |
+> | Same endpoint, `naive` / `hybrid` p95 | 4-5ms | 4-5ms | unchanged (no rerank) |
+> | 10 concurrent rerank calls, p95 | 1367ms | 475ms | 2.9x |
+>
+> **The sequential bar is met: 65ms p95 end-to-end, against a 100ms bar that
+> CPU has never been under** (159-179ms here, matching the ~155-167ms recorded
+> above at `pool=15`, so this is a like-for-like comparison). Note the naive
+> and hybrid rows are unchanged, which is the control: the GPU only touched the
+> step this whole investigation identified as the cost.
+>
+> **The concurrent leg is improved but still open, and the mechanism has
+> changed.** p95 at 10 concurrent went 1367ms → 475ms, but sweeping
+> `RERANK_MAX_CONCURRENCY` across 1/2/4/8/16 on the GPU gives 492/477/482/512/589ms
+> — essentially flat, and *worse* above 4. That flatness is itself the finding:
+> ~10 queued calls × ~50ms each ≈ 500ms is exactly what the numbers show, so
+> the GPU is executing these small batches one at a time and the semaphore has
+> nothing left to shape. The CPU-era bottleneck (contention for shared memory
+> bandwidth, where bounding concurrency won ~15-20%) is gone; what replaces it
+> is plain serialization of un-batched forward passes. **`RERANK_MAX_CONCURRENCY`
+> default stays 2** — it is now near-neutral on GPU rather than helpful, and
+> still does real work on the CPU fallback path. The next lever, if the
+> concurrent bar is ever prioritized, is cross-request batching (coalescing
+> in-flight rerank calls into one forward pass), which is a genuinely different
+> change from anything tried in sessions 33-35.
+>
+> Same unisolated-infrastructure caveat as every measurement above: this is the
+> maintainer's own desktop, so treat the concurrent numbers as directional. The
+> sequential numbers are the robust ones (repeated, and they isolate cleanly via
+> the naive-vs-rerank control).
+>
+> Verified: 8 tests added/updated (device resolution incl. the no-GPU and
+> explicit-`cuda`-fallback branches via a stubbed torch, so the suite stays
+> torch-free and runs the same on any runner; `LocalReranker` pass-through;
+> config parse/validate; factory wiring) — full suite **390 passed / 17
+> skipped**, `ruff check .` clean.
+
 ---
 
 ## Deferred findings (close-out record, 2026-08-28)

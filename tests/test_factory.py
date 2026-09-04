@@ -26,6 +26,11 @@ def test_build_reranker_wires_max_concurrency_from_settings():
     assert reranker.max_concurrency == 5
 
 
+def test_build_reranker_wires_device_from_settings():
+    assert _build_reranker(Settings.from_env({})).device == "auto"
+    assert _build_reranker(Settings.from_env({"RERANK_DEVICE": "cpu"})).device == "cpu"
+
+
 def test_build_reranker_remote_wraps_remote_with_local_fallback():
     reranker = _build_reranker(Settings.from_env({"RERANK_PROVIDER": "remote", "RERANK_ENDPOINT": "http://rr"}))
     assert isinstance(reranker, FallbackReranker)

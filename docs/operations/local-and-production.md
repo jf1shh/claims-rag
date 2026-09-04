@@ -12,6 +12,29 @@ uv pip install --python .venv/bin/python -r requirements.txt
 
 Local mode uses SQLite, the configured filesystem directory, local embeddings/reranking, and optional LM Studio. The repository’s sample data is synthetic.
 
+### Optional: GPU reranking (AMD/ROCm or NVIDIA/CUDA)
+
+`RERANK_DEVICE` (default `auto`) decides where the cross-encoder runs: `auto` uses a
+GPU when torch can see one and falls back to CPU otherwise, so this is safe to leave
+alone on a CPU-only box or in CI. `cpu` pins the old behaviour; `cuda` asks for a GPU
+explicitly (and still falls back rather than failing startup). ROCm builds of torch
+address AMD cards as `cuda` too — there is no separate `rocm` device name.
+
+The default `requirements.txt` install pulls whichever torch variant
+`sentence-transformers` resolves to, which on a fresh box is the CUDA build. On an AMD
+card that build reports no GPU, so replace it with the ROCm one (matching the
+system-installed ROCm version — check with `cat /opt/rocm/.info/version`):
+
+```bash
+.venv/bin/pip install --index-url https://download.pytorch.org/whl/rocm7.2 "torch==2.13.0+rocm7.2"
+.venv/bin/python -c "import torch; print(torch.cuda.is_available(), torch.cuda.get_device_name(0))"
+```
+
+If the machine has both a discrete card and an integrated one, torch enumerates both;
+`HIP_VISIBLE_DEVICES=0` pins it to the discrete card. This is a local-workstation
+choice only — the Docker image deliberately installs the CPU-only wheel (see below),
+and CI runs CPU.
+
 ## Docker
 
 ```bash

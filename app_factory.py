@@ -147,7 +147,7 @@ def _build_llm_client(settings: Settings):
 def _build_reranker(settings: Settings):
     from backend.reranker import FallbackReranker, LocalReranker, RemoteReranker
 
-    local = LocalReranker(max_concurrency=settings.rerank_max_concurrency)
+    local = LocalReranker(max_concurrency=settings.rerank_max_concurrency, device=settings.rerank_device)
     if settings.rerank_provider != "remote":
         return local
     remote = RemoteReranker(

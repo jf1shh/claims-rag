@@ -104,6 +104,13 @@ class Settings:
     # A bounded semaphore in front of the local reranker call trades unlimited
     # concurrency for queuing, which measurably lowers p95 (see Debugging History).
     rerank_max_concurrency: int = 2
+    # Phase 6.1 close-out: the same profiling that ruled out thread/process knobs
+    # showed 91% of sampled frames were genuine BERT forward-pass compute, i.e.
+    # the bottleneck is raw math the CPU cannot do fast enough -- so run it on a
+    # GPU when one exists. "auto" uses a visible GPU and silently falls back to
+    # CPU (CI, and any box without one); "cpu" pins the old behaviour; "cuda" is
+    # also the device name ROCm builds of torch use for AMD cards.
+    rerank_device: str = "auto"
     llm_provider: str = "lm-studio"
     llm_base_url: str = "http://127.0.0.1:1234"
     llm_model: str | None = None
@@ -177,6 +184,7 @@ class Settings:
             rerank_timeout_seconds=_int(env.get("RERANK_TIMEOUT_SECONDS"), 10, "RERANK_TIMEOUT_SECONDS"),
             rerank_api_key=env.get("RERANK_API_KEY") or None,
             rerank_max_concurrency=_int(env.get("RERANK_MAX_CONCURRENCY"), 2, "RERANK_MAX_CONCURRENCY"),
+            rerank_device=(env.get("RERANK_DEVICE") or "auto").strip().lower(),
             llm_provider=env.get("LLM_PROVIDER", "lm-studio").strip().lower(),
             llm_base_url=env.get("LLM_BASE_URL", "http://127.0.0.1:1234").rstrip("/"),
             llm_model=env.get("LLM_MODEL") or None,
@@ -245,6 +253,8 @@ class Settings:
             raise ValueError("SERVICE_ACCOUNTS_FILE is required when AUTH_PROVIDERS includes service-accounts")
         if self.rerank_provider not in {"local", "remote"}:
             raise ValueError("RERANK_PROVIDER must be local or remote")
+        if self.rerank_device not in {"auto", "cpu", "cuda"}:
+            raise ValueError("RERANK_DEVICE must be auto, cpu, or cuda")
         if self.rerank_provider == "remote":
             if not self.rerank_endpoint:
                 raise ValueError("RERANK_ENDPOINT is required when RERANK_PROVIDER is remote")
