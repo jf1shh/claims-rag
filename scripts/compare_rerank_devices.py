@@ -36,7 +36,9 @@ SCORE_TOLERANCE = 1e-4
 
 
 def fingerprint(match):
-    return hashlib.sha1(match["content"].encode()).hexdigest()[:10]
+    # Content identity for comparing two result lists -- not a security use,
+    # hence usedforsecurity=False (same signal as scripts/load_test_ingestion.py).
+    return hashlib.sha1(match["content"].encode(), usedforsecurity=False).hexdigest()[:10]
 
 
 def main():
