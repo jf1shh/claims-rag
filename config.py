@@ -94,6 +94,16 @@ class Settings:
     rerank_candidate_pool: int = 15
     rerank_timeout_seconds: int = 10
     rerank_api_key: str | None = None
+    # Phase 6.1 follow-up (docs/enterprise-migration.md): py-spy profiling under
+    # concurrent load, then controlled A/B tests, showed the ~3800ms concurrent p95
+    # is neither a torch intra-op-thread problem (capping threads/call 8->1 changed
+    # nothing) nor a single-process GIL problem (4 separate worker processes, each
+    # single-threaded, changed nothing either) -- latency scales with the number of
+    # *simultaneous* CPU cross-encoder forward passes, consistent with a shared
+    # resource (memory bandwidth/cache) that no thread/process knob adds more of.
+    # A bounded semaphore in front of the local reranker call trades unlimited
+    # concurrency for queuing, which measurably lowers p95 (see Debugging History).
+    rerank_max_concurrency: int = 2
     llm_provider: str = "lm-studio"
     llm_base_url: str = "http://127.0.0.1:1234"
     llm_model: str | None = None
@@ -166,6 +176,7 @@ class Settings:
             rerank_candidate_pool=_int(env.get("RERANK_CANDIDATE_POOL"), 15, "RERANK_CANDIDATE_POOL"),
             rerank_timeout_seconds=_int(env.get("RERANK_TIMEOUT_SECONDS"), 10, "RERANK_TIMEOUT_SECONDS"),
             rerank_api_key=env.get("RERANK_API_KEY") or None,
+            rerank_max_concurrency=_int(env.get("RERANK_MAX_CONCURRENCY"), 2, "RERANK_MAX_CONCURRENCY"),
             llm_provider=env.get("LLM_PROVIDER", "lm-studio").strip().lower(),
             llm_base_url=env.get("LLM_BASE_URL", "http://127.0.0.1:1234").rstrip("/"),
             llm_model=env.get("LLM_MODEL") or None,

@@ -534,6 +534,60 @@ RLS onto live multi-tenant data is the most expensive mistake in this plan.
 > (`py-spy` under concurrent load) is the next step if this is prioritized;
 > tracked as open, not silently left implied-fixed by the pool-size change
 > above.
+>
+> **Follow-up (2026-09-03, session 35): profiled with `py-spy`, both remaining
+> hypotheses ruled out, a partial fix shipped.** Built a controlled harness
+> reusing `scripts/run_retrieval_load_test.py`'s own provisioning/seed/server
+> helpers, with `sudo py-spy record` attached to the live server during a real
+> Locust run against `hybrid_rerank` (this machine's `ptrace_scope=1` requires
+> `sudo` to attach; no passwordless sudo, so the one password prompt needed a
+> human running the harness interactively). First attempt produced no output —
+> `--native` and `--nonblocking` are mutually exclusive in py-spy (native frame
+> unwinding needs to pause the process each sample; nonblocking mode exists to
+> avoid exactly that) — dropped `--native`; Python-level frames were sufficient.
+>
+> **The flame profile ruled out tokenization directly**: of 4,456 sampled
+> frames under real concurrent load, only 1.1% were in tokenization code. 91%
+> were inside genuine BERT forward-pass compute (`Linear.forward` 72.4%,
+> `sdpa_attention_forward` 14.4%, activations/layer_norm ~6%) — real compute
+> time, not Python-level glue.
+>
+> **Two controlled A/B tests then ruled out the GIL-blocking-pattern
+> hypothesis too.** Capping PyTorch intra-op threads per call 8→1 (verified via
+> `torch.get_num_threads()` that the env var actually took effect) left the
+> same-harness p95 completely unchanged: 3500ms→3500ms. Testing
+> `uvicorn --workers 4` (separate OS processes, separate GILs, separate
+> memory) at *default* threads first made things far worse (11000ms) — a
+> confound, not evidence: 4 processes × 8 threads/call is worse oversubscription
+> than the single-process case, consistent with why session 34's own
+> `--workers 4` retest was "mixed, inconclusive" (it never isolated the thread
+> variable). Rerunning with threads capped to 1 in each of the 4 worker
+> processes still showed no improvement (3300ms) — separate GILs, separate
+> memory, and it made no difference at all. **Both intra-op thread count and
+> process-level parallelism are now ruled out.** Latency scales with the
+> number of simultaneous cross-encoder forward passes in flight, not with how
+> each one is threaded or processed — consistent with a shared CPU resource
+> (most likely memory bandwidth/cache) that no software concurrency knob on
+> this hardware can add more of.
+>
+> **Partial fix shipped**: `RERANK_MAX_CONCURRENCY` (`config.py`, default 2,
+> mirrored in `.env.example`) wraps `LocalReranker.rerank()` in a
+> `threading.Semaphore`, funneling concurrent calls through a bounded queue
+> instead of letting them all compete for the same CPU resource at once.
+> Measured across concurrency values with the same harness: 1→4000ms
+> (over-serializes, worse than doing nothing), 2→3100ms, 3→3200ms, 4→3000ms,
+> 6→3600ms, vs. ~3500ms unbounded. A real but modest ~15-20% improvement at
+> 2-4 — not SLO-grade (single runs on Jared's own shared desktop machine, same
+> unisolated-infrastructure caveat as above), and it does **not** close the
+> 100ms bar: the sequential per-call floor (~155-400ms, from the pool tuning
+> above) is already over the bar on its own, so no amount of
+> concurrency-shaping fully fixes this on CPU. `RemoteReranker` (GPU) remains
+> the actual fix; still blocked on no GPU/ROCm in this dev environment.
+>
+> Verified: 5 new tests (semaphore concurrency-bound enforcement, config
+> parsing/validation/defaults, factory wiring) — full suite **381 passed / 17
+> skipped**, `ruff check .` clean, foundation gate 25 findings / 0 blocking
+> (unchanged).
 
 ---
 

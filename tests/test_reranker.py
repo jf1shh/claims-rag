@@ -1,3 +1,6 @@
+import threading
+import time
+
 import pytest
 
 from backend.reranker import FallbackReranker, LocalReranker, RemoteReranker
@@ -31,6 +34,43 @@ def test_local_reranker_without_explicit_engine_lazy_loads(monkeypatch):
     monkeypatch.setattr(module, "_load_engine", lambda: Stub())
     assert LocalReranker().rerank("q", [{"content": "x"}], top_k=1) == [{"content": "x"}]
     assert called["loaded"] is True
+
+
+def test_local_reranker_default_max_concurrency_is_two():
+    assert LocalReranker(engine=StubEngine()).max_concurrency == 2
+
+
+def test_local_reranker_bounds_concurrent_engine_calls():
+    """Phase 6.1 follow-up: the semaphore must actually cap how many rerank
+    calls run at once, not just exist. Six threads race against an engine
+    that tracks its own concurrent-call peak; the peak must never exceed
+    the configured limit."""
+    max_concurrency = 2
+    lock = threading.Lock()
+    state = {"current": 0, "peak": 0}
+
+    class SlowEngine:
+        def rerank(self, query, passages, top_k=4):
+            with lock:
+                state["current"] += 1
+                state["peak"] = max(state["peak"], state["current"])
+            time.sleep(0.05)
+            with lock:
+                state["current"] -= 1
+            return passages[:top_k]
+
+    reranker = LocalReranker(engine=SlowEngine(), max_concurrency=max_concurrency)
+    threads = [
+        threading.Thread(target=reranker.rerank, args=("q", [{"content": "a"}], 1))
+        for _ in range(6)
+    ]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    assert state["peak"] <= max_concurrency  # the actual safety property: never exceed the cap
+    assert state["peak"] >= 2  # and prove the test isn't trivially passing via accidental serialization
 
 
 class FakeResponse:

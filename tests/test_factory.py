@@ -21,6 +21,11 @@ def test_build_reranker_local_returns_local():
     assert isinstance(_build_reranker(Settings.from_env({})), LocalReranker)
 
 
+def test_build_reranker_wires_max_concurrency_from_settings():
+    reranker = _build_reranker(Settings.from_env({"RERANK_MAX_CONCURRENCY": "5"}))
+    assert reranker.max_concurrency == 5
+
+
 def test_build_reranker_remote_wraps_remote_with_local_fallback():
     reranker = _build_reranker(Settings.from_env({"RERANK_PROVIDER": "remote", "RERANK_ENDPOINT": "http://rr"}))
     assert isinstance(reranker, FallbackReranker)
