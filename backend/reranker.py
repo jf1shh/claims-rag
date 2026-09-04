@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 import logging
+import threading
 
 logger = logging.getLogger(__name__)
 
@@ -22,10 +23,20 @@ class Reranker(ABC):
 
 
 class LocalReranker(Reranker):
-    """In-process CPU cross-encoder, retained as default and fallback."""
+    """In-process CPU cross-encoder, retained as default and fallback.
 
-    def __init__(self, engine=None):
+    Phase 6.1 profiling (py-spy under concurrent load, then controlled A/B
+    tests -- see docs/enterprise-migration.md) found that neither torch
+    intra-op thread count nor separate worker processes change concurrent
+    p95 at all: latency scales with the number of *simultaneous* forward
+    passes, not with how each one is threaded. A bounded semaphore trades
+    unlimited concurrency for queuing, which measurably lowers p95.
+    """
+
+    def __init__(self, engine=None, max_concurrency: int = 2):
         self._engine = engine
+        self.max_concurrency = max_concurrency
+        self._semaphore = threading.Semaphore(max_concurrency)
 
     def _engine_or_load(self):
         if self._engine is None:
@@ -35,7 +46,8 @@ class LocalReranker(Reranker):
     def rerank(self, query: str, passages: list[dict], top_k: int = 4) -> list[dict]:
         if not passages:
             return []
-        return list(self._engine_or_load().rerank(query, passages, top_k=top_k))
+        with self._semaphore:
+            return list(self._engine_or_load().rerank(query, passages, top_k=top_k))
 
 
 class RemoteReranker(Reranker):

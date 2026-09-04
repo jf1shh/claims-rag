@@ -30,6 +30,16 @@ def test_given_invalid_reranker_provider_then_validation_fails():
         settings.validate_for_environment()
 
 
+def test_rerank_max_concurrency_defaults_and_parses():
+    assert Settings.from_env({}).rerank_max_concurrency == 2
+    assert Settings.from_env({"RERANK_MAX_CONCURRENCY": "4"}).rerank_max_concurrency == 4
+
+
+def test_rerank_max_concurrency_rejects_non_positive():
+    with pytest.raises(ValueError, match="RERANK_MAX_CONCURRENCY"):
+        Settings.from_env({"RERANK_MAX_CONCURRENCY": "0"})
+
+
 def test_given_empty_development_environment_then_local_defaults_are_explicit():
     settings = Settings.from_env({"APP_ENV": "development"})
     assert settings.app_env == "development"
