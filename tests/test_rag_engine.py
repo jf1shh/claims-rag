@@ -12,7 +12,43 @@ import sqlite3
 import numpy as np
 import pytest
 
-from backend.rag_engine import SQLiteVectorStore, TextChunker, safe_filename
+from backend.rag_engine import SQLiteVectorStore, TextChunker, resolve_rerank_device, safe_filename
+
+
+# ---------------------------------------------------------------------------
+# resolve_rerank_device -- RERANK_DEVICE preference -> device torch can use.
+# Stays torch-free per this module's contract: a stub module stands in, which
+# also lets the no-GPU branch be exercised on a GPU machine and vice versa.
+# ---------------------------------------------------------------------------
+
+class TestResolveRerankDevice:
+    @staticmethod
+    def _stub_torch(monkeypatch, available):
+        import sys
+        import types
+
+        stub = types.ModuleType("torch")
+        stub.cuda = types.SimpleNamespace(is_available=lambda: available)
+        monkeypatch.setitem(sys.modules, "torch", stub)
+
+    def test_cpu_preference_never_touches_torch(self, monkeypatch):
+        import sys
+
+        monkeypatch.setitem(sys.modules, "torch", None)  # importing it would raise
+        assert resolve_rerank_device("cpu") == "cpu"
+
+    def test_auto_uses_gpu_when_visible(self, monkeypatch):
+        self._stub_torch(monkeypatch, available=True)
+        assert resolve_rerank_device("auto") == "cuda"
+
+    def test_auto_falls_back_to_cpu_without_gpu(self, monkeypatch):
+        self._stub_torch(monkeypatch, available=False)
+        assert resolve_rerank_device("auto") == "cpu"
+
+    def test_explicit_cuda_falls_back_rather_than_raising(self, monkeypatch):
+        """A missing GPU must not take the whole app down at startup."""
+        self._stub_torch(monkeypatch, available=False)
+        assert resolve_rerank_device("cuda") == "cpu"
 
 
 # ---------------------------------------------------------------------------

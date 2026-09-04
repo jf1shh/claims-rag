@@ -31,9 +31,33 @@ def test_local_reranker_without_explicit_engine_lazy_loads(monkeypatch):
         def rerank(self, query, passages, top_k=4):
             return passages[:top_k]
 
-    monkeypatch.setattr(module, "_load_engine", lambda: Stub())
+    monkeypatch.setattr(module, "_load_engine", lambda device="auto": Stub())
     assert LocalReranker().rerank("q", [{"content": "x"}], top_k=1) == [{"content": "x"}]
     assert called["loaded"] is True
+
+
+def test_local_reranker_defaults_to_auto_device():
+    assert LocalReranker(engine=StubEngine()).device == "auto"
+
+
+def test_local_reranker_passes_configured_device_to_lazy_load(monkeypatch):
+    """The device preference must reach the engine loader -- resolving it needs
+    torch, so LocalReranker only carries the string."""
+    import backend.reranker as module
+
+    seen = {}
+
+    class Stub:
+        def rerank(self, query, passages, top_k=4):
+            return passages[:top_k]
+
+    def fake_load(device="auto"):
+        seen["device"] = device
+        return Stub()
+
+    monkeypatch.setattr(module, "_load_engine", fake_load)
+    LocalReranker(device="cpu").rerank("q", [{"content": "x"}], top_k=1)
+    assert seen["device"] == "cpu"
 
 
 def test_local_reranker_default_max_concurrency_is_two():

@@ -7,11 +7,15 @@ import threading
 logger = logging.getLogger(__name__)
 
 
-def _load_engine():
-    """Load the CPU cross-encoder lazily so imports remain torch-free."""
+def _load_engine(device: str = "auto"):
+    """Load the cross-encoder lazily so imports remain torch-free.
+
+    ``device`` is passed through untouched -- resolving "auto" needs torch, and
+    that import must stay inside the lazy path.
+    """
     from backend.rag_engine import RerankingEngine
 
-    return RerankingEngine()
+    return RerankingEngine(device=device)
 
 
 class Reranker(ABC):
@@ -23,24 +27,30 @@ class Reranker(ABC):
 
 
 class LocalReranker(Reranker):
-    """In-process CPU cross-encoder, retained as default and fallback.
+    """In-process cross-encoder, retained as default and fallback.
 
     Phase 6.1 profiling (py-spy under concurrent load, then controlled A/B
     tests -- see docs/enterprise-migration.md) found that neither torch
     intra-op thread count nor separate worker processes change concurrent
-    p95 at all: latency scales with the number of *simultaneous* forward
-    passes, not with how each one is threaded. A bounded semaphore trades
-    unlimited concurrency for queuing, which measurably lowers p95.
+    p95 at all *on CPU*: latency scales with the number of *simultaneous*
+    forward passes, not with how each one is threaded. A bounded semaphore
+    trades unlimited concurrency for queuing, which measurably lowers p95.
+
+    ``device`` moves those forward passes onto a local GPU when one is
+    present, which is the actual fix for that bottleneck -- the semaphore
+    stays because it still bounds work in flight, and it is what CPU-only
+    deployments (CI included) keep falling back to.
     """
 
-    def __init__(self, engine=None, max_concurrency: int = 2):
+    def __init__(self, engine=None, max_concurrency: int = 2, device: str = "auto"):
         self._engine = engine
         self.max_concurrency = max_concurrency
+        self.device = device
         self._semaphore = threading.Semaphore(max_concurrency)
 
     def _engine_or_load(self):
         if self._engine is None:
-            self._engine = _load_engine()
+            self._engine = _load_engine(self.device)
         return self._engine
 
     def rerank(self, query: str, passages: list[dict], top_k: int = 4) -> list[dict]:

@@ -170,11 +170,35 @@ class EmbeddingEngine:
         return self.model.encode(query, show_progress_bar=False)
 
 
+def resolve_rerank_device(preference="auto"):
+    """Maps a RERANK_DEVICE preference onto a device torch can actually use.
+
+    "auto" picks the GPU when one is present and falls back to CPU otherwise,
+    so the same default works on a ROCm/CUDA box and in CI. An explicit "cuda"
+    on a machine without a visible GPU falls back too (with a warning) rather
+    than crashing the whole app at startup over a reranker. Note that ROCm
+    builds of torch expose AMD cards through the "cuda" device name -- there is
+    no separate "rocm" device.
+    """
+    if preference == "cpu":
+        return "cpu"
+
+    import torch
+
+    if torch.cuda.is_available():
+        return "cuda"
+    if preference == "cuda":
+        print("RERANK_DEVICE=cuda requested but no GPU is visible to torch; using CPU.")
+    return "cpu"
+
+
 class RerankingEngine:
-    def __init__(self, model_name="cross-encoder/ms-marco-MiniLM-L-6-v2"):
+    def __init__(self, model_name="cross-encoder/ms-marco-MiniLM-L-6-v2", device="auto"):
         from sentence_transformers import CrossEncoder
-        print(f"Loading reranking model '{model_name}' on CPU...")
-        self.model = CrossEncoder(model_name, device="cpu")
+        resolved = resolve_rerank_device(device)
+        print(f"Loading reranking model '{model_name}' on {resolved}...")
+        self.model = CrossEncoder(model_name, device=resolved)
+        self.device = resolved
         print("Reranking model loaded successfully.")
 
     def rerank(self, query, passages, top_k=4):

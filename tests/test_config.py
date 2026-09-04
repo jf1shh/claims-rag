@@ -40,6 +40,18 @@ def test_rerank_max_concurrency_rejects_non_positive():
         Settings.from_env({"RERANK_MAX_CONCURRENCY": "0"})
 
 
+def test_rerank_device_defaults_to_auto_and_parses():
+    assert Settings.from_env({}).rerank_device == "auto"
+    assert Settings.from_env({"RERANK_DEVICE": " CUDA "}).rerank_device == "cuda"
+    assert Settings.from_env({"RERANK_DEVICE": ""}).rerank_device == "auto"
+
+
+def test_rerank_device_rejects_unknown_value():
+    settings = Settings.from_env({"RERANK_DEVICE": "rocm"})  # ROCm cards are "cuda" to torch
+    with pytest.raises(ValueError, match="RERANK_DEVICE"):
+        settings.validate_for_environment()
+
+
 def test_given_empty_development_environment_then_local_defaults_are_explicit():
     settings = Settings.from_env({"APP_ENV": "development"})
     assert settings.app_env == "development"
