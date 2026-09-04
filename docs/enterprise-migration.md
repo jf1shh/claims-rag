@@ -650,6 +650,56 @@ RLS onto live multi-tenant data is the most expensive mistake in this plan.
 > config parse/validate; factory wiring) — full suite **390 passed / 17
 > skipped**, `ruff check .` clean.
 
+> **Quality verification (2026-09-03, same session, after the fact).** The
+> device change shipped on tests + latency alone, which this repo's own
+> `pool=8` lesson says is not enough for anything touching retrieval. Closed
+> that gap — but with a *deterministic* check rather than the eval suite,
+> because it answers the question far more sharply: for all 19 golden queries,
+> run the real retrieval path twice with only `RERANK_DEVICE` differing and
+> diff the returned passages.
+>
+> **Result: 0 order differences across 19 queries; max rerank-score delta
+> 7.15e-07.** The GPU returns the same passages in the same order as the CPU,
+> with score deltas at float-precision level — orders of magnitude below the
+> gaps between adjacent passages, so no reordering is possible. Since the
+> retrieval output is identical, nothing downstream can differ, and the change
+> is quality-neutral *by construction*, not by inference from noisy metrics.
+> Script pattern worth reusing for any future device/kernel change: compare
+> retrieval output directly, don't spend an LLM-judged eval on it.
+>
+> **The golden eval was re-run anyway, but as a new baseline, not as an A/B —
+> and the old baseline is no longer reproducible.** `eval/results.json`'s prior
+> numbers were judged by `qwen2.5-14b-instruct-1m`, which has since been
+> deleted from the maintainer's machine; the app's `/api/chat` generation model
+> changed with it (the app sends `model: "local-model"`, so LM Studio serves
+> whatever is loaded). **Both the generator and the judge are now
+> `qwen3-coder-30b-a3b-instruct`, so pre-2026-09-03 eval numbers must not be
+> compared against post-2026-09-03 ones** — a judge swap will read as a
+> regression or an improvement that is neither.
+>
+> | Metric | Old (qwen2.5-14b judge) | New (qwen3-coder-30b judge) |
+> |---|---|---|
+> | Context Precision, naive | 0.797 | 0.779 |
+> | Context Precision, hybrid+rerank | 0.876 | **0.885** |
+> | Context Recall, naive | 0.912 | 0.947 |
+> | Context Recall, hybrid+rerank | 0.947 | **0.965** |
+> | Faithfulness (live) | 0.887 | 0.812 |
+> | Factual Correctness (live) | 0.658 | 0.749 |
+> | Elapsed | 1253s | 1917s |
+>
+> These columns are **not** a before/after — they are two different
+> measurement instruments. What does carry over: the headline claim still
+> holds, with hybrid+rerank beating naive on both precision (0.885 vs 0.779)
+> and recall (0.965 vs 0.947). Both canary queries are intact —
+> `chen-custom-equipment-cap` (the query Phase 9's dossier fix was built
+> around, and the one `pool=8` broke) at correctness **1.00**, and
+> `sterling-shop-estimate-detail` at 0.33 → 0.67. Per-query correctness swung
+> bidirectionally by up to 0.8 in both directions, which is the signature of a
+> generator+judge swap, not a retrieval change — and is precisely why the
+> deterministic diff above, not this table, is the verification of record for
+> the GPU change. Elapsed rose despite the LLM being ~2x faster per token
+> because the judge went from a 14B to a 30B model.
+
 ---
 
 ## Deferred findings (close-out record, 2026-08-28)
