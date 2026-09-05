@@ -57,12 +57,42 @@ JUDGE_CONCURRENCY = 2
 
 
 def get_loaded_model() -> str:
-    r = requests.get(f"{LM_STUDIO_URL}/v1/models", timeout=5)
-    r.raise_for_status()
-    data = r.json()["data"]
-    if not data:
-        raise RuntimeError("No model loaded in LM Studio.")
-    return data[0]["id"]
+    """Return the id of a chat model actually resident in LM Studio.
+
+    `/v1/models` lists what is *available*, not what is *loaded* — it returns
+    every model on disk even when none is resident, so a check against it
+    always passes and the first completion then fails with
+    `400 - No models loaded`. `/api/v0/models` carries a real `state` field
+    (`loaded` / `not-loaded`), so gate on that instead.
+    """
+    try:
+        r = requests.get(f"{LM_STUDIO_URL}/api/v0/models", timeout=5)
+        r.raise_for_status()
+        entries = r.json()["data"]
+    except Exception:
+        # Not LM Studio (or too old for /api/v0) — fall back to the OpenAI
+        # listing, which cannot distinguish loaded from available.
+        r = requests.get(f"{LM_STUDIO_URL}/v1/models", timeout=5)
+        r.raise_for_status()
+        data = r.json()["data"]
+        if not data:
+            raise RuntimeError("No models served at {}.".format(LM_STUDIO_URL))
+        return data[0]["id"]
+
+    loaded = [m for m in entries if m.get("state") == "loaded"]
+    if not loaded:
+        available = ", ".join(m["id"] for m in entries) or "(none)"
+        raise RuntimeError(
+            "No model is loaded in LM Studio — {} lists models but none are "
+            "resident.\nAvailable: {}\nLoad one first, e.g.:\n"
+            "  lms load qwen3-coder-30b-a3b-instruct --gpu max -c 8192 --parallel 4 --yes"
+            .format(LM_STUDIO_URL, available)
+        )
+
+    # Prefer a chat model; embedding models are loaded alongside but cannot
+    # answer the golden queries.
+    chat = [m for m in loaded if m.get("type") != "embeddings"]
+    return (chat or loaded)[0]["id"]
 
 
 def search(query: str, claim_id, mode: str) -> list[dict]:
