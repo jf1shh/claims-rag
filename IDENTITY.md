@@ -11,6 +11,11 @@ AutoClaimsRAG is a local-first, evidence-grounded research assistant for auto in
 | `tests/` | Unit and integration tests for parsing, retrieval, scoping, and API behavior |
 | `eval/` | Golden queries, retrieval parity, and answer-quality evaluation |
 | `docs/` | Approved specifications, plans, migration and operational documentation |
+| `docs/build-history.md` | Completed phases 1-18, Debugging History, and the full session log — moved out of `CLAUDE.md` 2026-09-05; not loaded by default |
+| `alembic/` | Postgres schema migrations (`alembic.ini` at root); `0001_initial_enterprise_schema.py` defines tenant_id/RLS/HNSW |
+| `assets/` | Static images and demo media referenced by README and the frontend |
+| `_config/` | Layer 3 — shared conventions, glossary, and risk controls |
+| `.github/` | CI workflows (`tests.yml`) and the advisory PR-review workflow |
 | `scripts/` | Developer and release automation |
 | `sample_guidelines/` | Synthetic seed documents only |
 | `stored_documents/` | Local runtime data; never commit customer or generated files |

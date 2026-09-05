@@ -18,6 +18,7 @@
 | Build or run the Docker image | `Dockerfile`, `docker-compose.yml` | `docs/operations/local-and-production.md` (Docker section) |
 | Run or extend the retrieval load test | `scripts/run_retrieval_load_test.py`, `scripts/seed_retrieval_load_corpus.py`, `scripts/locustfile_retrieval.py` | `docs/superpowers/specs/2026-09-02-phase6-load-test-design.md`, `docs/enterprise-migration.md` Phase 6.1 status (measured, sequential fix shipped, concurrency bottleneck open) |
 | Tune reranker candidate pool / model | `config.py` (`rerank_candidate_pool`, `reranker_model`) | `docs/enterprise-migration.md` Phase 6.1 follow-up — read before changing the pool default again: a quick golden-query check already missed a real regression once; always verify with the full `eval/run_eval.py` suite, not a spot check |
+| Read prior context: completed phases, past failures, session history | `docs/build-history.md` | Read before repeating an approach — it holds the Debugging History that `CLAUDE.md` used to carry |
 | Record a new lesson | `stages/learn/CONTEXT.md` | `docs/superpowers/specs/2026-08-28-enterprise-foundation-design.md` |
 
 ## Session start
