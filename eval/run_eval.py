@@ -76,7 +76,7 @@ def get_loaded_model() -> str:
         r.raise_for_status()
         data = r.json()["data"]
         if not data:
-            raise RuntimeError("No models served at {}.".format(LM_STUDIO_URL))
+            raise RuntimeError("No models served at {}.".format(LM_STUDIO_URL)) from None
         return data[0]["id"]
 
     loaded = [m for m in entries if m.get("state") == "loaded"]
@@ -261,6 +261,10 @@ async def main():
         "faithfulness_avg": avg("faithfulness"),
         "correctness_avg": avg("correctness"),
         "elapsed_seconds": round(elapsed, 1),
+        "metric_samples": {key: {"scored": sum(isinstance(r[key], (int, float)) for r in results),
+                                 "failed": sum(not isinstance(r[key], (int, float)) for r in results)}
+                           for key in ("naive_precision", "naive_recall", "hybrid_precision", "hybrid_recall", "faithfulness", "correctness")},
+        "correctness_mode": "recall (reference-fact coverage)",
     }
 
     print("=== Summary ===")

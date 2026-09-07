@@ -17,7 +17,7 @@ import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi.testclient import TestClient
 
-import backend.app as app_module
+from backend.app import runtime as app_module
 from backend.app import app
 from backend.authn import OIDCAuthenticator
 from backend.rbac import ClaimAccessPolicy
@@ -29,6 +29,9 @@ ASSIGNMENTS = {
     "#2026-99382": ["adjuster-alice"],
     "#2026-10492": ["adjuster-bob"],
 }
+
+
+pytestmark = pytest.mark.usefixtures("isolated_api_runtime")
 
 
 def _make_keypair(kid="test-key-1"):
@@ -68,6 +71,8 @@ def _token(private_key, *, subject, roles, tenant="tenant-a"):
 
 @pytest.fixture
 def enforced(monkeypatch):
+    from dataclasses import replace
+    monkeypatch.setattr(app_module, "settings", replace(app_module.settings, tenant_id="tenant-a"))
     """OIDC authenticator + configured claim ACLs, so both permission and
     claim-level checks are live. Returns a token factory."""
     private_key, jwks = _make_keypair()

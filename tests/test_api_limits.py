@@ -9,10 +9,13 @@ TestClient, swapping module settings/limiter for small, deterministic limits.
 import pytest
 from fastapi.testclient import TestClient
 
-import backend.app as app_module
+from backend.app import runtime as app_module
 from backend.app import app, SearchRequest
 from backend.rate_limit import SlidingWindowRateLimiter
 from config import Settings
+
+
+pytestmark = pytest.mark.usefixtures("isolated_api_runtime")
 
 
 class _Clock:
@@ -153,6 +156,8 @@ def test_given_burst_then_allowance_recovers_after_window(monkeypatch):
 
 
 def test_given_burst_with_different_principals_then_limits_are_isolated(monkeypatch):
+    from dataclasses import replace
+    monkeypatch.setattr(app_module, "settings", replace(app_module.settings, tenant_id="tenant-a"))
     from backend.authn import ChainAuthenticator, DevelopmentAuthenticator
     from backend.tenant_context import PrincipalContext
 

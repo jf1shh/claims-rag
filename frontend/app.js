@@ -7,12 +7,17 @@ let backendStatus = null;
 // attached to every API request. A 401 shows the login gate; signing in
 // stores the credential and reloads, which restores the current page
 // (returnTo) now that the app is authenticated.
-let authToken = localStorage.getItem('auth_token') || null;
+let authToken = sessionStorage.getItem('auth_token') || null;
+localStorage.removeItem('auth_token');
+let authKind = sessionStorage.getItem('auth_kind') || 'bearer';
 let loginGateShown = false;
 
 function apiFetch(path, options = {}) {
     const headers = { ...(options.headers || {}) };
-    if (authToken) headers['Authorization'] = `Bearer ${authToken}`;
+    if (authToken) {
+        if (authKind === 'api-key') headers['X-API-Key'] = authToken;
+        else headers['Authorization'] = `Bearer ${authToken}`;
+    }
     return fetch(path, { ...options, headers }).then(response => {
         if (response.status === 401 && !path.startsWith('/api/auth/')) {
             showLoginGate();
@@ -35,7 +40,7 @@ function showLoginGate() {
     if (loginGateShown) return;
     loginGateShown = true;
     const modal = document.getElementById('login-modal');
-    if (modal) modal.style.display = 'flex';
+    if (modal) { modal.style.display = 'flex'; document.getElementById('login-token-input')?.focus(); }
 }
 
 function hideLoginGate() {
@@ -79,7 +84,7 @@ function setupLoginGate() {
     const signOutBtn = document.getElementById('sign-out-btn');
 
     if (submitBtn && input) {
-        const attemptLogin = () => {
+        const attemptLogin = async () => {
             const value = input.value.trim();
             if (!value) {
                 if (errorEl) errorEl.innerText = 'Enter a token or API key.';
@@ -87,7 +92,18 @@ function setupLoginGate() {
                 return;
             }
             authToken = value;
-            localStorage.setItem('auth_token', value);
+            authKind = document.getElementById('login-kind').value;
+            try {
+                const response = await apiFetch('/api/auth/me');
+                if (!response.ok) throw new Error('Credential rejected for this deployment.');
+            } catch (error) {
+                authToken = null;
+                errorEl.textContent = error.message;
+                errorEl.style.display = 'block';
+                return;
+            }
+            sessionStorage.setItem('auth_kind', authKind);
+            sessionStorage.setItem('auth_token', value);
             hideLoginGate();
             // Return to where the user was: reload restores the current page,
             // now authenticated (the 401 that opened the gate is gone).
@@ -101,7 +117,7 @@ function setupLoginGate() {
 
     if (signOutBtn) {
         signOutBtn.addEventListener('click', () => {
-            localStorage.removeItem('auth_token');
+            sessionStorage.removeItem('auth_token');
             authToken = null;
             window.location.reload();
         });
@@ -234,6 +250,9 @@ async function checkBackendStatus() {
         const lmStudioActive = !!(backendStatus && backendStatus.lm_studio && backendStatus.lm_studio.active);
         const lmStudioModels = (backendStatus && backendStatus.lm_studio && backendStatus.lm_studio.models) || [];
 
+        const simulationEnabled = backendStatus.simulation?.enabled !== false;
+        const simulationRadio = document.querySelector('input[name="llm-engine"][value="simulated"]');
+        if (simulationRadio) simulationRadio.disabled = !simulationEnabled;
         updateStatusIndicator('lmstudio', lmStudioActive, lmStudioModels);
 
         if (lmStudioActive === lastLmStudioActive) return;
@@ -245,7 +264,7 @@ async function checkBackendStatus() {
             const radioEl = document.querySelector('input[name="llm-engine"][value="lm-studio"]');
             if (radioEl) radioEl.checked = true;
             logSystemEvent("Auto-connected to active LM Studio endpoint");
-        } else {
+        } else if (simulationEnabled) {
             currentEngine = 'simulated';
             const radioEl = document.querySelector('input[name="llm-engine"][value="simulated"]');
             if (radioEl) radioEl.checked = true;
@@ -900,13 +919,15 @@ function setupModal() {
     });
 }
 
-function showModal(filename, score, content, isImage = false) {
+let sourceReturnFocus = null;
+function showModal(filename, score, content, isImage = false, version = null) {
+    sourceReturnFocus = document.activeElement;
     modalFilename.innerText = filename;
     
     if (typeof score === 'number') {
-        modalScore.innerText = `${(score * 100).toFixed(1)}%`;
+        modalScore.innerText = Number(score).toFixed(3);
         modalViewFullBtn.style.display = 'inline-block';
-        modalViewFullBtn.onclick = () => openDocumentViewer(filename);
+        modalViewFullBtn.onclick = () => openDocumentViewer(filename, version);
     } else {
         modalScore.innerText = score;
         modalViewFullBtn.style.display = 'none';
@@ -923,10 +944,12 @@ function showModal(filename, score, content, isImage = false) {
     }
     
     sourceModal.style.display = 'flex';
+    modalClose.focus();
 }
 
 function hideModal() {
     sourceModal.style.display = 'none';
+    sourceReturnFocus?.focus();
 }
 
 function renderSources(sources) {
@@ -954,7 +977,7 @@ function renderSources(sources) {
         // Calls viewSource with real JS values, not values reconstructed from
         // an HTML/inline-JS string -- a malicious filename or document body
         // can't break out of any parsing context this way.
-        card.addEventListener('click', () => viewSource(src.filename, src.score, src.content));
+        card.addEventListener('click', () => viewSource(src.filename, src.score, src.content, src.document_version));
 
         const fileSpan = document.createElement('span');
         fileSpan.className = 'source-file';
@@ -964,10 +987,10 @@ function renderSources(sources) {
         const badge = document.createElement('div');
         badge.className = 'source-score-badge';
         const scoreLabel = document.createElement('span');
-        scoreLabel.textContent = 'Similarity';
+        scoreLabel.textContent = 'Ranking score';
         const scoreNum = document.createElement('span');
         scoreNum.className = 'score-num';
-        scoreNum.textContent = `${(src.score * 100).toFixed(0)}%`;
+        scoreNum.textContent = Number(src.score).toFixed(3);
         badge.appendChild(scoreLabel);
         badge.appendChild(scoreNum);
         card.appendChild(badge);
@@ -980,8 +1003,8 @@ function renderSources(sources) {
 }
 
 // Make viewSource globally accessible for the onclick handlers
-window.viewSource = function(filename, score, content) {
-    showModal(filename, score, content);
+window.viewSource = function(filename, score, content, version) {
+    showModal(filename, score, content, false, version);
 };
 
 // 6. RAG Trace Logging
@@ -1523,7 +1546,8 @@ window.deleteClaimDocument = async function(filename) {
     }
 };
 
-async function openDocumentViewer(filename) {
+async function openDocumentViewer(filename, version = null) {
+    const versionQuery = version ? `?version=${encodeURIComponent(version)}` : '';
     const ext = filename.split('.').pop().toLowerCase();
     
     // 1. If it's a PDF or Excel spreadsheet, open it physically in a new tab
@@ -1532,7 +1556,7 @@ async function openDocumentViewer(filename) {
         // Fetch the bytes with the auth header and open an object URL (a plain
         // window.open navigation cannot carry the Authorization header).
         try {
-            const blobUrl = await fetchBlobUrl(`/api/documents/download/${encodeURIComponent(filename)}`);
+            const blobUrl = await fetchBlobUrl(`/api/documents/download/${encodeURIComponent(filename)}${versionQuery}`);
             window.open(blobUrl, '_blank');
         } catch (error) {
             logSystemEvent(`Failed to open document: ${error.message}`, 'error');
@@ -1545,7 +1569,7 @@ async function openDocumentViewer(filename) {
     if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) {
         logSystemEvent(`Rendering photo in modal viewer: '${filename}'`);
         try {
-            const blobUrl = await fetchBlobUrl(`/api/documents/download/${encodeURIComponent(filename)}`);
+            const blobUrl = await fetchBlobUrl(`/api/documents/download/${encodeURIComponent(filename)}${versionQuery}`);
             showModal(filename, 'N/A (Image View)', blobUrl, true);
         } catch (error) {
             logSystemEvent(`Failed to render photo: ${error.message}`, 'error');
@@ -1556,7 +1580,7 @@ async function openDocumentViewer(filename) {
     // 3. Text or fallback content: fetch text from content API
     logSystemEvent(`Retrieving full text content for document: '${filename}'`);
     try {
-        const response = await apiFetch(`/api/documents/content/${encodeURIComponent(filename)}`);
+        const response = await apiFetch(`/api/documents/content/${encodeURIComponent(filename)}${versionQuery}`);
         if (!response.ok) throw new Error('Failed to load document content');
         
         const result = await response.json();
@@ -1568,3 +1592,16 @@ async function openDocumentViewer(filename) {
 }
 
 window.openDocumentViewer = openDocumentViewer;
+
+// Keep keyboard focus in the visible dialog, including reverse tab navigation.
+document.addEventListener('keydown', event => {
+    if (event.key !== 'Tab') return;
+    const modal = ['login-modal', 'source-modal'].map(id => document.getElementById(id))
+        .find(element => element && element.style.display === 'flex');
+    if (!modal) return;
+    const focusable = [...modal.querySelectorAll('button, input, select, [tabindex="0"]')]
+        .filter(element => !element.disabled && element.offsetParent !== null);
+    const first = focusable[0], last = focusable[focusable.length - 1];
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+});

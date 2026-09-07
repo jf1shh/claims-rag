@@ -285,6 +285,11 @@ def seed_claim_documents(vector_store, embedding_engine):
             file_path = generate_excel(s["filename"], s["rows"], s["columns"])
         elif s["type"] == "image":
             file_path = os.path.join(STORED_DOCUMENTS_DIR, s["filename"])
+            if not os.path.isfile(file_path):
+                # The public demo has descriptions but no generated photos.
+                # Serve an honest text document instead of text mislabeled PNG.
+                s = {**s, "filename": s["filename"].rsplit(".", 1)[0] + "_description.txt"}
+                file_path = None
 
         file_size = os.path.getsize(file_path) if file_path and os.path.exists(file_path) else len(s["content"])
         file_ext = s["filename"].split(".")[-1].lower()

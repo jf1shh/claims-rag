@@ -14,7 +14,7 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-import backend.app as app_module
+from backend.app import runtime as app_module
 from backend.app import app
 from backend.audit import JsonlAuditSink
 from backend.blob_store import LocalDocumentBlobStore
@@ -256,9 +256,9 @@ def test_given_chat_when_answered_then_query_answer_and_sources_are_logged(stub_
     assert event["subject"] == "local-development-user"
     assert event["tenant_id"] == "local-development"
     assert event["request_id"].startswith("req_")
-    assert event["query"] == "What is the max labor rate in Nevada?"
+    assert "query" not in event
     assert event["engine"] == "simulated"
-    assert event["answer"] == "The max labor rate is $110/hr."
+    assert "answer" not in event
     assert event["sources"] == ["labor.txt"]
     assert "recorded_at" in event
 

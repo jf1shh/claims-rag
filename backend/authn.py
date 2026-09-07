@@ -122,6 +122,7 @@ class OIDCAuthenticator(Authenticator):
                 token,
                 signing_key.key,
                 algorithms=["RS256"],
+                options={"require": ["exp", "sub", "iss", "aud"]},
                 audience=self.client_id,
                 issuer=self.issuer,
             )
@@ -133,7 +134,10 @@ class OIDCAuthenticator(Authenticator):
             # none of which should leak details to the caller.
             logger.info("OIDC token rejected: %s", type(exc).__name__)
             raise AuthenticationError("invalid bearer token") from exc
-        return self._principal_from_payload(payload)
+        try:
+            return self._principal_from_payload(payload)
+        except (TypeError, ValueError, AttributeError) as exc:
+            raise AuthenticationError("invalid principal claims") from exc
 
     def _principal_from_payload(self, payload: Mapping[str, Any]) -> PrincipalContext:
         subject = payload.get("sub")

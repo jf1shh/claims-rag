@@ -1,3 +1,8 @@
+> September 6 hardening: see [current security/data-lifecycle requirements](../../SECURITY.md)
+> and [verification record](../portfolio-hardening.md). One application now enforces one tenant;
+> Postgres migrations must be upgraded to `head`. Runtime sources use immutable version keys.
+> The older session notes below describe historical setup and measurements.
+
 # Local and Production Operations
 
 ## Local development

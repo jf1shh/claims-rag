@@ -16,7 +16,7 @@ import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi.testclient import TestClient
 
-import backend.app as app_module
+from backend.app import runtime as app_module
 from backend.app import app
 from backend.authn import (
     ChainAuthenticator,
@@ -84,6 +84,8 @@ def _mint(private_key, *, kid="test-key-1", **claims):
 
 @pytest.fixture
 def enforced_auth(monkeypatch):
+    from dataclasses import replace
+    monkeypatch.setattr(app_module, "settings", replace(app_module.settings, tenant_id="tenant-a"))
     """Swaps the app's module-level authenticator for an enforced OIDC +
     service-account chain, so a missing credential 401s on every route."""
     private_key, jwks = _make_keypair()

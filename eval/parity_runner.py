@@ -25,6 +25,7 @@ Usage:
     .venv/bin/python eval/parity_runner.py --backend-b postgres --tolerance 0.9
 """
 import argparse
+import hashlib
 import os
 import sys
 import tempfile
@@ -45,7 +46,7 @@ class _FakeEmbedder:
     identical corpora embed identically and parity compares pure ranking."""
 
     def _embed(self, text):
-        rng = np.random.default_rng(abs(hash(text)) % (2**32))
+        rng = np.random.default_rng(int.from_bytes(hashlib.sha256(text.encode()).digest()[:4], "big"))
         vec = rng.standard_normal(384).astype(np.float32)
         return vec / np.linalg.norm(vec)
 

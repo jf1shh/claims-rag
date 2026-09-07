@@ -1,7 +1,11 @@
 import time
+import pytest
 from fastapi.testclient import TestClient
-import backend.app as app_module
+from backend.app import runtime as app_module
 from backend.app import app
+
+
+pytestmark = pytest.mark.usefixtures("isolated_api_runtime")
 
 
 def test_time_to_first_token_is_reported_and_precedes_final(monkeypatch):

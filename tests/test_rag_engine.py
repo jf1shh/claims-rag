@@ -297,7 +297,7 @@ class TestSQLiteVectorStore:
         # (failed, partial) content -- a silent desync between what's
         # indexed/searchable and what a handler sees opening the file.
         store.add_document("labor.txt", "txt", 100, LABOR_TEXT, embedder)
-        stored_path = os.path.join("stored_documents", "labor.txt")
+        stored_path = os.path.join(store.storage_dir, store.get_blob_key("labor.txt") or "labor.txt")
         with open(stored_path) as f:
             assert f.read() == LABOR_TEXT
 
@@ -324,7 +324,7 @@ class TestSQLiteVectorStore:
         # content forever while the DB/search index moved on to the NEW text.
         store.add_document("notes.txt", "txt", 100, "first version", embedder)
         store.add_document("notes.txt", "txt", 100, "second version", embedder)
-        stored_path = os.path.join("stored_documents", "notes.txt")
+        stored_path = os.path.join(store.storage_dir, store.get_blob_key("notes.txt") or "notes.txt")
         with open(stored_path) as f:
             assert f.read() == "second version"
 
@@ -338,7 +338,7 @@ class TestSQLiteVectorStore:
             store.add_document("report.pdf", "pdf", 100, GLASS_TEXT, embedder, claim_id="#CLAIM-B")
         # Claim A's document is untouched (DB + physical file).
         assert [d["filename"] for d in store.get_claim_documents("#CLAIM-A")] == ["report.pdf"]
-        stored_path = os.path.join("stored_documents", "report.pdf")
+        stored_path = os.path.join(store.storage_dir, store.get_blob_key("report.pdf") or "report.pdf")
         with open(stored_path) as f:
             assert f.read() == LABOR_TEXT
         # Global-vs-claim collisions are refused too (both directions).
@@ -354,7 +354,7 @@ class TestSQLiteVectorStore:
         # overwrite path used when a handler replaces a dossier file).
         store.add_document("report.pdf", "pdf", 100, GLASS_TEXT, embedder, claim_id="#CLAIM-A")
         assert [d["filename"] for d in store.get_claim_documents("#CLAIM-A")] == ["report.pdf"]
-        stored_path = os.path.join("stored_documents", "report.pdf")
+        stored_path = os.path.join(store.storage_dir, store.get_blob_key("report.pdf") or "report.pdf")
         with open(stored_path) as f:
             assert f.read() == GLASS_TEXT
 
@@ -372,4 +372,4 @@ class TestSQLiteVectorStore:
     def test_no_partial_file_left_on_successful_write(self, store, embedder):
         store.add_document("clean.txt", "txt", 100, LABOR_TEXT, embedder)
         # The staged *.part file must be gone after a successful add.
-        assert not os.path.exists(os.path.join("stored_documents", "clean.txt.part"))
+        assert not os.path.exists(os.path.join(store.storage_dir, store.get_blob_key("clean.txt.part") or "clean.txt.part"))

@@ -10,7 +10,7 @@ from typing import Any, Callable
 
 from backend.ingestion import IngestionJob, IngestionStatus
 from backend.queue import Queue, QueueMessage
-from backend.rag_engine import DocumentParser, VectorStore
+from backend.rag_engine import VectorStore
 
 logger = logging.getLogger(__name__)
 
@@ -82,11 +82,17 @@ class IngestionWorker:
         backoff_base_seconds: float = 2.0,
         poll_interval_seconds: float = 1.0,
         job_store: Any | None = None,
+        max_upload_bytes: int = 25 * 1024 * 1024,
+        max_document_chars: int = 2_000_000,
+        parse_timeout_seconds: int = 120,
     ):
         if blob_store is None:
             raise ValueError("IngestionWorker requires a blob store (filesystem or S3 adapter)")
         if max_retries < 1:
             raise ValueError("max_retries must be at least 1")
+        self.parse_timeout_seconds = parse_timeout_seconds
+        self.max_upload_bytes = max_upload_bytes
+        self.max_document_chars = max_document_chars
         self.queue = queue
         self.vector_store = vector_store
         self.blob_store = blob_store
@@ -144,14 +150,29 @@ class IngestionWorker:
             return DUPLICATE
 
         job = self._ensure_job(message)
-        content = self._fetch_or_dead_letter(message, blob_key)
+        try:
+            content = self._fetch_or_dead_letter(message, blob_key)
+        except Exception as exc:
+            return self._retry_or_dead_letter(message, filename, exc, job)
         if content is None:
             self._mark_failed(job, "BLOB_NOT_FOUND", "source document not found in object storage")
             return DEAD_LETTERED
 
+        import hashlib
+        checksum = payload.get("checksum")
+        if checksum and checksum != "sha256:" + hashlib.sha256(content).hexdigest():
+            self._mark_failed(job, "CHECKSUM_MISMATCH", "staged document does not match submitted bytes")
+            self.queue.dead_letter(message)
+            return DEAD_LETTERED
         outcome = self._index(message, filename, claim_id, content, job)
         if outcome == INDEXED:
             self.queue.ack(message)
+            # Staging is private to this submitted upload, never an indexed source.
+            if blob_key.startswith("staging/"):
+                try:
+                    self.blob_store.delete(blob_key)
+                except Exception:
+                    logger.warning("staging cleanup failed; operator cleanup required")
         return outcome
 
     def _process_delete(self, message: QueueMessage) -> str:
@@ -239,7 +260,7 @@ class IngestionWorker:
         """Fetches source bytes; a missing object is permanent (its event is stale)."""
         try:
             return self.blob_store.get(blob_key)
-        except Exception as exc:  # object gone / provider error on fetch
+        except FileNotFoundError as exc:
             logger.warning("blob fetch failed for %s: %s", blob_key, exc)
             self.queue.dead_letter(message)
             return None
@@ -268,7 +289,8 @@ class IngestionWorker:
             self._set_job(job, status=IngestionStatus.parsing, progress=25)
 
             try:
-                text = DocumentParser.parse(tmp_path, file_ext)
+                from backend.document_limits import parse_bounded
+                text = parse_bounded(tmp_path, file_ext, self.max_upload_bytes, self.max_document_chars, self.parse_timeout_seconds)
             except Exception:
                 # Corrupt/truncated/password-protected files fail deep inside the
                 # parser. That is a client error (the bytes are unreadable), so
@@ -403,14 +425,17 @@ def build_ingestion_worker(
     blob_store: Any,
     embedding_engine_factory: Callable[[], Any],
     job_store: Any | None = None,
+    queue: Queue | None = None,
 ) -> IngestionWorker:
     """Constructs a worker from Settings, mirroring the other factory helpers."""
     from backend.queue import InProcessQueue, SQSQueue
 
-    if settings.queue_provider == "sqs":
+    if queue is not None:
+        pass
+    elif settings.queue_provider == "sqs":
         if not settings.sqs_queue_url:
             raise ValueError("SQS_QUEUE_URL is required when QUEUE_PROVIDER is sqs")
-        queue: Queue = SQSQueue(
+        queue = SQSQueue(
             queue_url=settings.sqs_queue_url,
             region=settings.sqs_region,
             endpoint_url=settings.sqs_endpoint_url,
@@ -427,4 +452,7 @@ def build_ingestion_worker(
         backoff_base_seconds=settings.worker_backoff_base_seconds,
         poll_interval_seconds=settings.worker_poll_interval_seconds,
         job_store=job_store,
+        max_upload_bytes=settings.max_upload_bytes,
+        max_document_chars=settings.max_document_chars,
+        parse_timeout_seconds=settings.request_timeout_seconds,
     )

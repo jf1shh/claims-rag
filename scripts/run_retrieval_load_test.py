@@ -13,7 +13,7 @@ container, or a developer's existing instance), this script never touches
 its lifecycle.
 
 CI smoke:    python scripts/run_retrieval_load_test.py --count 500 --tenants 2 \
-                 --users 5 --spawn-rate 5 --duration 15s --no-assert-p95
+                 --users 5 --spawn-rate 5 --duration 15s --no-assert-p95 --synthetic-models
 Real 6.1:    python scripts/run_retrieval_load_test.py --count 100000 --tenants 8 \
                  --users 50 --spawn-rate 10 --duration 120s
 """
@@ -85,11 +85,12 @@ def _write_service_accounts(path: Path, tenant_ids: list[str]) -> dict:
     return accounts
 
 
-def _start_server(dsn: str, service_accounts_path: Path, port: int) -> subprocess.Popen:
+def _start_server(dsn: str, service_accounts_path: Path, port: int, *, synthetic_models: bool = False) -> subprocess.Popen:
     env = os.environ.copy()
     env.update(
         {
             "VECTOR_STORE": "postgres",
+            "TENANT_ID": next(iter(json.loads(service_accounts_path.read_text()).values()))["tenant_id"],
             "POSTGRES_DSN": dsn,
             "AUTH_PROVIDERS": "service-accounts",
             "SERVICE_ACCOUNTS_FILE": str(service_accounts_path),
@@ -100,8 +101,9 @@ def _start_server(dsn: str, service_accounts_path: Path, port: int) -> subproces
             "RATE_LIMIT_WINDOW_SECONDS": "60",
         }
     )
+    app_target = "scripts.retrieval_smoke_app:app" if synthetic_models else "backend.app:app"
     return subprocess.Popen(
-        [sys.executable, "-m", "uvicorn", "backend.app:app", "--port", str(port)],
+        [sys.executable, "-m", "uvicorn", app_target, "--port", str(port)],
         cwd=str(ROOT), env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
     )
 
@@ -175,10 +177,15 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--p95-bar-ms", type=float, default=100.0)
     parser.add_argument("--assert-p95", dest="assert_p95", action="store_true", default=True)
     parser.add_argument("--no-assert-p95", dest="assert_p95", action="store_false")
+    parser.add_argument("--synthetic-models", action="store_true", help="offline orchestration smoke only; requires --no-assert-p95")
     parser.add_argument("--postgres-dsn", default=None, help="reuse an existing Postgres instance instead of starting one")
     parser.add_argument("--server-port", type=int, default=8099)
     parser.add_argument("--docker-port", type=int, default=15433)
     args = parser.parse_args(argv)
+    if args.synthetic_models and args.assert_p95:
+        parser.error("synthetic models require --no-assert-p95; they cannot validate model latency")
+    if args.synthetic_models:
+        print("SYNTHETIC MODELS: orchestration smoke only; not production latency evidence")
 
     dsn = args.postgres_dsn or os.environ.get("POSTGRES_DSN")
     container_name = None
@@ -194,7 +201,7 @@ def main(argv: list[str] | None = None) -> int:
         tenant_ids = [f"{args.tenant_prefix}-{i}" for i in range(args.tenants)]
         with tempfile.TemporaryDirectory() as tmp:
             sa_path = Path(tmp) / "service_accounts.json"
-            accounts = _write_service_accounts(sa_path, tenant_ids)
+            accounts = _write_service_accounts(sa_path, tenant_ids[:1])
             warm_up_key = next(iter(accounts))
 
             print(f"Seeding {args.count} docs across {args.tenants} tenants...")
@@ -212,7 +219,7 @@ def main(argv: list[str] | None = None) -> int:
                 return 1
 
             print("Starting server...")
-            server = _start_server(dsn, sa_path, args.server_port)
+            server = _start_server(dsn, sa_path, args.server_port, synthetic_models=args.synthetic_models)
             _wait_for_health(args.server_port)
             print("Warming up (one sequential request to force lazy model loading)...")
             _warm_up(args.server_port, warm_up_key)

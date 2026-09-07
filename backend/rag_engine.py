@@ -303,7 +303,7 @@ class SQLiteVectorStore(VectorStore):
         conn = self._connect()
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT c.embedding, p.content, d.filename, d.file_type, p.id, d.claim_id
+            SELECT c.embedding, p.content, d.filename, d.file_type, p.id, d.claim_id, d.id, d.document_version
             FROM child_chunks c
             JOIN parent_chunks p ON c.parent_id = p.id
             JOIN documents d ON p.document_id = d.id
@@ -312,7 +312,8 @@ class SQLiteVectorStore(VectorStore):
         conn.close()
 
         vectors, contents, filenames, file_types, parent_ids, claim_ids = [], [], [], [], [], []
-        for emb_bytes, content, filename, file_type, p_id, claim_id in rows:
+        doc_ids, versions = [], []
+        for emb_bytes, content, filename, file_type, p_id, claim_id, doc_id, version in rows:
             vec = np.frombuffer(emb_bytes, dtype=np.float32)
             if vec.shape[0] != 384:
                 continue
@@ -322,6 +323,8 @@ class SQLiteVectorStore(VectorStore):
             file_types.append(file_type)
             parent_ids.append(p_id)
             claim_ids.append(claim_id)
+            doc_ids.append(str(doc_id))
+            versions.append(version or "legacy-unversioned")
 
         if vectors:
             matrix = np.vstack(vectors).astype(np.float32)
@@ -337,6 +340,7 @@ class SQLiteVectorStore(VectorStore):
             "filenames": filenames,
             "file_types": file_types,
             "parent_ids": parent_ids,
+            "document_ids": doc_ids, "document_versions": versions,
             "claim_ids": np.array(claim_ids, dtype=object),
             "global_mask": np.array([cid is None for cid in claim_ids], dtype=bool),
         }
@@ -357,6 +361,11 @@ class SQLiteVectorStore(VectorStore):
                 claim_id TEXT
             )
         """)
+
+        columns = {row[1] for row in cursor.execute("PRAGMA table_info(documents)")}
+        for column in ("storage_key", "document_version"):
+            if column not in columns:
+                cursor.execute(f"ALTER TABLE documents ADD COLUMN {column} TEXT")
 
         # Parent chunks table (larger text blocks for context)
         cursor.execute("""
@@ -392,24 +401,12 @@ class SQLiteVectorStore(VectorStore):
         conn.close()
 
     def add_document(self, filename, file_type, file_size, text, embedding_engine, claim_id=None, file_path=None):
-        """Inserts document, parent chunks, FTS index, child chunks and their embeddings; copies physical file to disk.
+        """Stage immutable source bytes, then publish their reference with the index.
 
-        Physical-file writes are deferred until after the DB transaction commits
-        successfully -- previously the old file was deleted (and, on the
-        no-file_path fallback path, the new text was written) *inside* the same
-        try block as the chunk/embedding inserts. If anything failed after that
-        point (e.g. embedding generation raised), conn.rollback() restored the
-        DB to describe the OLD document, but the physical file on disk had
-        already been overwritten with the NEW (failed, partial) content --
-        permanently desyncing what's indexed/searchable from what a handler
-        sees when they open the file. Verified empirically with a mid-overwrite
-        embedding failure. Deferring the file write also fixes a second latent
-        bug: the old fallback-text-write path only wrote `if not
-        os.path.exists(dest_path)`, so overwriting a document added without a
-        file_path (no physical source) silently kept serving the OLD file
-        content forever while the DB/search index moved on to the NEW text.
+        A failed stage or transaction leaves the previous indexed version intact.
+        Unreferenced staged blobs can be reclaimed by the maintenance command.
         """
-        import shutil
+        from backend.source_storage import stage_source
         filename = safe_filename(filename)
         os.makedirs(self.storage_dir, exist_ok=True)
 
@@ -484,6 +481,9 @@ class SQLiteVectorStore(VectorStore):
                         (p_id, c_text, emb_bytes)
                     )
 
+            storage_key, document_version = stage_source(self, filename, file_type, text, file_path)
+            cursor.execute("UPDATE documents SET storage_key = ?, document_version = ? WHERE id = ?",
+                           (storage_key, document_version, doc_id))
             conn.commit()
             self._invalidate_vector_cache()
         except Exception as e:
@@ -491,33 +491,6 @@ class SQLiteVectorStore(VectorStore):
             raise e
         finally:
             conn.close()
-
-        # Only touch storage once the DB write has durably committed -- see
-        # the docstring above for why this ordering matters (a rolled-back DB
-        # write must never pair with a storage-side change). When an object
-        # store is configured the source bytes go to it (tenant-scoped key);
-        # otherwise the legacy filesystem path writes atomically to
-        # storage_dir.
-        if self.blob_store is not None:
-            key = _blob_key(claim_id, filename)
-            if file_path and os.path.exists(file_path):
-                with open(file_path, "rb") as fh:
-                    content = fh.read()
-            else:
-                content = text.encode("utf-8", errors="ignore")
-            self.blob_store.put(key, content, file_type or "application/octet-stream")
-        else:
-            dest_path = os.path.abspath(os.path.join(self.storage_dir, filename))
-            tmp_path = dest_path + ".part"
-            if file_path and os.path.exists(file_path):
-                src_abs = os.path.abspath(file_path)
-                if src_abs != dest_path:
-                    shutil.copy2(file_path, tmp_path)
-                    os.replace(tmp_path, dest_path)
-            else:
-                with open(tmp_path, "w", encoding="utf-8", errors="ignore") as f:
-                    f.write(text)
-                os.replace(tmp_path, dest_path)
 
         return doc_id, len(parent_chunks)
 
@@ -531,6 +504,7 @@ class SQLiteVectorStore(VectorStore):
         searchable.
         """
         filename = safe_filename(filename)
+        source_key = self.get_blob_key(filename)
         conn = self._connect()
         cursor = conn.cursor()
         try:
@@ -538,7 +512,7 @@ class SQLiteVectorStore(VectorStore):
             row = cursor.fetchone()
             if not row:
                 return False
-            doc_id, claim_of_deleted = row[0], row[1]
+            doc_id = row[0]
             # Delete FTS index first
             cursor.execute("""
                 DELETE FROM parent_chunks_fts
@@ -559,12 +533,12 @@ class SQLiteVectorStore(VectorStore):
         # Delete from storage only now that the DB is guaranteed to no longer
         # reference it. With an object store, the key needs the scope (claim)
         # that was just deleted, so look it up before the delete.
-        if self.blob_store is not None and claim_of_deleted:
-            self.blob_store.delete(_blob_key(claim_of_deleted, filename))
-        elif not self.blob_store:
-            stored_path = os.path.join(self.storage_dir, filename)
-            if os.path.exists(stored_path):
-                os.remove(stored_path)
+        if source_key:
+            from backend.source_storage import source_store
+            if self.blob_store is not None or source_key.startswith("versions/"):
+                source_store(self).delete(source_key)
+            else:
+                source_store(self).delete(filename)
         return True
 
     def get_all_documents(self):
@@ -616,7 +590,7 @@ class SQLiteVectorStore(VectorStore):
         conn = self._connect()
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT p.content, d.filename, d.file_type
+            SELECT p.content, d.filename, d.file_type, p.id, d.id, d.document_version
             FROM parent_chunks p
             JOIN documents d ON p.document_id = d.id
             WHERE d.claim_id = ?
@@ -628,8 +602,9 @@ class SQLiteVectorStore(VectorStore):
         # not a real similarity score -- callers format/round this as a float,
         # so it must stay numeric, not None.
         return [
-            {"content": content, "filename": filename, "file_type": file_type, "score": 1.0}
-            for content, filename, file_type in rows
+            {"content": content, "filename": filename, "file_type": file_type, "score": 1.0,
+             "id": pid, "document_id": str(did), "document_version": version or "legacy-unversioned"}
+            for content, filename, file_type, pid, did, version in rows
         ]
 
     def get_document_content(self, filename):
@@ -649,21 +624,21 @@ class SQLiteVectorStore(VectorStore):
         conn.close()
         return "\n\n".join(r[0] for r in rows)
 
-    def get_blob_key(self, filename):
-        """Resolves the object-store key for a document by its filename (used
-        by the serving path to presign its download URL). Returns None if the
-        document is not indexed. Note: filename is unique here (the SQLite
-        schema keys the documents table on filename alone), so the scope is
-        whatever row owns that name."""
-        filename = safe_filename(filename)
+    def get_document_metadata(self, filename):
         conn = self._connect()
-        cursor = conn.cursor()
-        cursor.execute("SELECT claim_id FROM documents WHERE filename = ?", (filename,))
-        row = cursor.fetchone()
-        conn.close()
-        if not row:
+        try:
+            row = conn.execute("SELECT id, claim_id, filename, storage_key, document_version FROM documents WHERE filename = ?", (safe_filename(filename),)).fetchone()
+            return {"document_id": str(row[0]), "claim_id": row[1], "filename": row[2], "storage_key": row[3], "document_version": row[4] or "legacy-unversioned"} if row else None
+        finally:
+            conn.close()
+
+    def get_blob_key(self, filename):
+        from backend.rag_engine import _blob_key
+        metadata = self.get_document_metadata(filename)
+        if metadata is None:
             return None
-        return _blob_key(row[0], filename)
+        return metadata["storage_key"] or _blob_key(metadata["claim_id"], filename)
+
 
     def search_similarity(self, query_embedding, query_text, claim_id=None, reranking_engine=None, top_k=15, use_fts=True, candidate_pool=50):
         """Computes hybrid similarity (Vector + FTS5) with RRF and optional Cross-Encoder reranking scoped by claim_id.
@@ -710,13 +685,16 @@ class SQLiteVectorStore(VectorStore):
                         parent_metadata[p_id] = {
                             "content": contents[global_idx],
                             "filename": filenames[global_idx],
-                            "file_type": file_types[global_idx]
+                            "file_type": file_types[global_idx],
+                            "document_id": cache["document_ids"][global_idx],
+                            "document_version": cache["document_versions"][global_idx]
                         }
 
                 # Compile vector results
                 for p_id, score in parent_best_scores.items():
                     meta = parent_metadata[p_id]
                     vector_ranked.append({
+                        **meta,
                         "id": p_id,
                         "content": meta["content"],
                         "filename": meta["filename"],
@@ -741,7 +719,7 @@ class SQLiteVectorStore(VectorStore):
                 # rowid (insertion) order -- arbitrary ranks for fusion, and
                 # LIMIT truncating by age rather than relevance.
                 cursor.execute("""
-                    SELECT p.content, d.filename, d.file_type, p.id
+                    SELECT p.content, d.filename, d.file_type, p.id, d.id, d.document_version
                     FROM parent_chunks p
                     JOIN documents d ON p.document_id = d.id
                     JOIN parent_chunks_fts f ON p.id = f.rowid
@@ -752,9 +730,9 @@ class SQLiteVectorStore(VectorStore):
                 """, (claim_id, clean_query))
                 fts_rows = cursor.fetchall()
 
-                for content, filename, file_type, p_id in fts_rows:
+                for content, filename, file_type, p_id, doc_id, version in fts_rows:
                     fts_ranked.append({
-                        "id": p_id,
+                        "id": p_id, "document_id": str(doc_id), "document_version": version or "legacy-unversioned",
                         "content": content,
                         "filename": filename,
                         "file_type": file_type,
@@ -784,6 +762,7 @@ class SQLiteVectorStore(VectorStore):
         for p_id, score in rrf_scores.items():
             meta = parent_info[p_id]
             fused_results.append({
+                **meta,
                 "id": p_id,
                 "content": meta["content"],
                 "filename": meta["filename"],

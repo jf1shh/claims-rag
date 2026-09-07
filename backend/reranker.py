@@ -7,7 +7,7 @@ import threading
 logger = logging.getLogger(__name__)
 
 
-def _load_engine(device: str = "auto"):
+def _load_engine(device: str = "auto", model_name="cross-encoder/ms-marco-MiniLM-L-6-v2"):
     """Load the cross-encoder lazily so imports remain torch-free.
 
     ``device`` is passed through untouched -- resolving "auto" needs torch, and
@@ -15,7 +15,7 @@ def _load_engine(device: str = "auto"):
     """
     from backend.rag_engine import RerankingEngine
 
-    return RerankingEngine(device=device)
+    return RerankingEngine(device=device, model_name=model_name)
 
 
 class Reranker(ABC):
@@ -42,15 +42,18 @@ class LocalReranker(Reranker):
     deployments (CI included) keep falling back to.
     """
 
-    def __init__(self, engine=None, max_concurrency: int = 2, device: str = "auto"):
+    def __init__(self, engine=None, max_concurrency: int = 2, device: str = "auto", model_name="cross-encoder/ms-marco-MiniLM-L-6-v2"):
+        self.model_name = model_name
+        self._load_lock = threading.Lock()
         self._engine = engine
         self.max_concurrency = max_concurrency
         self.device = device
         self._semaphore = threading.Semaphore(max_concurrency)
 
     def _engine_or_load(self):
-        if self._engine is None:
-            self._engine = _load_engine(self.device)
+        with self._load_lock:
+            if self._engine is None:
+                self._engine = _load_engine(self.device, self.model_name)
         return self._engine
 
     def rerank(self, query: str, passages: list[dict], top_k: int = 4) -> list[dict]:

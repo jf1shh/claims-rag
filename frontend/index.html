@@ -4,10 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ClaimsRAG — Auto Adjuster Portal</title>
-    <!-- Google Fonts for premium typography -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -19,7 +15,7 @@
                 <span class="logo-icon">🛡️</span>
                 <div class="logo-text">
                     <h1>ClaimsRAG</h1>
-                    <span class="logo-sub">Enterprise Adjuster Portal</span>
+                    <span class="logo-sub">Synthetic claims research demo</span>
                 </div>
             </div>
             
@@ -327,16 +323,19 @@
     </div>
 
     <!-- Login Gate (Phase 4.1) -->
-    <div class="modal-backdrop" id="login-modal">
+    <div class="modal-backdrop" id="login-modal" role="dialog" aria-modal="true" aria-labelledby="login-title">
         <div class="modal-box" style="max-width: 420px;">
             <div class="modal-header">
-                <h2>Sign in</h2>
+                <h2 id="login-title">Sign in</h2>
             </div>
             <div class="modal-body" style="white-space: normal; font-family: inherit; font-size: 13px; background: none; border: none; padding: 4px 0 0 0;">
                 <p style="margin: 0 0 12px 0; color: var(--text-muted);">
                     This deployment requires authentication. Paste an access token from
                     your identity provider, or an API key for a service account.
                 </p>
+                <label for="login-kind">Credential type</label>
+                <select id="login-kind"><option value="bearer">OIDC access token</option><option value="api-key">Service account API key</option></select>
+                <label for="login-token-input">Credential (kept for this tab only)</label>
                 <input
                     type="password"
                     id="login-token-input"
@@ -353,15 +352,15 @@
     </div>
 
     <!-- Citation Source Card Modal -->
-    <div class="modal-backdrop" id="source-modal">
+    <div class="modal-backdrop" id="source-modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
         <div class="modal-box">
             <div class="modal-header">
                 <h2 id="modal-title">Source Reference Passage</h2>
-                <button class="modal-close" id="modal-close">&times;</button>
+                <button class="modal-close" id="modal-close" aria-label="Close source">&times;</button>
             </div>
             <div class="modal-metadata">
                 <span class="modal-meta-item">📁 File: <strong id="modal-filename">-</strong></span>
-                <span class="modal-meta-item">📊 Similarity Score: <strong id="modal-score">-</strong></span>
+                <span class="modal-meta-item">📊 Retrieval ranking score: <strong id="modal-score">-</strong></span>
                 <button class="btn btn-primary btn-sm" id="modal-view-full-btn" style="margin-left: auto; display: none;">📖 View Full Document</button>
             </div>
             <div class="modal-body">

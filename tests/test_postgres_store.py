@@ -176,10 +176,10 @@ def test_blob_store_wiring_routes_bytes_to_object_store(provisioned_db, tmp_path
         try:
             text = "Nevada mechanical labor cap is 110 dollars per hour."
             s.add_document("labor.txt", "txt", len(text), text, _FakeEmbedder(), claim_id="claim-1")
-            body = client.get_object(Bucket="test-bucket", Key=f"{tenant}/claim-1/labor.txt")["Body"].read()
+            body = client.get_object(Bucket="test-bucket", Key=f"{tenant}/" + s.get_blob_key("labor.txt"))["Body"].read()
             assert body.decode() == text
             assert not (tmp_path / "docs" / "labor.txt").exists()
-            assert s.get_blob_key("labor.txt") == "claim-1/labor.txt"
+            assert s.get_blob_key("labor.txt").startswith("versions/")
             s.delete_document("labor.txt")
             keys = [o["Key"] for o in client.list_objects_v2(Bucket="test-bucket").get("Contents", [])]
             assert f"{tenant}/claim-1/labor.txt" not in keys

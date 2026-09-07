@@ -116,6 +116,11 @@ class AgenticRAGRouter:
         max_global = getattr(caps, "context_max_global_matches", 4)
         max_chars = getattr(caps, "context_max_prompt_chars", 60000)
 
+        claim_context = self._get_claim_context_markdown(claim_id) if claim_id else ""
+        overhead = (f"Active Claim ID: {claim_id if claim_id else 'None (Global Scope)'}\n\n"
+                    f"{claim_context}\n\nHere are the matching reference sources from the policy guidelines:\n\n"
+                    f"<user_query>{query_text}</user_query>\n\nGenerate your structured response:")
+        max_chars = max(0, max_chars - len(overhead))
         dossier = list(claim_chunks or [])[:max_claim]
         global_top = sorted(global_matches or [], key=lambda m: m.get("score", 0.0), reverse=True)
         matches = list(global_top[:max_global])
@@ -143,7 +148,7 @@ class AgenticRAGRouter:
             # `content` from reading as real tag syntax to the LLM, and """
             # prevents a literal quote inside `filename` from prematurely
             # closing the file="..." attribute.
-            return str(value).replace("<", "&lt;").replace('"', "&quot;")
+            return str(value).replace("&", "&amp;").replace("<", "&lt;").replace('"', "&quot;")
 
         def _render_source_block(match: Dict[str, Any]) -> str:
             filename = _escape_source_field(match["filename"])
@@ -201,7 +206,8 @@ class AgenticRAGRouter:
                 if content_budget > 0:
                     truncated_content = _truncate_escaped(_escape_source_field(match["content"]), content_budget)
                     kept_blocks.append(header + truncated_content + footer)
-                    kept_matches.append(match)
+                    import html
+                    kept_matches.append({**match, "content": html.unescape(truncated_content)})
                 break
             top_matches = kept_matches
             filenames = [m["filename"] for m in top_matches]
@@ -216,6 +222,16 @@ class AgenticRAGRouter:
             "Generate your structured response:"
         )
         return system_prompt, user_prompt, top_matches, filenames
+
+    @staticmethod
+    def _unavailable(logs):
+        return {"answer": "The model is unavailable and simulation is disabled. Please try again later.",
+                "sources": [], "engine": "unavailable", "status": "error", "pipeline_logs": logs}
+
+    @staticmethod
+    def _no_context(logs):
+        return {"answer": "There is not enough source context to answer this question. Please refine the query or upload supporting documents.",
+                "sources": [], "engine": "lm-studio (agentic)", "status": "refused", "pipeline_logs": logs}
 
     def run_query(
         self,
@@ -236,6 +252,8 @@ class AgenticRAGRouter:
         if claim_id:
             logs.append(f"🔍 [Agentic Coordinator] Active claim folder scope: {claim_id}")
 
+        if (engine == "simulated" or llm_client is None) and not getattr(caps, "simulation_mode", True):
+            return self._unavailable(logs)
         # If simulated mode, execute high-fidelity structured routing
         if engine == "simulated":
             return self._run_simulated_agent(query_text, claim_id, vector_store, embedding_engine, reranking_engine, logs, start_time)
@@ -303,6 +321,7 @@ class AgenticRAGRouter:
                     sub_q,
                     claim_id=None,
                     reranking_engine=reranking_engine,
+                    candidate_pool=getattr(caps, "rerank_candidate_pool", 50),
                     top_k=3
                 )
                 for m in matches:
@@ -359,6 +378,7 @@ class AgenticRAGRouter:
                     fallback_q,
                     claim_id=claim_id,
                     reranking_engine=reranking_engine,
+                    candidate_pool=getattr(caps, "rerank_candidate_pool", 50),
                     top_k=4
                 )
                 all_matches.extend(fallback_matches)
@@ -372,6 +392,7 @@ class AgenticRAGRouter:
                     query_text,
                     claim_id=None,
                     reranking_engine=reranking_engine,
+                    candidate_pool=getattr(caps, "rerank_candidate_pool", 50),
                     top_k=4
                 )
                 all_matches.extend(fallback_matches)
@@ -427,6 +448,9 @@ class AgenticRAGRouter:
             claim_chunks, all_matches, query_text, claim_id, caps
         )
 
+        if not top_matches:
+            return self._no_context(logs)
+
         # claim_dossier is a load-bearing response field (eval/run_eval.py
         # scores Faithfulness against it; see this project's CLAUDE.md Phase
         # 9) independent of the prompt text built above -- computed here too
@@ -446,6 +470,8 @@ class AgenticRAGRouter:
                 max_tokens=1000,
             )
         except ChatClientError as e:
+            if not getattr(caps, "simulation_mode", True):
+                return self._unavailable(logs)
             logs.append(f"❌ [Synthesis Error] LLM generation failed: {e}. Falling back to simulation.")
             return self._run_simulated_agent(query_text, claim_id, vector_store, embedding_engine, reranking_engine, logs, start_time)
 
@@ -456,6 +482,7 @@ class AgenticRAGRouter:
             "answer": answer,
             "sources": [
                 {
+                    **m,
                     "filename": m["filename"],
                     "file_type": m["file_type"],
                     "content": m["content"],
@@ -526,6 +553,9 @@ class AgenticRAGRouter:
         # relay -- run the existing JSON path and emit its result as a
         # single final event so callers get a uniform event stream either way.
         if engine == "simulated" or llm_client is None:
+            if not getattr(caps, "simulation_mode", True):
+                yield {"type": "final", **self._unavailable(logs)}
+                return
             res = self.run_query(query_text, claim_id, engine, embedding_engine,
                                   vector_store, reranking_engine)
             yield _final(res.get("answer"), res.get("sources") or [], res.get("engine"), "simulated")
@@ -547,12 +577,7 @@ class AgenticRAGRouter:
                 reranking_engine, llm_client, caps, logs, start_time,
             )
 
-            # Same pre-cap hard stop as _run_online_agent, for the same reason
-            # (see its comment): a misconfigured CONTEXT_MAX_PROMPT_CHARS can
-            # still let _assemble_context's per-block truncation drop every
-            # source post-cap, so this check is a floor, not a guarantee, at
-            # extreme settings -- kept as one check style for the same concept
-            # across both entrypoints.
+            # Refuse an empty retrieval; evidence is checked again after context trimming.
             if not claim_chunks and not all_matches:
                 logs.append("❌ [Synthesis Skipped] No supporting documents found after self-correction; refusing to answer ungrounded.")
                 yield _final(
@@ -568,6 +593,10 @@ class AgenticRAGRouter:
             system_prompt, user_prompt, top_matches, filenames = self._assemble_context(
                 claim_chunks, all_matches, query_text, claim_id, caps
             )
+
+            if not top_matches:
+                yield {"type": "final", **self._no_context(logs)}
+                return
 
             chunks: List[str] = []
             first_token_at: Optional[float] = None
@@ -586,6 +615,9 @@ class AgenticRAGRouter:
                     yield {"type": "chunk", "text": token}
             except Exception as exc:  # noqa: BLE001 -- surfaced to the caller as a partial + error final event, or a simulated fallback below
                 if not chunks:
+                    if not getattr(caps, "simulation_mode", True):
+                        yield {"type": "final", **self._unavailable(logs)}
+                        return
                     # Nothing was streamed yet -- mirror _run_online_agent's
                     # ChatClientError handling and fall back to a real,
                     # grounded simulated answer instead of an empty bubble.
@@ -626,7 +658,8 @@ class AgenticRAGRouter:
                 "".join(chunks),
                 [
                     {
-                        "filename": m["filename"],
+                        **m,
+                    "filename": m["filename"],
                         "file_type": m.get("file_type", "txt"),
                         "content": m["content"],
                         "score": round(m.get("score", 0.0), 3),
@@ -1089,6 +1122,7 @@ class AgenticRAGRouter:
             "answer": answer,
             "sources": [
                 {
+                    **m,
                     "filename": m["filename"],
                     "file_type": m["file_type"],
                     "content": m["content"],

@@ -1,6 +1,6 @@
 from fastapi.testclient import TestClient
 
-import backend.app as app_module
+from backend.app import runtime as app_module
 from backend.agentic_router import AgenticRAGRouter
 from backend.app import app
 from config import Settings

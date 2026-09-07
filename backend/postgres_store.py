@@ -110,18 +110,14 @@ class PostgresVectorStore:
     # ------------------------------------------------------------------ #
 
     def add_document(self, filename, file_type, file_size, text, embedding_engine, claim_id=None, file_path=None):
-        """Indexes a document (chunk + embed + physical copy), returning (doc_id, parent_chunk_count).
+        """Stage immutable source bytes, then publish their reference with the index.
 
-        Physical-file writes are deferred until after the DB transaction commits
-        (see rag_engine.SQLiteVectorStore.add_document docstring for the bug this
-        ordering prevents). Per-scope overwrite guard preserved: uploading a
-        filename that already exists in a different scope (another claim, or
-        global vs claim) raises ValueError instead of silently deleting that
-        scope's data.
+        A failed stage or transaction leaves the previous indexed version intact.
+        Unreferenced staged blobs can be reclaimed by the maintenance command.
         """
-        import shutil
+        from backend.source_storage import stage_source
 
-        from backend.rag_engine import TextChunker, safe_filename, _blob_key
+        from backend.rag_engine import TextChunker, safe_filename
 
         filename = safe_filename(filename)
         os.makedirs(self.storage_dir, exist_ok=True)
@@ -202,6 +198,9 @@ class PostgresVectorStore:
                         (self.tenant_id, p_id, c_text, vec),
                     )
 
+            storage_key, document_version = stage_source(self, filename, file_type, text, file_path)
+            conn.execute("UPDATE documents SET storage_key = %s, document_version = %s WHERE id = %s AND tenant_id = %s",
+                         (storage_key, document_version, doc_id, self.tenant_id))
             conn.commit()
         except Exception as e:
             conn.rollback()
@@ -209,48 +208,18 @@ class PostgresVectorStore:
         finally:
             conn.close()
 
-        # Only touch storage once the DB write has durably committed -- the
-        # mirror of the SQLite Phase 16 ordering fix. With an object store, the
-        # source bytes go to it (tenant + scope scoped key); otherwise write
-        # atomically to storage_dir.
-        if self.blob_store is not None:
-            key = _blob_key(claim_id, filename)
-            if file_path and os.path.exists(file_path):
-                with open(file_path, "rb") as fh:
-                    content = fh.read()
-            else:
-                content = text.encode("utf-8", errors="ignore")
-            self.blob_store.put(key, content, file_type or "application/octet-stream")
-        else:
-            dest_path = os.path.abspath(os.path.join(self.storage_dir, filename))
-            tmp_path = dest_path + ".part"
-            if file_path and os.path.exists(file_path):
-                src_abs = os.path.abspath(file_path)
-                if src_abs != dest_path:
-                    shutil.copy2(file_path, tmp_path)
-                    os.replace(tmp_path, dest_path)
-            else:
-                with open(tmp_path, "w", encoding="utf-8", errors="ignore") as f:
-                    f.write(text)
-                os.replace(tmp_path, dest_path)
-
         return doc_id, len(parent_chunks)
 
     def delete_document(self, filename) -> bool:
         """Removes a document and (cascade) its chunks/embeddings/FTS rows by
         filename within this tenant. False if no such document exists. The
         physical file is removed only after the delete commits."""
-        from backend.rag_engine import _blob_key, safe_filename
+        from backend.rag_engine import safe_filename
 
         filename = safe_filename(filename)
+        source_key = self.get_blob_key(filename)
         conn = self._connect()
-        claim_of_deleted = None
         try:
-            existing = conn.execute(
-                "SELECT claim_id FROM documents WHERE tenant_id = %s AND filename = %s",
-                (self.tenant_id, filename),
-            ).fetchall()
-            claim_of_deleted = existing[0][0] if existing else None
             cur = conn.execute(
                 "DELETE FROM documents WHERE tenant_id = %s AND filename = %s RETURNING id",
                 (self.tenant_id, filename),
@@ -263,13 +232,9 @@ class PostgresVectorStore:
         finally:
             conn.close()
 
-        if deleted:
-            if self.blob_store is not None and claim_of_deleted is not None:
-                self.blob_store.delete(_blob_key(claim_of_deleted, filename))
-            elif not self.blob_store:
-                stored_path = os.path.join(self.storage_dir, filename)
-                if os.path.exists(stored_path):
-                    os.remove(stored_path)
+        if deleted and source_key:
+            from backend.source_storage import source_store
+            source_store(self).delete(source_key)
         return deleted
 
     def get_all_documents(self):
@@ -319,7 +284,7 @@ class PostgresVectorStore:
         try:
             rows = conn.execute(
                 """
-                SELECT p.content, d.filename, d.file_type
+                SELECT p.content, d.filename, d.file_type, p.id, d.id, d.document_version
                 FROM parent_chunks p
                 JOIN documents d ON p.document_id = d.id
                 WHERE d.tenant_id = %s AND d.claim_id = %s
@@ -330,8 +295,9 @@ class PostgresVectorStore:
         finally:
             conn.close()
         return [
-            {"content": c, "filename": f, "file_type": t, "score": 1.0}
-            for c, f, t in rows
+            {"content": c, "filename": f, "file_type": t, "score": 1.0,
+             "id": pid, "document_id": str(did), "document_version": version or "legacy-unversioned"}
+            for c, f, t, pid, did, version in rows
         ]
 
     def get_document_content(self, filename) -> str:
@@ -352,30 +318,22 @@ class PostgresVectorStore:
             conn.close()
         return "\n\n".join(r[0] for r in rows)
 
-    def get_blob_key(self, filename):
-        """Resolves the object-store key for a document by filename (used by the
-        serving path to presign its download URL). None if not indexed. The
-        same filename may exist in more than one scope in PG (claim vs global),
-        so the key's scope segment comes from whichever row within this tenant
-        owns that name."""
-        from backend.rag_engine import _blob_key, safe_filename
-
-        filename = safe_filename(filename)
+    def get_document_metadata(self, filename):
+        from backend.rag_engine import safe_filename
         conn = self._connect()
         try:
-            rows = conn.execute(
-                "SELECT claim_id FROM documents WHERE tenant_id = %s AND filename = %s",
-                (self.tenant_id, filename),
-            ).fetchall()
+            row = conn.execute("SELECT id, claim_id, filename, storage_key, document_version FROM documents WHERE tenant_id = %s AND filename = %s", (self.tenant_id, safe_filename(filename))).fetchone()
+            return {"document_id": str(row[0]), "claim_id": row[1], "filename": row[2], "storage_key": row[3], "document_version": row[4] or "legacy-unversioned"} if row else None
         finally:
             conn.close()
-        if not rows:
-            return None
-        return _blob_key(rows[0][0], filename)
 
-    # ------------------------------------------------------------------ #
-    # Interface: hybrid retrieval (vector + FTS + RRF, optional rerank)
-    # ------------------------------------------------------------------ #
+    def get_blob_key(self, filename):
+        from backend.rag_engine import _blob_key
+        metadata = self.get_document_metadata(filename)
+        if metadata is None:
+            return None
+        return metadata["storage_key"] or _blob_key(metadata["claim_id"], filename)
+
 
     def search_similarity(self, query_embedding, query_text, claim_id=None, reranking_engine=None, top_k=15, use_fts=True, candidate_pool=50):
         """Hybrid retrieval with RRF and optional cross-encoder rerank, scoped by
@@ -408,10 +366,10 @@ class PostgresVectorStore:
                 if top:
                     ids = [r[0] for r in top]
                     meta = {
-                        r[0]: (r[1], r[2], r[3])
+                        r[0]: (r[1], r[2], r[3], r[4], r[5])
                         for r in conn.execute(
                             """
-                            SELECT p.id, p.content, d.filename, d.file_type
+                            SELECT p.id, p.content, d.filename, d.file_type, d.id, d.document_version
                             FROM parent_chunks p
                             JOIN documents d ON p.document_id = d.id
                             WHERE p.tenant_id = %s AND p.id = ANY(%s)
@@ -421,7 +379,8 @@ class PostgresVectorStore:
                     }
                     vector_ranked = [
                         {"id": pid, "content": meta[pid][0], "filename": meta[pid][1],
-                         "file_type": meta[pid][2], "score": float(sim)}
+                         "file_type": meta[pid][2], "score": float(sim),
+                         "document_id": str(meta[pid][3]), "document_version": meta[pid][4] or "legacy-unversioned"}
                         for pid, sim in top
                         if pid in meta
                     ]
@@ -439,7 +398,7 @@ class PostgresVectorStore:
                 try:
                     fts_rows = conn.execute(
                         """
-                        SELECT p.id, p.content, d.filename, d.file_type
+                        SELECT p.id, p.content, d.filename, d.file_type, d.id, d.document_version
                         FROM parent_chunks p
                         JOIN documents d ON p.document_id = d.id
                         WHERE p.tenant_id = %(t)s
@@ -451,7 +410,8 @@ class PostgresVectorStore:
                         {"t": self.tenant_id, "c": claim_id, "q": clean_query},
                     ).fetchall()
                     fts_ranked = [
-                        {"id": r[0], "content": r[1], "filename": r[2], "file_type": r[3], "score": 0.0}
+                        {"id": r[0], "content": r[1], "filename": r[2], "file_type": r[3], "score": 0.0,
+                         "document_id": str(r[4]), "document_version": r[5] or "legacy-unversioned"}
                         for r in fts_rows
                     ]
                 except Exception:
@@ -471,7 +431,7 @@ class PostgresVectorStore:
             for p_id, score in rrf_scores.items():
                 meta = parent_info[p_id]
                 fused.append(
-                    {"id": p_id, "content": meta["content"], "filename": meta["filename"],
+                    {**meta, "id": p_id, "content": meta["content"], "filename": meta["filename"],
                      "file_type": meta["file_type"], "score": score}
                 )
             fused.sort(key=lambda x: x["score"], reverse=True)

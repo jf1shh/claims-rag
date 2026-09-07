@@ -37,7 +37,13 @@ RUN pip install -r requirements.txt
 COPY scripts/precache_models.py scripts/precache_models.py
 RUN python scripts/precache_models.py
 
-COPY . .
+COPY config.py app_factory.py ./
+COPY backend/ backend/
+COPY frontend/ frontend/
+COPY alembic/ alembic/
+COPY alembic.ini ./
+COPY generate_auto_pdfs.py create_sample_files.py ingest_all.py ./
+COPY scripts/seed_demo.py scripts/collect_source_garbage.py scripts/
 
 # Runtime data (rag_store.db, stored_documents/, jobs.db, audit.log.jsonl)
 # defaults to relative paths under /app per .env.example; docker-compose.yml

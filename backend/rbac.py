@@ -78,6 +78,7 @@ class ClaimAccessPolicy:
     """
 
     def __init__(self, assignments: Mapping[str, Sequence[str]] | None = None):
+        self._open = assignments is None
         self._assignments: dict[str, frozenset[str]] = {
             claim_id: frozenset(subjects)
             for claim_id, subjects in (assignments or {}).items()
@@ -91,7 +92,7 @@ class ClaimAccessPolicy:
         return cls(raw)
 
     def is_open(self) -> bool:
-        return not self._assignments
+        return self._open
 
     def can_access_claim(self, context: PrincipalContext, claim_id: str) -> bool:
         if _ALL_CLAIMS_ROLES.intersection(context.roles):

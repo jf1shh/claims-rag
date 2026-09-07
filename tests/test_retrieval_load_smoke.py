@@ -36,6 +36,7 @@ def test_given_small_load_when_retrieval_load_test_run_then_harness_reports_p95(
             "--count", "200", "--tenants", "2",
             "--users", "3", "--spawn-rate", "3", "--duration", "10s",
             "--no-assert-p95",
+            "--synthetic-models",
             "--tenant-prefix", "loadtest-ci-smoke",
         ],
         capture_output=True,
@@ -45,3 +46,13 @@ def test_given_small_load_when_retrieval_load_test_run_then_harness_reports_p95(
     assert result.returncode == 0, f"load test harness failed:\n{result.stdout}\n{result.stderr}"
     assert "LOAD TEST PASSED" in result.stdout
     assert "P95=" in result.stdout
+    assert "SYNTHETIC MODELS: orchestration smoke only" in result.stdout
+
+
+def test_given_synthetic_models_when_latency_gate_requested_then_rejected(capsys):
+    from scripts.run_retrieval_load_test import main
+
+    with pytest.raises(SystemExit) as error:
+        main(["--synthetic-models"])
+    assert error.value.code == 2
+    assert "synthetic models require --no-assert-p95" in capsys.readouterr().err

@@ -30,4 +30,4 @@ def test_given_usable_local_store_when_readiness_is_requested_then_ready_is_retu
     client = TestClient(create_app(settings))
     response = client.get("/health/ready")
     assert response.status_code == 200
-    assert response.json() == {"status": "ready"}
+    assert response.json() == {"status": "ready", "failed_dependencies": {}}

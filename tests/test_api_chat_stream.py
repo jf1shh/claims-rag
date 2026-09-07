@@ -1,9 +1,12 @@
 import json
 import pytest
 from fastapi.testclient import TestClient
-import backend.app as app_module
+from backend.app import runtime as app_module
 from backend.app import app
 from backend.audit import JsonlAuditSink
+
+
+pytestmark = pytest.mark.usefixtures("isolated_api_runtime")
 
 
 @pytest.fixture
@@ -40,7 +43,8 @@ def test_chat_stream_emits_sse_and_audits_assembled_answer(streaming_harness, mo
     events = [json.loads(l) for l in (sink.path).read_text().splitlines() if l.strip()]
     chat = [e for e in events if e["event"] == "chat"]
     assert len(chat) == 1
-    assert chat[0]["answer"] == "Nevada cap is $110"
+    assert "answer" not in chat[0]
+    assert "query" not in chat[0]
     assert chat[0]["sources"] == ["labor.txt"]
 
 

@@ -95,7 +95,7 @@ def _build_claim_access_policy(settings: Settings):
 
     if settings.claim_acls_file:
         return ClaimAccessPolicy.from_file(settings.claim_acls_file)
-    return ClaimAccessPolicy()
+    return ClaimAccessPolicy() if settings.app_env in {"development", "test"} else ClaimAccessPolicy({})
 
 
 def _build_rate_limiter(settings: Settings):
@@ -147,7 +147,7 @@ def _build_llm_client(settings: Settings):
 def _build_reranker(settings: Settings):
     from backend.reranker import FallbackReranker, LocalReranker, RemoteReranker
 
-    local = LocalReranker(max_concurrency=settings.rerank_max_concurrency, device=settings.rerank_device)
+    local = LocalReranker(model_name=settings.reranker_model, max_concurrency=settings.rerank_max_concurrency, device=settings.rerank_device)
     if settings.rerank_provider != "remote":
         return local
     remote = RemoteReranker(
@@ -206,24 +206,60 @@ def build_dependencies(settings: Settings) -> AppDependencies:
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
+    from contextlib import asynccontextmanager
+    from types import SimpleNamespace
+    from threading import Lock
+    from fastapi.middleware.cors import CORSMiddleware
+    from backend.agentic_router import AgenticRAGRouter
+    from backend.blob_store import LocalDocumentBlobStore
+    from backend.ingestion import IngestionService
+    from backend.ingestion_worker import build_ingestion_worker
+    from backend.api import register_routes
+
     resolved = settings or get_settings()
     resolved.validate_for_environment()
+    for path in (resolved.rag_db_path, resolved.jobs_db_path, resolved.audit_log_path):
+        path.parent.mkdir(parents=True, exist_ok=True)
     dependencies = build_dependencies(resolved)
+    runtime = SimpleNamespace(
+        settings=resolved, vector_store=dependencies.vector_store,
+        embedding_engine=None, embedding_lock=Lock(), agentic_router=AgenticRAGRouter(),
+        _authenticator=dependencies.authenticator, _claim_access_policy=dependencies.claim_access_policy,
+        _audit_sink=dependencies.audit_sink, _rate_limiter=dependencies.rate_limiter,
+        _llm_client=dependencies.llm_client, _reranker=dependencies.reranker,
+        ingestion_job_store=dependencies.job_store, _ingestion_worker=None,
+        _async_blob_store=dependencies.vector_store.blob_store or LocalDocumentBlobStore(
+            resolved.stored_documents_dir / "ingest_queue"),
+    )
+    runtime.ingestion_service = IngestionService(
+        queue=dependencies.queue if resolved.ingestion_mode == "async" else None,
+        job_store=dependencies.job_store,
+    )
 
-    app = FastAPI(title="AutoClaimsRAG API")
+    @asynccontextmanager
+    async def lifespan(app):
+        if runtime._ingestion_worker is not None:
+            runtime._ingestion_worker.start()
+        try:
+            yield
+        finally:
+            if runtime._ingestion_worker is not None:
+                runtime._ingestion_worker.stop()
+            dependencies.queue.close()
+
+    app = FastAPI(title="AutoClaimsRAG API", lifespan=lifespan)
     app.state.settings = resolved
     app.state.dependencies = dependencies
-
-    @app.get("/health/live")
-    def live() -> dict[str, str]:
-        return {"status": "live"}
-
-    @app.get("/health/ready")
-    def ready() -> dict[str, str]:
-        try:
-            dependencies.vector_store._connect().close()
-        except Exception:
-            return {"status": "not_ready"}
-        return {"status": "ready"}
-
+    app.state.runtime = runtime
+    app.add_middleware(CORSMiddleware, allow_origins=list(resolved.cors_origins),
+                       allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+    from backend.body_limits import BodyLimitMiddleware
+    app.add_middleware(BodyLimitMiddleware, settings=resolved)
+    register_routes(app, runtime)
+    if resolved.ingestion_mode == "async":
+        runtime._ingestion_worker = build_ingestion_worker(
+            resolved, dependencies.vector_store, runtime._async_blob_store,
+            lambda: runtime._get_embedding_engine(), job_store=dependencies.job_store,
+            queue=dependencies.queue,
+        )
     return app

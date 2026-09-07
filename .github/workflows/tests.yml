@@ -6,27 +6,24 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
+# Contract tests must pass on a fresh runner without a model cache or downloads.
+env:
+  HF_HUB_OFFLINE: "1"
+  TRANSFORMERS_OFFLINE: "1"
+
 jobs:
-  # Self-hosted runner (labeled "autoclaimsrag") on Jared's own machine --
-  # this repo is private, so GitHub-hosted minutes are capped; self-hosted
-  # avoids the cap entirely and matches the project's own "runs entirely on
-  # my own machine, no cloud" design constraint. See ~/actions-runner and the
-  # systemd unit actions.runner.jf1shh-auto-claims-rag.*.service.
-  #
-  # >>> BEFORE MAKING THIS REPO PUBLIC: change `runs-on` in both jobs below
-  # to `ubuntu-latest` (and re-add a windows-latest leg if desired -- the
-  # postgres service container works on GitHub-hosted Linux too). This
-  # trigger is plain `pull_request`, which self-hosted runners must never
-  # execute for a public repo (an external PR's code would run on this
-  # machine). The private-repo minutes cap that justified self-hosted in the
-  # first place disappears the moment the repo goes public -- GitHub Actions
-  # is free/unlimited on standard hosted runners for public repos -- so this
-  # switch is a pure win with no cost tradeoff, not a compromise. See
-  # docs/operations/local-and-production.md for the full checklist.
+  # Only private pushes may use the local runner; every PR and public run uses hosted Linux.
   pytest-linux:
-    runs-on: [self-hosted, linux, autoclaimsrag]
+    runs-on: ${{ github.event.repository.private && github.event_name == 'push' && fromJSON('["self-hosted", "linux", "autoclaimsrag"]') || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        if: github.event_name != 'push' || !github.event.repository.private
+        with:
+          python-version: '3.12'
 
       # actions/setup-python's downloadable manifest has no prebuilt release
       # for this host's distro (CachyOS rolling), so it 404s on self-hosted.
@@ -72,7 +69,7 @@ jobs:
   # >>> BEFORE MAKING THIS REPO PUBLIC: same change as pytest-linux above --
   # switch `runs-on` to `ubuntu-latest`. See that comment for why.
   postgres:
-    runs-on: [self-hosted, linux, autoclaimsrag]
+    runs-on: ${{ github.event.repository.private && github.event_name == 'push' && fromJSON('["self-hosted", "linux", "autoclaimsrag"]') || 'ubuntu-latest' }}
     services:
       postgres:
         image: pgvector/pgvector:pg16
@@ -91,6 +88,10 @@ jobs:
       POSTGRES_DSN: postgresql://postgres:postgres@localhost:5432/rag
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        if: github.event_name != 'push' || !github.event.repository.private
+        with:
+          python-version: '3.12'
 
       # See the matching comment in pytest-linux -- setup-python has no
       # release for this distro; use the runner host's system Python 3.12.

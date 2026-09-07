@@ -617,3 +617,20 @@ Per-phase implementation narratives formerly under `Current State → Confirmed 
 * **Verified**: `get_loaded_model()` exercised in both states — raises with the actionable message when nothing is resident, returns `qwen3-coder-30b-a3b-instruct` (correctly skipping the embedding model) when loaded. Full suite `pytest -q` → **390 passed / 17 skipped**, unchanged.
 
 ---
+
+### 2026-09-06 — portfolio review remediation
+
+* Implemented the authorized review scope on `fix/portfolio-hardening` in an isolated worktree. See [portfolio-hardening.md](portfolio-hardening.md) for the current findings disposition, validation, upgrade instructions, and limits; this supersedes earlier source-write ordering and deployment/performance claims.
+* The documented ASGI app now constructs the configured backend through the factory and shares the worker queue. Actual Postgres tests exposed and fixed a dossier tuple-unpack bug plus a load-harness credential/tenant mismatch that prior SQLite-only routing hid.
+* Immutable source staging before index publication replaces the old post-commit mutable-file rule. Failed writes retain old evidence; citation versions detect replacement. Offline orphan collection handles retention separately.
+* Complex parser isolation initially also ran every TXT through a subprocess, making the 500-document load fixture take over 100 seconds. Bounded direct TXT decoding avoids needless process startup; complex formats retain timeout/memory isolation. Final full suite: 421 passed, 1 skipped in 30.90 seconds.
+* Added thread/process audit and torn-write regressions; process tests use spawn to avoid forking a threaded test runner. Remaining test warning is upstream Starlette/AnyIO deprecation. Ruff/diff clean; foundation gate 27 advisory findings, zero blocking; parity mean recall@4 0.9808.
+* Offline fresh-volume Docker seed and runtime smoke checks passed. Chromium API-key login/signout passed with session-only storage, zero external requests and no JS errors. Alembic upgrade/downgrade/upgrade passed on a disposable database.
+* Bootstrap initially exposed missing synthetic PNG files; descriptions now use accurately named TXT source files instead of nonexistent/fake images. ReportLab is pinned and available in clean installs.
+* Live answer-quality evaluation remains unexecuted because only an embedding model was loaded. Next: model/evidence/adversarial evaluation and corrected Postgres performance runs; real deployment/IdP and retention validation remain separate work.
+
+### 2026-09-06 — PR fresh-runner test isolation
+
+* Hosted PR #38 exposed 11 API tests relying on the developer machine model cache, despite stubbing the router. Reproduced locally with empty HF_HOME and offline model settings (11 failed / 29 passed).
+* Added an opt-in API runtime fixture with deterministic embeddings and temporary stores, plus an assertion against accidental model construction. No production behavior or assertions were weakened. CI disables model downloads explicitly. Full empty-cache SQLite suite: 405 passed / 17 skipped; Ruff clean. Postgres verification remains in the remote matrix.
+* The Postgres matrix additionally exposed the separate Locust smoke server loading real models. Added explicit synthetic-model orchestration mode with a guard rejecting production latency assertions. Full empty-cache Postgres run: **422 passed / 1 skipped**, Ruff clean. Default benchmark still loads real models.

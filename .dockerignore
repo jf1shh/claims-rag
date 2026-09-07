@@ -31,3 +31,12 @@ assets/
 
 # Unrelated project that must never end up in any build context
 Restaurant App/
+
+# Credentials are never build inputs, even when ignored by Git.
+.env
+.env.*
+*.pem
+*.key
+*service*accounts*.json
+*credentials*.json
+secrets/

@@ -116,7 +116,10 @@ def structured_projection(
 ) -> GroundedResponse:
     sources = legacy_result.get("sources") or []
     evidence = evidence_from_matches(sources)
-    status = "grounded" if evidence else "insufficient_evidence"
+    result_status = legacy_result.get("status")
+    status = "error" if result_status == "error" else "grounded" if evidence else "insufficient_evidence"
+    if "simulated" in str(legacy_result.get("engine", "")):
+        status = "insufficient_evidence"
     answer_text = str(legacy_result.get("answer", ""))
     return build_grounded_response(
         request_id=request_id,

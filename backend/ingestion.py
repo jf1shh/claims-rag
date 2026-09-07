@@ -87,6 +87,7 @@ class IngestionService:
         content: bytes,
         claim_id: str | None = None,
         idempotency_key: str | None = None,
+        blob_key: str | None = None,
     ) -> IngestionJob:
         now = datetime.now(timezone.utc)
         checksum = hashlib.sha256(content).hexdigest()
@@ -124,7 +125,8 @@ class IngestionService:
                     "tenant_id": tenant_id,
                     "filename": filename,
                     "claim_id": claim_id,
-                    "blob_key": _blob_key(claim_id, filename),
+                    "blob_key": blob_key or _blob_key(claim_id, filename),
+                    "checksum": job.checksum,
                     "etag": job.checksum,
                 }
             )

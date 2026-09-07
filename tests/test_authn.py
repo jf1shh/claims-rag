@@ -363,3 +363,12 @@ def test_given_multiple_providers_when_building_then_chain_is_returned(tmp_path)
 def test_given_unknown_provider_when_building_then_error():
     with pytest.raises(ValueError, match="unknown auth provider"):
         build_authenticator(_FakeSettings(auth_providers=("magic",)))
+
+
+def test_signed_token_without_expiration_is_rejected():
+    private, jwks = _make_keypair()
+    token = pyjwt.encode({'sub': 'user', 'tenant_id': 'tenant-a', 'roles': ['adjuster'],
+                         'iss': ISSUER, 'aud': AUDIENCE}, private, algorithm='RS256',
+                        headers={'kid': 'test-key-1'})
+    with pytest.raises(AuthenticationError):
+        _oidc(jwks).authenticate(_FakeRequest({'Authorization': f'Bearer {token}'}))

@@ -31,7 +31,7 @@ def test_local_reranker_without_explicit_engine_lazy_loads(monkeypatch):
         def rerank(self, query, passages, top_k=4):
             return passages[:top_k]
 
-    monkeypatch.setattr(module, "_load_engine", lambda device="auto": Stub())
+    monkeypatch.setattr(module, "_load_engine", lambda device="auto", model_name=None: Stub())
     assert LocalReranker().rerank("q", [{"content": "x"}], top_k=1) == [{"content": "x"}]
     assert called["loaded"] is True
 
@@ -51,7 +51,7 @@ def test_local_reranker_passes_configured_device_to_lazy_load(monkeypatch):
         def rerank(self, query, passages, top_k=4):
             return passages[:top_k]
 
-    def fake_load(device="auto"):
+    def fake_load(device="auto", model_name=None):
         seen["device"] = device
         return Stub()
 

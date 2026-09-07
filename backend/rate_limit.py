@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 from abc import ABC, abstractmethod
 from collections import deque
+from threading import Lock
 from typing import Callable
 
 
@@ -50,20 +51,22 @@ class SlidingWindowRateLimiter(RateLimiter):
         self.max_requests = max_requests
         self.window_seconds = window_seconds
         self._clock = clock
+        self._lock = Lock()
         self._hits: dict[str, deque[float]] = {}
 
     def check(self, key: str) -> None:
-        now = self._clock()
-        hits = self._hits.get(key)
-        if hits is None:
-            hits = deque()
-            self._hits[key] = hits
-        # Prune hits that have fallen outside the sliding window.
-        while hits and now - hits[0] >= self.window_seconds:
-            hits.popleft()
-        if len(hits) >= self.max_requests:
-            raise RateLimitExceeded("rate limit exceeded")
-        hits.append(now)
+        with self._lock:
+            now = self._clock()
+            hits = self._hits.get(key)
+            if hits is None:
+                hits = deque()
+                self._hits[key] = hits
+            # Prune hits that have fallen outside the sliding window.
+            while hits and now - hits[0] >= self.window_seconds:
+                hits.popleft()
+            if len(hits) >= self.max_requests:
+                raise RateLimitExceeded("rate limit exceeded")
+            hits.append(now)
 
     def allow(self, key: str) -> bool:
         """Non-raising check for convenience (tests, soft limits)."""

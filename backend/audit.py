@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import os
-import tempfile
+from backend.file_lock import file_lock
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from pathlib import Path
@@ -29,18 +29,39 @@ class JsonlAuditSink(AuditSink):
         safe_event: dict[str, Any] = dict(event)
         safe_event.setdefault("recorded_at", datetime.now(timezone.utc).isoformat())
         line = json.dumps(safe_event, sort_keys=True, separators=(",", ":")) + "\n"
-        fd, temporary = tempfile.mkstemp(prefix=f".{self.path.name}.", dir=self.path.parent, text=True)
-        try:
-            existing = self.path.read_text(encoding="utf-8") if self.path.exists() else ""
-            with os.fdopen(fd, "w", encoding="utf-8") as stream:
-                stream.write(existing)
-                stream.write(line)
-                stream.flush()
-                os.fsync(stream.fileno())
-            os.replace(temporary, self.path)
-        finally:
-            if os.path.exists(temporary):
-                os.unlink(temporary)
+        with file_lock(str(self.path) + ".lock"):
+            fd = os.open(self.path, os.O_CREAT | os.O_RDWR | os.O_APPEND, 0o600)
+            previous_size = os.fstat(fd).st_size
+            # Recover a torn final append left by process termination. Earlier
+            # complete records are retained, and the recovery is recorded.
+            if previous_size and _read_at(fd, 1, previous_size - 1) != b"\n":
+                position = previous_size
+                end = 0
+                while position:
+                    start = max(0, position - 65536)
+                    chunk = _read_at(fd, position - start, start)
+                    newline = chunk.rfind(b"\n")
+                    if newline >= 0:
+                        end = start + newline + 1
+                        break
+                    position = start
+                os.ftruncate(fd, end)
+                previous_size = end
+                safe_event["recovered_incomplete_tail"] = True
+                line = json.dumps(safe_event, sort_keys=True, separators=(",", ":")) + "\n"
+            try:
+                data = memoryview(line.encode("utf-8"))
+                while data:
+                    written = os.write(fd, data)
+                    if written <= 0:
+                        raise OSError("audit append failed")
+                    data = data[written:]
+                os.fsync(fd)
+            except BaseException:
+                os.ftruncate(fd, previous_size)
+                raise
+            finally:
+                os.close(fd)
 
     def read_events(self) -> list[dict[str, Any]]:
         """Returns every recorded event in append order. Used by tests and by
@@ -55,3 +76,8 @@ class JsonlAuditSink(AuditSink):
                 if line:
                     events.append(json.loads(line))
         return events
+
+
+def _read_at(fd, count, offset):
+    os.lseek(fd, offset, os.SEEK_SET)
+    return os.read(fd, count)

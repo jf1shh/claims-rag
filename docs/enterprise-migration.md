@@ -1,3 +1,9 @@
+> September 6 correction: the older phase-completion and latency statements below are historical.
+> The running ASGI entry point previously bypassed the Postgres factory and created two local
+> ingestion queues. The hardening branch repairs those paths and enforces one tenant per app.
+> Old load measurements do not establish Postgres API performance; rerun the repaired harness.
+> See [current remediation evidence](portfolio-hardening.md) and [security boundaries](../SECURITY.md).
+
 # Enterprise Migration Plan — SQLite → Postgres + pgvector + S3 + Async Ingest
 
 > **Status: Phase 4 complete / Phase 5 complete (2026-08-30).** This

@@ -23,8 +23,8 @@ Everything in this repo runs on synthetic, generated seed data — no proprietar
 - Natural-language search over auto insurance guidelines, endorsements, state statutes, and adjuster reports (PDF/DOCX/XLSX/TXT), with hybrid retrieval and pool-bounded cross-encoder reranking
 - Per-claim document scoping — upload a claim's own dossier (police report, telematics, shop estimates) and query it alongside global policy documents in the same conversation
 - An agentic router that plans multi-step retrieval, self-corrects when the first pass comes back empty, and **refuses to answer rather than let the model fabricate one** when nothing relevant was found
-- Runs entirely locally: embedding, reranking, vector search, and generation (via LM Studio) all execute on-device — no document content or query ever leaves the machine
-- Answers stream token-by-token over SSE instead of waiting for the full response, with bounded/capped context assembly and prompt-injection-delimited source blocks so retrieved document content can never be read as an instruction
+- Runs entirely locally: embedding, reranking, vector search, and generation (via LM Studio) all execute on-device — the default inference profile keeps document content and queries on the host; remote adapters are opt-in
+- Answers stream token-by-token over SSE instead of waiting for the full response, with bounded/capped context assembly and prompt-injection-delimited source blocks to reduce prompt-injection risk; delimiting does not guarantee that every model ignores malicious instructions
 
 ## FAQ (plain English)
 
@@ -32,13 +32,13 @@ Everything in this repo runs on synthetic, generated seed data — no proprietar
 
 **What does "agentic" mean here?** It doesn't just do one search and hope for the best. For "does this claim exceed the coverage cap," it plans what to look up (the endorsement terms *and* the claim's own receipt), runs both searches, checks whether it found anything useful, retries with a reworded search if not, and only then writes an answer. That plan → check → retry loop is what "agentic" means, versus a single input/output round trip.
 
-**Does this send my data to OpenAI or the cloud?** No. The AI model, the document search, and the "read the document and score its own answer" evaluation step all run on the same machine, using free open-source models. Nothing is uploaded anywhere. That's a deliberate design constraint, not a limitation — insurance claim files are sensitive, so a real deployment can't depend on shipping them to a third party.
+**Does this send my data to OpenAI or the cloud?** The default local profile runs embedding, retrieval, reranking, generation and evaluation on your machine. Optional remote inference/reranking and S3 adapters send data to their configured services. Review the selected deployment profile and [data lifecycle](SECURITY.md) before using sensitive content.
 
-**What happens if it doesn't know the answer?** It says so, instead of guessing. Most chatbots will confidently invent a plausible-sounding answer (and a plausible-sounding, nonexistent source) rather than admit they found nothing. This system checks first — if the search comes back empty, it refuses to answer rather than fabricate one. That refusal path is tested directly in the evaluation results below (see the "hallucination probe" query).
+**What happens if it doesn't know the answer?** It refuses when no source context survives retrieval and context assembly. Most chatbots will confidently invent a plausible-sounding answer (and a plausible-sounding, nonexistent source) rather than admit they found nothing. The application checks for an empty evidence set before synthesis. A nonempty nearest-neighbor result is not proof of relevance, and a model can still produce an unsupported claim; human source verification and adversarial evaluation remain necessary. That refusal path is tested directly in the evaluation results below (see the "hallucination probe" query).
 
 **Is this connected to any real insurance company's systems or data?** No. Every document, claim, and policy number in this repo is synthetic — generated for this project, not pulled from any real claim file or company database. It was built independently, on personal time, using publicly available tools and made-up data, specifically to be shareable as a portfolio piece without touching anything confidential.
 
-**Could an insurance company actually use something like this?** As a proof of concept, yes — the retrieval and reasoning approach is sound and measured, not hand-waved. As-is, no: it's a single-machine tool with a small demo set of documents and no multi-tenant data plane (one tenant, no concurrent-editor support). It's no longer single-*user* though: every API route now requires authentication (OIDC/SSO or service-account keys), and role-based permissions with claim-level ACLs (adjuster / supervisor / SIU / admin) are enforced. See [Scaling considerations](#scaling-considerations) and [Known limitations](#known-limitations) for exactly what would still need to change to go from "working demo" to "production system."
+**Could an insurance company actually use something like this?** As a proof of concept, yes — the retrieval and reasoning approach is sound and measured, not hand-waved. As-is, no: it's a single-machine tool with a small demo set of documents and one tenant per application instance. It's no longer single-*user* though: every API route now requires authentication (OIDC/SSO or service-account keys), and role-based permissions with claim-level ACLs (adjuster / supervisor / SIU / admin) are enforced. See [Scaling considerations](#scaling-considerations) and [Known limitations](#known-limitations) for exactly what would still need to change to go from "working demo" to "production system."
 
 **Why build this instead of just pasting policy PDFs into ChatGPT?** Privacy is one reason — real claim files shouldn't go through a cloud chatbot. The bigger one: pasting one document at a time doesn't scale past a handful of files, can't scope a search to "just this claim's paperwork," doesn't cite which exact passage an answer came from, and is never *measured* for how often it's actually right (see [Evaluation](#evaluation--because-it-looks-right-isnt-good-enough)) — it just *looks* convincing.
 
@@ -79,7 +79,7 @@ This architecture is built for one adjuster's local corpus — hundreds of docum
 
 - **Vector search is brute-force, not ANN.** `search_similarity` matrix-multiplies the query against every cached embedding in scope (`matrix @ query`) — no HNSW/IVF index. Fine into the tens of thousands of chunks; the first real bottleneck at real scale.
 - **The embedding cache rebuilds in full on every write.** Any add/delete invalidates the whole in-memory matrix, and the next query rebuilds it from a full table scan — O(n) per write, not incremental. This is the actual ingestion-throughput ceiling, not the vector math.
-- **Everything lives in one process's RAM**, backed by a single SQLite file with no built-in horizontal scaling or concurrent-writer support (already out of scope for the MVP, see above).
+- **The embedding cache lives in one process's RAM**, backed by a single SQLite file with no built-in horizontal scaling or concurrent-writer support (already out of scope for the MVP, see above).
 - **What wouldn't need to change**: FTS5's inverted index scales sub-linearly with corpus size, and reranking cost is bounded by the configured candidate pool (`RERANK_CANDIDATE_POOL`), not total corpus size. The provider-neutral reranker seam also lets the in-process implementation move to a dedicated GPU service without changing retrieval callers.
 - **What I'd swap in at real scale**: an ANN index (FAISS/HNSW or a managed vector DB) with incremental upsert instead of full-cache rebuild. The other two swaps are already built behind seams and live in the repo — a `PostgresVectorStore` (Postgres + pgvector, tenant RLS, HNSW index) behind the `VectorStore` interface, and an `S3DocumentBlobStore` behind the `DocumentBlobStore` interface with presigned serving — selectable via config without touching the retrieval/agent pipeline. See `docs/enterprise-migration.md` for the phased roadmap.
 
@@ -92,7 +92,7 @@ This architecture is built for one adjuster's local corpus — hundreds of docum
 | Context Precision | Retrieved chunks are actually relevant | 0.797 | 0.876 |
 | Context Recall | Nothing relevant was missed | 0.912 | 0.947 |
 | Faithfulness | Answer is grounded in retrieved context | — | 0.887 |
-| Factual Correctness | Answer covers what the verified reference requires | — | 0.658 |
+| Reference-fact coverage (FactualCorrectness recall mode) | Answer covers what the verified reference requires | — | 0.658 |
 
 ![Evaluation results chart](assets/eval_results.png)
 
@@ -106,19 +106,36 @@ This architecture is built for one adjuster's local corpus — hundreds of docum
 4. **Multi-hop retrieval gap**: a claim's own documents were competing semantically for a slot against global policy docs and losing. Fixed by always including them directly — which then exposed a *second* bug (the LLM only reasoned about one of two line items despite having both). Both fixed and verified.
 5. **The eval harness's own default metric config penalized correct answers**: Ragas's default `mode="f1"` docked well-cited, correct answers for true elaboration not in the terse reference text. Switched to `mode="recall"`.
 
+
+### Verification scope after the September 6 hardening
+
+The documented ASGI entry point now uses the same application factory as integration tests,
+selects SQLite/Postgres from configuration, and shares its async queue with its worker.
+Security regression coverage includes actual authenticated downloads, wrong-tenant access,
+concurrent audit writes, parser limits, disabled simulation, and source storage failures.
+See [the remediation record](docs/portfolio-hardening.md) for measured checks and remaining work.
+
+The historical scores above are a recorded baseline, not results remeasured on this revision.
+Changing generator/judge models requires a new baseline. Evaluation output reports successful and
+failed sample counts per metric; the SQLite parity self-check uses deterministic fake embeddings
+and measures ranking consistency rather than semantic answer quality. Historical load numbers
+must also be rerun: the old API entry point ignored Postgres selection, and live chat did not
+forward the configured rerank pool. The repaired load harness measures one configured tenant
+against a database containing the requested number of tenant corpora.
+
 ## ICM workflow
 
 AutoClaimsRAG uses an additive **Interpretable Context Methodology (ICM)** layer to make engineering context and evidence visible. `IDENTITY.md` maps the repository, `CONTEXT.md` routes work, and `stages/{sense,propose,act,verify,learn}/` define the workflow contracts. ICM does not replace the approved specifications, tests, or CI; it points contributors to them.
 
 Claims-facing responses follow the same separation:
 
-- **Evidence:** exact authorized excerpts, document versions, chunk IDs, and locators.
+- **Evidence:** exact authorized excerpts, document versions and chunk IDs. Page/row locators remain optional and are not currently reconstructed by the parsers.
 - **Interpretation:** grounded explanation, calculations, assumptions, conflicts, and uncertainty.
 - **Decision boundary:** explicit human ownership of coverage, fraud, payment, denial, or referral decisions.
 
 ## Security posture
 
-This repository contains synthetic data only. Review [`SECURITY.md`](SECURITY.md) before handling uploaded content or changing routes, storage, providers, or authentication. Every `/api/*` route requires authentication — a Bearer JWT verified against your OIDC issuer's JWKS, an `X-API-Key` from the service-accounts file, or (local dev only) the explicit development identity — and permissions are enforced per role and per claim (`docs/enterprise-migration.md` Phase 4). The production foundation is designed around tenant isolation, per-principal rate limiting and enforced upload/query caps (429/413), safe paths and URLs, evidence-required synthesis, immutability-audited actions, and non-leaking errors.
+This repository contains synthetic data only. Review [`SECURITY.md`](SECURITY.md) before handling uploaded content or changing routes, storage, providers, or authentication. Every `/api/*` route requires authentication — a Bearer JWT verified against your OIDC issuer's JWKS, an `X-API-Key` from the service-accounts file, or (local dev only) the explicit development identity — and permissions are enforced per role and per claim (`docs/enterprise-migration.md` Phase 4). The production foundation is designed around tenant isolation, per-principal rate limiting and enforced upload/query caps (429/413), safe paths and URLs, evidence-required synthesis, concurrent durable audit appends without chat text, and non-leaking errors.
 
 ## Try it locally
 
@@ -127,10 +144,9 @@ This repository contains synthetic data only. Review [`SECURITY.md`](SECURITY.md
 python3.12 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 
-# 2. Generate synthetic seed guidelines (PDF + DOCX/XLSX/TXT) and ingest them
-.venv/bin/python generate_auto_pdfs.py
-.venv/bin/python create_sample_files.py
-.venv/bin/python ingest_all.py
+# 2. Download the local models once, then generate and ingest synthetic data
+.venv/bin/python scripts/precache_models.py
+.venv/bin/python scripts/seed_demo.py
 
 # 3. Start the backend (serves the frontend too)
 .venv/bin/python -m uvicorn backend.app:app --reload --port 8000
@@ -141,13 +157,15 @@ python3.12 -m venv .venv
 .venv/bin/python eval/run_eval.py
 ```
 
-Without an LM Studio server running, the app falls back to a rule-based simulation mode so the UI and retrieval pipeline are still fully explorable.
+Development enables an explicitly labeled rule-based simulation for exploring the demo. `SIMULATION_MODE=false` disables both explicit simulation and provider-failure fallback. Precache is required even for simulated retrieval. Missing optional demo photos are represented as text descriptions, not placeholder image binaries.
 
 ### Or run it in Docker
 
 ```bash
-docker compose up --build
-# → http://localhost:8000
+docker compose build
+docker compose run --rm app python scripts/seed_demo.py
+docker compose up
+# → http://localhost:8000 (loopback only)
 ```
 
 Builds a self-contained image (models pre-cached at build time — the app forces Hugging Face offline mode, so it never needs network at runtime), persists `rag_store.db`/`stored_documents/`/`jobs.db`/`audit.log.jsonl` in a named volume, and reaches a native LM Studio on the host via `host.docker.internal`. See `docker-compose.yml` and `Dockerfile`.
