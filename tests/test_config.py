@@ -18,7 +18,51 @@ def test_given_remote_reranker_then_settings_are_parsed():
     assert settings.rerank_api_key == "secret"
 
 
-def test_given_remote_reranker_without_endpoint_then_validation_fails():
+
+def test_rerank_batching_defaults_are_safe():
+    settings = Settings.from_env({})
+    assert settings.rerank_batching_enabled is True
+    assert settings.rerank_batch_max_wait_ms == 5
+    assert settings.rerank_batch_max_requests == 16
+    assert settings.rerank_batch_max_pairs == 256
+    assert settings.rerank_inference_batch_size == 16
+    assert settings.rerank_batch_max_pending == 1024
+
+
+def test_rerank_batching_overrides_are_parsed():
+    settings = Settings.from_env({
+        "RERANK_BATCHING_ENABLED": "false",
+        "RERANK_BATCH_MAX_WAIT_MS": "8",
+        "RERANK_BATCH_MAX_REQUESTS": "4",
+        "RERANK_BATCH_MAX_PAIRS": "64",
+        "RERANK_INFERENCE_BATCH_SIZE": "16",
+        "RERANK_BATCH_MAX_PENDING": "32",
+        "RERANK_CANDIDATE_POOL": "50",
+    })
+    assert settings.rerank_batching_enabled is False
+    assert settings.rerank_batch_max_wait_ms == 8
+    assert settings.rerank_batch_max_requests == 4
+    assert settings.rerank_batch_max_pairs == 64
+    assert settings.rerank_inference_batch_size == 16
+    assert settings.rerank_batch_max_pending == 32
+
+
+def test_rerank_batching_numeric_settings_reject_non_positive_values():
+    for name in (
+        "RERANK_BATCH_MAX_WAIT_MS",
+        "RERANK_BATCH_MAX_REQUESTS",
+        "RERANK_BATCH_MAX_PAIRS",
+        "RERANK_INFERENCE_BATCH_SIZE",
+        "RERANK_BATCH_MAX_PENDING",
+    ):
+        with pytest.raises(ValueError, match=name):
+            Settings.from_env({name: "0"})
+
+
+def test_rerank_batch_pairs_must_cover_candidate_pool():
+    settings = Settings.from_env({"RERANK_BATCH_MAX_PAIRS": "8", "RERANK_CANDIDATE_POOL": "15"})
+    with pytest.raises(ValueError, match="RERANK_BATCH_MAX_PAIRS"):
+        settings.validate_for_environment()
     settings = Settings.from_env({"RERANK_PROVIDER": "remote"})
     with pytest.raises(ValueError, match="RERANK_ENDPOINT"):
         settings.validate_for_environment()

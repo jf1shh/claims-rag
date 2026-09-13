@@ -12,11 +12,56 @@ import sqlite3
 import numpy as np
 import pytest
 
-from backend.rag_engine import SQLiteVectorStore, TextChunker, resolve_rerank_device, safe_filename
+from backend.rag_engine import RerankingEngine, SQLiteVectorStore, TextChunker, resolve_rerank_device, safe_filename
+
+
+
+
+class _RecordingCrossEncoder:
+    def __init__(self):
+        self.calls = []
+
+    def predict(self, pairs, show_progress_bar=False, batch_size=None):
+        self.calls.append({
+            "pairs": list(pairs),
+            "show_progress_bar": show_progress_bar,
+            "batch_size": batch_size,
+        })
+        return [float(index) for index, _ in enumerate(pairs)]
+
+
+def test_reranking_engine_score_pairs_preserves_order_and_batch_size():
+    model = _RecordingCrossEncoder()
+    engine = object.__new__(RerankingEngine)
+    engine.model = model
+
+    scores = engine.score_pairs([("q1", "p1"), ("q2", "p2")], inference_batch_size=16)
+
+    assert scores == [0.0, 1.0]
+    assert model.calls == [{
+        "pairs": [("q1", "p1"), ("q2", "p2")],
+        "show_progress_bar": False,
+        "batch_size": 16,
+    }]
+
+
+def test_reranking_engine_rerank_uses_score_pairs_without_mutating_inputs():
+    model = _RecordingCrossEncoder()
+    engine = object.__new__(RerankingEngine)
+    engine.model = model
+    passages = [{"content": "first"}, {"content": "second"}]
+
+    result = engine.rerank("q", passages, top_k=1)
+
+    assert [item["content"] for item in result] == ["second"]
+    assert result[0]["rerank_score"] == pytest.approx(1.0 / (1.0 + np.exp(-1.0)))
+    assert passages == [{"content": "first"}, {"content": "second"}]
 
 
 # ---------------------------------------------------------------------------
-# resolve_rerank_device -- RERANK_DEVICE preference -> device torch can use.
+# RerankingEngine scoring seam -- fake model tests remain torch-free.
+# ---------------------------------------------------------------------------
+
 # Stays torch-free per this module's contract: a stub module stands in, which
 # also lets the no-GPU branch be exercised on a GPU machine and vice versa.
 # ---------------------------------------------------------------------------

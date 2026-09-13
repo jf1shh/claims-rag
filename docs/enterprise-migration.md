@@ -693,18 +693,29 @@ RLS onto live multi-tenant data is the most expensive mistake in this plan.
 > | Factual Correctness (live) | 0.658 | 0.749 |
 > | Elapsed | 1253s | 1917s |
 >
-> These columns are **not** a before/after — they are two different
-> measurement instruments. What does carry over: the headline claim still
-> holds, with hybrid+rerank beating naive on both precision (0.885 vs 0.779)
-> and recall (0.965 vs 0.947). Both canary queries are intact —
-> `chen-custom-equipment-cap` (the query Phase 9's dossier fix was built
-> around, and the one `pool=8` broke) at correctness **1.00**, and
-> `sterling-shop-estimate-detail` at 0.33 → 0.67. Per-query correctness swung
-> bidirectionally by up to 0.8 in both directions, which is the signature of a
-> generator+judge swap, not a retrieval change — and is precisely why the
-> deterministic diff above, not this table, is the verification of record for
-> the GPU change. Elapsed rose despite the LLM being ~2x faster per token
-> because the judge went from a 14B to a 30B model.
+> **Follow-up (2026-09-13, session 38): local cross-request batching implemented and
+> measured as an experimental optimization.** `backend/reranker.py` now keeps the
+> public `Reranker.rerank()` contract while a bounded, process-local coordinator
+> coalesces independent local requests into one `RerankingEngine.score_pairs()`
+> call. Defaults are a 5ms coalescing window, 16 requests, 256 pairs, model
+> inference batch size 16, and 1024 pending requests; `RERANK_BATCHING_ENABLED=false`
+> rolls back to the existing semaphore-protected direct path. The queue is
+> bounded, score boundaries are explicit, failures fan out to every affected
+> waiter, passage dictionaries are isolated copies, and app/fallback lifecycle
+> shutdown closes the coordinator.
+>
+> **Verification:** deterministic equivalence tests preserve returned passage IDs,
+> order, and scores; the full suite is **421 passed / 17 skipped**, Ruff is clean,
+> compileall is clean, foundation gates report **29 advisory findings / 0
+> blocking**, and parity is **1.0000**. A warm, same-process GPU probe using 10
+> concurrent synthetic requests and 15 candidates/request measured median batch
+> time **50.03ms → 47.58ms** and throughput **199.90 → 210.18 requests/sec**
+> (about 5.1%), with identical result IDs across repetitions, zero batch failures,
+> and zero overloads. This is directional implementation evidence, not a Phase
+> 6.1 SLO result: the authoritative Postgres/HTTP Locust comparison could not
+> run because the documented local PostgreSQL instance on port 55432 was not
+> running. The concurrent p95 bar therefore remains open and must be remeasured
+> on the corrected factory/load harness when Postgres is available.
 
 ---
 

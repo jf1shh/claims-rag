@@ -147,7 +147,17 @@ def _build_llm_client(settings: Settings):
 def _build_reranker(settings: Settings):
     from backend.reranker import FallbackReranker, LocalReranker, RemoteReranker
 
-    local = LocalReranker(model_name=settings.reranker_model, max_concurrency=settings.rerank_max_concurrency, device=settings.rerank_device)
+    local = LocalReranker(
+        model_name=settings.reranker_model,
+        max_concurrency=settings.rerank_max_concurrency,
+        device=settings.rerank_device,
+        batching_enabled=settings.rerank_batching_enabled,
+        batch_max_wait_ms=settings.rerank_batch_max_wait_ms,
+        batch_max_requests=settings.rerank_batch_max_requests,
+        batch_max_pairs=settings.rerank_batch_max_pairs,
+        inference_batch_size=settings.rerank_inference_batch_size,
+        batch_max_pending=settings.rerank_batch_max_pending,
+    )
     if settings.rerank_provider != "remote":
         return local
     remote = RemoteReranker(
@@ -245,6 +255,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         finally:
             if runtime._ingestion_worker is not None:
                 runtime._ingestion_worker.stop()
+            close_reranker = getattr(dependencies.reranker, "close", None)
+            if callable(close_reranker):
+                close_reranker()
             dependencies.queue.close()
 
     app = FastAPI(title="AutoClaimsRAG API", lifespan=lifespan)

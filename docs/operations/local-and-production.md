@@ -40,6 +40,31 @@ If the machine has both a discrete card and an integrated one, torch enumerates 
 choice only — the Docker image deliberately installs the CPU-only wheel (see below),
 and CI runs CPU.
 
+### Local reranker batching
+
+Local reranking uses bounded, process-local cross-request micro-batching by default.
+The coordinator waits up to 5 ms to coalesce requests, then limits each model call
+to 16 requests and 256 query/passage pairs. The model inference batch size defaults
+to 16, and at most 1024 requests may be pending. These limits protect memory and
+bound overload; they do not apply to `RemoteReranker`'s HTTP protocol.
+
+The controls are configured through environment variables:
+
+| Variable | Default | Purpose |
+|---|---:|---|
+| `RERANK_BATCHING_ENABLED` | `true` | Enable local batching; set `false` to return to the direct semaphore path |
+| `RERANK_BATCH_MAX_WAIT_MS` | `5` | Maximum coalescing delay |
+| `RERANK_BATCH_MAX_REQUESTS` | `16` | Maximum independent requests per model call |
+| `RERANK_BATCH_MAX_PAIRS` | `256` | Maximum flattened query/passage pairs per model call |
+| `RERANK_INFERENCE_BATCH_SIZE` | `16` | `CrossEncoder.predict()` inference batch size |
+| `RERANK_BATCH_MAX_PENDING` | `1024` | Maximum pending local requests before controlled overload rejection |
+
+`RERANK_BATCH_MAX_PAIRS` must be at least `RERANK_CANDIDATE_POOL`. Batching is an
+experimental optimization: use `RERANK_BATCHING_ENABLED=false` as the immediate
+rollback if production measurements show a regression. The implementation preserves
+result ordering and isolates caller-owned passage dictionaries; see the approved
+design and the Phase 6.1 migration record for verification and benchmark status.
+
 ## Docker
 
 ```bash

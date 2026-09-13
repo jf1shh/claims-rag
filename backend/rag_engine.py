@@ -201,24 +201,37 @@ class RerankingEngine:
         self.device = resolved
         print("Reranking model loaded successfully.")
 
+    def score_pairs(self, pairs, inference_batch_size=16):
+        """Return one raw cross-encoder score per pair, in input order."""
+        if not pairs:
+            return []
+        scores = self.model.predict(
+            pairs,
+            show_progress_bar=False,
+            batch_size=inference_batch_size,
+        )
+        return [float(score) for score in scores]
+
     def rerank(self, query, passages, top_k=4):
-        """Scores passages against query and returns top_k sorted list."""
+        """Scores passages against query and returns top_k sorted copies."""
         if not passages:
             return []
 
         pairs = [(query, p["content"]) for p in passages]
-        scores = self.model.predict(pairs, show_progress_bar=False)
-
-        for idx, score in enumerate(scores):
+        scores = self.score_pairs(pairs)
+        scored_passages = []
+        for passage, score in zip(passages, scores, strict=True):
             # The cross-encoder emits raw logits (unbounded, often >1), but
             # every consumer treats scores as 0-1 relevance (the UI renders
             # them as percentages -- raw logits displayed as "386% similarity").
             # Sigmoid squashes to 0-1 and is monotonic, so ranking order is
             # unchanged everywhere.
-            passages[idx]["rerank_score"] = float(1.0 / (1.0 + np.exp(-score)))
+            scored_passage = dict(passage)
+            scored_passage["rerank_score"] = float(1.0 / (1.0 + np.exp(-score)))
+            scored_passages.append(scored_passage)
 
-        passages.sort(key=lambda x: x["rerank_score"], reverse=True)
-        return passages[:top_k]
+        scored_passages.sort(key=lambda x: x["rerank_score"], reverse=True)
+        return scored_passages[:top_k]
 
 
 class VectorStore(ABC):

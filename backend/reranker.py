@@ -1,8 +1,13 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections import deque
+from concurrent.futures import Future
+import copy
 import logging
+import math
 import threading
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +21,156 @@ def _load_engine(device: str = "auto", model_name="cross-encoder/ms-marco-MiniLM
     from backend.rag_engine import RerankingEngine
 
     return RerankingEngine(device=device, model_name=model_name)
+
+
+class RerankerOverloadedError(RuntimeError):
+    """Raised when the bounded local reranker queue cannot accept work."""
+
+
+class _BatchWorkItem:
+    def __init__(self, query: str, passages: list[dict], top_k: int):
+        self.query = query
+        self.passages = tuple(copy.deepcopy(passage) for passage in passages)
+        self.top_k = top_k
+        self.future: Future[list[dict]] = Future()
+
+
+class _RerankBatchCoordinator:
+    """Coalesces independent local rerank requests into one model call."""
+
+    def __init__(
+        self,
+        engine,
+        *,
+        max_wait_ms: int,
+        max_requests: int,
+        max_pairs: int,
+        inference_batch_size: int,
+        max_pending: int,
+    ):
+        self._engine = engine
+        self._max_wait_seconds = max_wait_ms / 1000.0
+        self._max_requests = max_requests
+        self._max_pairs = max_pairs
+        self._inference_batch_size = inference_batch_size
+        self._max_pending = max_pending
+        self._condition = threading.Condition()
+        self._pending = deque()
+        self._closed = False
+        self._stats = {
+            "submitted_requests": 0,
+            "dispatched_batches": 0,
+            "total_pairs": 0,
+            "requests_coalesced": 0,
+            "overload_rejections": 0,
+            "batch_failures": 0,
+            "max_pending_depth": 0,
+        }
+        self._dispatcher = threading.Thread(target=self._dispatch, name="reranker-batcher", daemon=True)
+        self._dispatcher.start()
+
+    def submit(self, query: str, passages: list[dict], top_k: int) -> list[dict]:
+        work = _BatchWorkItem(query, passages, top_k)
+        with self._condition:
+            if self._closed:
+                raise RuntimeError("local reranker is closed")
+            if len(self._pending) >= self._max_pending:
+                self._stats["overload_rejections"] += 1
+                raise RerankerOverloadedError("local reranker queue is full")
+            self._pending.append(work)
+            self._stats["submitted_requests"] += 1
+            self._stats["max_pending_depth"] = max(self._stats["max_pending_depth"], len(self._pending))
+            self._condition.notify()
+        return work.future.result()
+
+    def _dispatch(self):
+        while True:
+            batch = self._next_batch()
+            if batch is None:
+                return
+            self._process(batch)
+
+    def _next_batch(self):
+        with self._condition:
+            while not self._pending and not self._closed:
+                self._condition.wait()
+            if not self._pending:
+                return None
+
+            batch = [self._pending.popleft()]
+            pair_count = len(batch[0].passages)
+            deadline = time.monotonic() + self._max_wait_seconds
+            while len(batch) < self._max_requests and pair_count < self._max_pairs:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                if not self._pending:
+                    self._condition.wait(remaining)
+                    continue
+                candidate = self._pending[0]
+                candidate_pairs = len(candidate.passages)
+                if pair_count + candidate_pairs > self._max_pairs:
+                    break
+                batch.append(self._pending.popleft())
+                pair_count += candidate_pairs
+            return batch
+
+    def _process(self, batch):
+        flat_pairs = [
+            (work.query, passage["content"])
+            for work in batch
+            for passage in work.passages
+        ]
+        try:
+            scores = list(self._engine.score_pairs(flat_pairs, inference_batch_size=self._inference_batch_size))
+            if len(scores) != len(flat_pairs):
+                raise ValueError(
+                    f"reranker returned an invalid score count: expected {len(flat_pairs)}, got {len(scores)}"
+                )
+            results = []
+            offset = 0
+            for work in batch:
+                end = offset + len(work.passages)
+                scored = []
+                for passage, score in zip(work.passages, scores[offset:end], strict=True):
+                    scored_passage = dict(passage)
+                    scored_passage["rerank_score"] = float(1.0 / (1.0 + math.exp(-float(score))))
+                    scored.append(scored_passage)
+                scored.sort(key=lambda item: item["rerank_score"], reverse=True)
+                results.append(scored[:work.top_k])
+                offset = end
+        except Exception as exc:
+            with self._condition:
+                self._stats["batch_failures"] += 1
+            for work in batch:
+                work.future.set_exception(exc)
+            return
+
+        with self._condition:
+            self._stats["dispatched_batches"] += 1
+            self._stats["total_pairs"] += len(flat_pairs)
+            if len(batch) > 1:
+                self._stats["requests_coalesced"] += len(batch)
+        for work, result in zip(batch, results, strict=True):
+            work.future.set_result(result)
+
+    def stats(self) -> dict[str, int]:
+        with self._condition:
+            return dict(self._stats)
+
+    def close(self):
+        with self._condition:
+            if self._closed:
+                dispatcher = self._dispatcher
+            else:
+                self._closed = True
+                while self._pending:
+                    work = self._pending.popleft()
+                    work.future.set_exception(RuntimeError("local reranker is closed"))
+                self._condition.notify_all()
+                dispatcher = self._dispatcher
+        if threading.current_thread() is not dispatcher:
+            dispatcher.join()
 
 
 class Reranker(ABC):
@@ -42,13 +197,34 @@ class LocalReranker(Reranker):
     deployments (CI included) keep falling back to.
     """
 
-    def __init__(self, engine=None, max_concurrency: int = 2, device: str = "auto", model_name="cross-encoder/ms-marco-MiniLM-L-6-v2"):
+    def __init__(
+        self,
+        engine=None,
+        max_concurrency: int = 2,
+        device: str = "auto",
+        model_name="cross-encoder/ms-marco-MiniLM-L-6-v2",
+        batching_enabled: bool = True,
+        batch_max_wait_ms: int = 5,
+        batch_max_requests: int = 16,
+        batch_max_pairs: int = 256,
+        inference_batch_size: int = 16,
+        batch_max_pending: int = 1024,
+    ):
         self.model_name = model_name
         self._load_lock = threading.Lock()
+        self._coordinator_lock = threading.Lock()
         self._engine = engine
+        self._closed = False
         self.max_concurrency = max_concurrency
         self.device = device
         self._semaphore = threading.Semaphore(max_concurrency)
+        self.batching_enabled = batching_enabled
+        self.batch_max_wait_ms = batch_max_wait_ms
+        self.batch_max_requests = batch_max_requests
+        self.batch_max_pairs = batch_max_pairs
+        self.inference_batch_size = inference_batch_size
+        self.batch_max_pending = batch_max_pending
+        self._coordinator = None
 
     def _engine_or_load(self):
         with self._load_lock:
@@ -56,11 +232,57 @@ class LocalReranker(Reranker):
                 self._engine = _load_engine(self.device, self.model_name)
         return self._engine
 
+    def _coordinator_or_none(self, engine):
+        if not self.batching_enabled or not callable(getattr(engine, "score_pairs", None)):
+            return None
+        with self._coordinator_lock:
+            if self._closed:
+                raise RuntimeError("local reranker is closed")
+            if self._coordinator is None:
+                self._coordinator = _RerankBatchCoordinator(
+                    engine,
+                    max_wait_ms=self.batch_max_wait_ms,
+                    max_requests=self.batch_max_requests,
+                    max_pairs=self.batch_max_pairs,
+                    inference_batch_size=self.inference_batch_size,
+                    max_pending=self.batch_max_pending,
+                )
+            return self._coordinator
+
     def rerank(self, query: str, passages: list[dict], top_k: int = 4) -> list[dict]:
+        with self._coordinator_lock:
+            if self._closed:
+                raise RuntimeError("local reranker is closed")
         if not passages:
             return []
+        engine = self._engine_or_load()
+        coordinator = self._coordinator_or_none(engine)
+        if coordinator is not None:
+            return coordinator.submit(query, passages, top_k)
         with self._semaphore:
-            return list(self._engine_or_load().rerank(query, passages, top_k=top_k))
+            return list(engine.rerank(query, passages, top_k=top_k))
+
+    def stats(self) -> dict[str, int]:
+        if self._coordinator is None:
+            return {
+                "submitted_requests": 0,
+                "dispatched_batches": 0,
+                "total_pairs": 0,
+                "requests_coalesced": 0,
+                "overload_rejections": 0,
+                "batch_failures": 0,
+                "max_pending_depth": 0,
+            }
+        return self._coordinator.stats()
+
+    def close(self):
+        with self._coordinator_lock:
+            if self._closed:
+                return
+            self._closed = True
+            coordinator = self._coordinator
+        if coordinator is not None:
+            coordinator.close()
 
 
 class RemoteReranker(Reranker):
@@ -127,6 +349,16 @@ class FallbackReranker(Reranker):
     def __init__(self, primary: Reranker, fallback: Reranker):
         self._primary = primary
         self._fallback = fallback
+
+    def close(self):
+        for reranker in (self._primary, self._fallback):
+            close = getattr(reranker, "close", None)
+            if callable(close):
+                close()
+
+    def stats(self) -> dict[str, int]:
+        stats = getattr(self._fallback, "stats", None)
+        return stats() if callable(stats) else {}
 
     def rerank(self, query: str, passages: list[dict], top_k: int = 4) -> list[dict]:
         try:
