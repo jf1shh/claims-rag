@@ -87,16 +87,27 @@ This architecture is built for one adjuster's local corpus — hundreds of docum
 
 19 domain-grounded queries (not generic FAQ) — exclusion stacking, labor rate caps, SIU fraud red flags, OEM/LKQ parts eligibility, endorsement math, subrogation, plus a deliberate hallucination probe — each with a reference answer verified against the actual source documents. Three things are measured, all with a fully local LM Studio judge (zero calls to any hosted API):
 
+Most recent full run: **2026-09-22**, judge `qwen3-coder-30b-a3b-instruct` (local, 32k context), 1965 s,
+all 19 queries scored on every metric with zero scoring failures.
+
 | Metric | What it checks | Naive | Hybrid + Rerank |
 |---|---|---|---|
-| Context Precision | Retrieved chunks are actually relevant | 0.797 | 0.876 |
-| Context Recall | Nothing relevant was missed | 0.912 | 0.947 |
-| Faithfulness | Answer is grounded in retrieved context | — | 0.887 |
-| Reference-fact coverage (FactualCorrectness recall mode) | Answer covers what the verified reference requires | — | 0.658 |
+| Context Precision | Retrieved chunks are actually relevant | 0.727 | 0.832 |
+| Context Recall | Nothing relevant was missed | 0.895 | 0.965 |
+| Faithfulness | Answer is grounded in retrieved context | — | 0.892 |
+| Reference-fact coverage (FactualCorrectness recall mode) | Answer covers what the verified reference requires | — | 0.797 |
+
+These are **LLM-judged metrics from a single run** and they move between runs. Against 2026-09-03, faithfulness
+(0.812 → 0.892) and reference-fact coverage (0.749 → 0.797) improved, while context precision fell in *both*
+arms by near-identical amounts (−0.053 hybrid, −0.052 naive). A change isolated to the hybrid path cannot
+explain a matched drop in the naive baseline, so read that as judge variance or corpus drift rather than a
+regression — and neither reading is established without a confirming run. Always quote the run date and judge
+model alongside these numbers; earlier revisions of this table carried figures from a different run than
+`eval/results.json` held, which is exactly the confusion the date line above is here to prevent.
 
 ![Evaluation results chart](assets/eval_results.png)
 
-**What stood out**: hybrid clearly wins on claim-scoped queries where naive vector search misses a source entirely (e.g. a shop-estimate document, 0.0→1.0 recall), and is reported honestly where it's *worse* (two queries where naive actually beat it — no cherry-picking). The most interesting result wasn't a hybrid-vs-naive story at all: one query needs two documents surfaced together (an endorsement cap *and* a claim's own receipt total), which single-shot retrieval never manages in either mode — that's the exact reason the agentic planner's guaranteed dossier-inclusion exists, and scored against the real pipeline it hits 1.0 Factual Correctness despite 0.0/0.0 on the isolated retrieval endpoint. The Faithfulness/Correctness gap is the metric doing its job: the same answers, judged two different ways, showing where "grounded" and "complete" diverge (the local 14B judge has real run-to-run variance on these two live-answer metrics — see Known Limitations).
+**What stood out**: hybrid clearly wins on claim-scoped queries where naive vector search misses a source entirely (e.g. a shop-estimate document, 0.0→1.0 recall), and is reported honestly where it's *worse* (in the 2026-09-22 run hybrid beat naive on precision in 9 of 19 queries and lost in 1 — no cherry-picking). The most interesting result wasn't a hybrid-vs-naive story at all: one query needs two documents surfaced together (an endorsement cap *and* a claim's own receipt total), which single-shot retrieval never manages in either mode — that's the exact reason the agentic planner's guaranteed dossier-inclusion exists, and scored against the real pipeline it hits 1.0 Factual Correctness despite 0.0/0.0 on the isolated retrieval endpoint. The Faithfulness/Correctness gap is the metric doing its job: the same answers, judged two different ways, showing where "grounded" and "complete" diverge (the local 14B judge has real run-to-run variance on these two live-answer metrics — see Known Limitations).
 
 ### Bugs this eval harness actually found and fixed
 
