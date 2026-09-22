@@ -2,13 +2,40 @@
   "summary": {
     "model": "qwen3-coder-30b-a3b-instruct",
     "n_queries": 19,
-    "naive_precision_avg": 0.779,
-    "naive_recall_avg": 0.947,
-    "hybrid_precision_avg": 0.885,
+    "naive_precision_avg": 0.727,
+    "naive_recall_avg": 0.895,
+    "hybrid_precision_avg": 0.832,
     "hybrid_recall_avg": 0.965,
-    "faithfulness_avg": 0.812,
-    "correctness_avg": 0.749,
-    "elapsed_seconds": 1917.1
+    "faithfulness_avg": 0.892,
+    "correctness_avg": 0.797,
+    "elapsed_seconds": 1965.1,
+    "metric_samples": {
+      "naive_precision": {
+        "scored": 19,
+        "failed": 0
+      },
+      "naive_recall": {
+        "scored": 19,
+        "failed": 0
+      },
+      "hybrid_precision": {
+        "scored": 19,
+        "failed": 0
+      },
+      "hybrid_recall": {
+        "scored": 19,
+        "failed": 0
+      },
+      "faithfulness": {
+        "scored": 19,
+        "failed": 0
+      },
+      "correctness": {
+        "scored": 19,
+        "failed": 0
+      }
+    },
+    "correctness_mode": "recall (reference-fact coverage)"
   },
   "results": [
     {
@@ -19,8 +46,8 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.9999999999,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.25,
-      "correctness": 0.33,
+      "faithfulness": 0.9,
+      "correctness": 1.0,
       "naive_top_filenames": [
         "SOP_Auto_Repair_Labor_Rates.pdf",
         "Auto_Policy_Exclusions.txt",
@@ -42,8 +69,8 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.9999999999,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.7142857142857143,
-      "correctness": 0.75,
+      "faithfulness": 0.8333333333333334,
+      "correctness": 0.8,
       "naive_top_filenames": [
         "SOP_Auto_Repair_Labor_Rates.pdf",
         "Auto_Claims_Guidelines.docx",
@@ -65,8 +92,8 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.8333333332916666,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.6666666666666666,
-      "correctness": 0.5,
+      "faithfulness": 1.0,
+      "correctness": 0.71,
       "naive_top_filenames": [
         "DUI_Exclusion_Directive.txt",
         "Rider_Roadside_Assistance_Plus.pdf",
@@ -88,8 +115,8 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.9999999999,
       "hybrid_recall": 1.0,
-      "faithfulness": 1.0,
-      "correctness": 0.56,
+      "faithfulness": 0.8571428571428571,
+      "correctness": 0.5,
       "naive_top_filenames": [
         "Rider_OEM_Parts_Guarantee.pdf",
         "SOP_Auto_Repair_Labor_Rates.pdf",
@@ -111,8 +138,8 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.9999999999,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.7142857142857143,
-      "correctness": 0.5,
+      "faithfulness": 0.8461538461538461,
+      "correctness": 0.8,
       "naive_top_filenames": [
         "Endorsement_Custom_Equipment_Form402.pdf",
         "Endorsement_Rideshare_TNC_Form702.pdf",
@@ -134,7 +161,7 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.99999999995,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.9,
+      "faithfulness": 1.0,
       "correctness": 1.0,
       "naive_top_filenames": [
         "Endorsement_Windshield_Zero_Deductible.docx",
@@ -157,7 +184,7 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.99999999995,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.7777777777777778,
+      "faithfulness": 0.75,
       "correctness": 0.67,
       "naive_top_filenames": [
         "Endorsement_Rental_Car_Upgrade.docx",
@@ -180,8 +207,8 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.9999999999,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.8181818181818182,
-      "correctness": 0.8,
+      "faithfulness": 0.9166666666666666,
+      "correctness": 0.75,
       "naive_top_filenames": [
         "Adjuster_Guide_Rollover_Claims.docx",
         "SOP_Total_Loss_Valuation.pdf",
@@ -203,7 +230,7 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.9999999999,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.7142857142857143,
+      "faithfulness": 0.8888888888888888,
       "correctness": 1.0,
       "naive_top_filenames": [
         "SOP_Claims_Fraud_Red_Flags.pdf",
@@ -226,7 +253,7 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.9999999999,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.6,
+      "faithfulness": 0.8571428571428571,
       "correctness": 1.0,
       "naive_top_filenames": [
         "California_Auto_Claims_Regulations.pdf",
@@ -249,7 +276,7 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.8333333332916666,
       "hybrid_recall": 1.0,
-      "faithfulness": 1.0,
+      "faithfulness": 0.7647058823529411,
       "correctness": 1.0,
       "naive_top_filenames": [
         "Adjuster_Guide_Rear_Impact.docx",
@@ -272,7 +299,7 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.6388888888675925,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.42857142857142855,
+      "faithfulness": 0.7777777777777778,
       "correctness": 0.33,
       "naive_top_filenames": [
         "Case_Study_Hail_Damage_PlanA.pdf",
@@ -296,7 +323,7 @@
       "hybrid_precision": 0.499999999975,
       "hybrid_recall": 1.0,
       "faithfulness": 1.0,
-      "correctness": 0.75,
+      "correctness": 1.0,
       "naive_top_filenames": [
         "shop_email_thread_Sterling.pdf",
         "SOP_Auto_Repair_Labor_Rates.pdf",
@@ -318,7 +345,7 @@
       "naive_recall": 0.0,
       "hybrid_precision": 0.9999999999,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.9655172413793104,
+      "faithfulness": 1.0,
       "correctness": 0.67,
       "naive_top_filenames": [
         "Case_Study_Stolen_Honda_Civic.pdf",
@@ -341,8 +368,8 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.9999999999666667,
       "hybrid_recall": 1.0,
-      "faithfulness": 1.0,
-      "correctness": 0.8,
+      "faithfulness": 0.8095238095238095,
+      "correctness": 0.5,
       "naive_top_filenames": [
         "Case_Study_Hail_Damage_PlanA.pdf",
         "dent_photos_description_Jenkins.pdf",
@@ -360,11 +387,11 @@
       "id": "chen-custom-equipment-cap",
       "claim_id": "#2026-30291",
       "query": "Does David Chen's stolen custom equipment exceed his endorsement's coverage cap, and by how much?",
-      "naive_precision": 0.9999999999,
+      "naive_precision": 0.0,
       "naive_recall": 1.0,
-      "hybrid_precision": 0.9999999999,
+      "hybrid_precision": 0.0,
       "hybrid_recall": 0.6666666666666666,
-      "faithfulness": 1.0,
+      "faithfulness": 0.9230769230769231,
       "correctness": 1.0,
       "naive_top_filenames": [
         "Endorsement_Custom_Equipment_Form402.pdf",
@@ -411,7 +438,7 @@
       "hybrid_precision": 0.9999999999,
       "hybrid_recall": 1.0,
       "faithfulness": 1.0,
-      "correctness": 1.0,
+      "correctness": 0.8,
       "naive_top_filenames": [
         "Case_Study_Engine_Hydro_Lock.pdf",
         "Adjuster_Guide_Rollover_Claims.docx",
@@ -430,11 +457,11 @@
       "claim_id": "#2026-55912",
       "query": "Was the driver cited for DUI in Elena Rostova's claim?",
       "naive_precision": 0.0,
-      "naive_recall": 1.0,
+      "naive_recall": 0.0,
       "hybrid_precision": 0.0,
       "hybrid_recall": 1.0,
-      "faithfulness": 1.0,
-      "correctness": 0.83,
+      "faithfulness": 0.9565217391304348,
+      "correctness": 0.86,
       "naive_top_filenames": [
         "DUI_Exclusion_Directive.txt",
         "Auto_Policy_Exclusions.txt",
