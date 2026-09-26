@@ -155,6 +155,10 @@ class Settings:
     # Evidence conflict check (backend/conflict_check.py): "llm" asks the model to extract each
     # source's value and code decides disagreement -> status conflicting_evidence; "off" skips it.
     conflict_check: str = "llm"
+    # Prompt-injection defenses (backend/prompt_defense.py): comma list of sandwich, datamark,
+    # sanitize, or "none". Default "sanitize": removed 0 honest sentences (no measured answer-quality
+    # cost) -- sandwich/datamark cost ~0.12 correctness; see docs/adversarial-evaluation.md fix 3.
+    prompt_defense: str = "sanitize"
 
     @classmethod
     def from_env(cls, environ: Mapping[str, str] | None = None) -> "Settings":
@@ -241,6 +245,7 @@ class Settings:
             context_max_prompt_chars=_int(env.get("CONTEXT_MAX_PROMPT_CHARS"), 60_000, "CONTEXT_MAX_PROMPT_CHARS"),
             answer_guard_mode=env.get("ANSWER_GUARD_MODE", "withhold").strip().lower(),
             conflict_check=env.get("CONFLICT_CHECK", "llm").strip().lower(),
+            prompt_defense=env.get("PROMPT_DEFENSE", "sanitize").strip().lower(),
             answer_guard_allowed_domains=frozenset(
                 domain.strip().lower()
                 for domain in env.get("ANSWER_GUARD_ALLOWED_DOMAINS", "").split(",")
@@ -257,6 +262,8 @@ class Settings:
             parsed = urlparse(origin)
             if parsed.scheme not in {"http", "https"} or not parsed.netloc:
                 raise ValueError(f"CORS_ORIGINS contains an invalid URL: {origin!r}")
+        from backend.prompt_defense import parse_defenses
+        parse_defenses(self.prompt_defense)  # raises ValueError on an unknown defense name
         if self.conflict_check not in {"llm", "off"}:
             raise ValueError("CONFLICT_CHECK must be llm or off")
         if self.answer_guard_mode not in {"withhold", "flag", "off"}:

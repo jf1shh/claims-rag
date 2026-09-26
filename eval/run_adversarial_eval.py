@@ -164,6 +164,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--no-judge", action="store_true", help="skip the LLM judge; deterministic checks only")
     parser.add_argument("--only", nargs="+", metavar="ID", help="run only these case ids, in file order")
     parser.add_argument("--out", default=str(DEFAULT_OUT), help="results file to write")
+    parser.add_argument("--cases-module", default="eval.adversarial.cases",
+                        help="module defining ADVERSARIAL_CASES (e.g. eval.adversarial.cases_holdout)")
     args = parser.parse_args(argv)
 
     judge_enabled = not args.no_judge
@@ -176,7 +178,9 @@ def main(argv: list[str] | None = None) -> int:
         print(f"preflight failed: {exc}", file=sys.stderr)
         return 2
 
-    import eval.adversarial.cases as cases_module
+    import importlib
+
+    cases_module = importlib.import_module(args.cases_module)
 
     cases = list(cases_module.ADVERSARIAL_CASES)
     markers = scoring.injection_markers(cases)  # from the full set, so --only still sees every payload

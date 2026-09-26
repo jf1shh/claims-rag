@@ -86,6 +86,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--source-db", default=None, help="vector store to copy (default: $RAG_DB_PATH or rag_store.db)")
     parser.add_argument("--work-dir", default=None, help=f"scratch directory (default: {DEFAULT_WORK_DIR})")
+    parser.add_argument("--cases-module", default="eval.adversarial.cases",
+                        help="module defining ADVERSARIAL_FIXTURES (e.g. eval.adversarial.cases_holdout)")
     args = parser.parse_args(argv)
 
     source_db = Path(args.source_db).resolve() if args.source_db else default_source_db().resolve()
@@ -110,7 +112,9 @@ def main(argv: list[str] | None = None) -> int:
     sys.path.insert(0, str(REPO_ROOT))
 
     from backend.rag_engine import DocumentParser, EmbeddingEngine, SQLiteVectorStore
-    from eval.adversarial.cases import ADVERSARIAL_FIXTURES
+    import importlib
+
+    ADVERSARIAL_FIXTURES = importlib.import_module(args.cases_module).ADVERSARIAL_FIXTURES
     from eval.adversarial.validate import validate
     from scripts.rebuild_golden_source_docs import _build_docx, _build_pdf
 

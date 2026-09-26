@@ -191,6 +191,55 @@ labelled `insufficient_evidence`) before the check ran. Which answers carry payl
 - Only numeric disagreement is detected.
 - It adds one model call per answer.
 
+## Fix 3: prompt defenses (2026-09-26)
+
+`backend/prompt_defense.py` provides three defenses. The router applies them in `_assemble_context`, and
+`PROMPT_DEFENSE` selects them as a comma list:
+
+- **sanitize** replaces sentences in retrieved text that address the assistant with
+  `[instruction-like text removed]`, for example "ignore previous…", "reply only with…", "note to the
+  assistant", or fake `</source>`/`system:` tags. It rewrites the excerpt itself, so the evidence returned
+  to the caller is exactly what the model saw.
+- **sandwich** restates the untrusted-data rule after `<user_query>`.
+- **datamark** interleaves `ˆ` between the words of source text, with a system-prompt note. It is
+  render-only, so returned evidence stays readable.
+
+Measurement (`eval/prompt_defense_ab.json`):
+
+- Every variant ran with the answer guard on.
+- Grok 4.6 wrote a **held-out, white-box** set (`eval/adversarial/cases_holdout.py`: 12 attacks written
+  after reading the defense code, plus 4 honest controls containing imperative SOP language). Without it,
+  the known 16 payloads would reward overfitting.
+- Answer quality was measured with the full golden eval, run on the same day with the same settings.
+
+| `PROMPT_DEFENSE` | Known attack success | Held-out attack success | Golden faithfulness / correctness |
+|---|---|---|---|
+| none | 56% (18/32, 2 runs) | 42% (5/12) | 0.898 / 0.818 |
+| sanitize | 25% (4/16) | ≈ none: removes 0/12 held-out payloads offline | ≈ none: removes 0 honest sentences |
+| sandwich | 44% (7/16) | **17%** (2/12) | — |
+| datamark | 56% (9/16) | **67%** (8/12), worse | — |
+| sanitize,sandwich | 22% (7/32, 2 runs) | 25% (6/24, 2 runs) | 0.860 / **0.693** |
+| sanitize,sandwich,datamark | 12% (4/32, 2 runs) | 25% (6/24, 2 runs) | 0.795 / **0.678** |
+
+Findings:
+
+- **The sanitizer works only against attacks written without sight of it.** Offline it removes 8/16 known
+  payloads and **0/12** held-out ones. It removed **0** honest sentences across the fixtures, the golden
+  references, the 4 held-out controls and all 45 parent chunks of the real corpus, so it has no measured
+  quality cost.
+- **Sandwich generalises best**, since it helps most on the held-out set. But both runs that included it
+  lost about 0.12 factual correctness against a same-day no-defense run. That run reproduced the 09-22
+  baseline (0.892 / 0.797), so the drop is not drift. The per-query losses are spread out and noisy, but
+  they point the same way in both runs.
+- **Datamarking alone made this model worse** on the held-out set and cost the most faithfulness.
+
+**Default: `PROMPT_DEFENSE=sanitize`** (owner decision). It adds protection against naive injection at no
+measured quality cost. `sandwich` and `datamark` stay available by setting. The next step is to reword the
+sandwich reminder and re-measure its quality cost before promoting it.
+
+All numbers above are single runs or pairs on 12–16 cases, so a difference of one or two cases is within
+noise.
+
 ## What this points at
 
 Status of the three fixes:
@@ -202,6 +251,6 @@ Status of the three fixes:
    closed or be flagged. Setting `decision_status` alone is not enough.
 2. **Done, see fix 2.** *Emit `conflicting_evidence`.* Detect disagreeing values across the evidence set and set the status.
    Then tighten the conflict check to require the disagreement to be stated.
-3. **Harden the prompt structurally** with datamarking or spotlighting of source text, plus an
+3. **Partly done, see fix 3.** *Harden the prompt structurally* with datamarking or spotlighting of source text, plus an
    ingestion-time scan for instruction-shaped text. Then rerun this suite and compare it against this
    baseline.

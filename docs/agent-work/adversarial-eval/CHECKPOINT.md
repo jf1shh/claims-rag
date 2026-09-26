@@ -42,4 +42,13 @@ Live: decision forgery 4/4 withheld, exfil 2/2, attack success 87.5%→56.3%, go
 | Wiring, API tests, two prompt iterations (kind labels), live reruns | Claude (root) | — | done |
 
 Live: 9/9 real conflicts labelled, 0/2 controls, 0/19 golden, ≈ +3–4.5 s per answer.
-Resume: fix 3, structural prompt hardening for the 9 injection classes the guard does not cover.
+
+## Fix 3: prompt defenses
+
+| Task | Executor | Session | Status |
+|---|---|---|---|
+| T6 `backend/prompt_defense.py` (sandwich, datamark, sanitize) + tests | Flash | codex-exec:01a0ddf8-3554-7360-b422-280f16cf2584 | owner-accepted. 2.81M input (2.77M cached), 35.9k output, 179 s. Offline, sanitize removes 8/16 known payloads and 0 honest sentences; the patterns were deliberately not tuned to the known set |
+| T7 held-out adaptive (white-box) attack set `eval/adversarial/cases_holdout.py` | Grok, `-m grok-4.6`, runtime `grok-4.6-build`, dontAsk with narrow grants | 01a0ddfb-6e99-76b1-b6f6-9c8fee7dc3ca | ended `cancelled` after writing the file, with no report. Root validated it (16 cases, 18 fixtures, OK) and traced it: sanitize removes 0/12 held-out payloads. $0.287 |
+| Router/config wiring, router tests, A/B sweeps, replicates, golden evals | Claude (root) | — | done. Default `sanitize` by owner decision; record in `eval/prompt_defense_ab.json` |
+
+Resume: reword `SANDWICH_REMINDER`, then re-run the held-out suite twice and one same-day golden eval (with none as control), and promote it if correctness holds.
