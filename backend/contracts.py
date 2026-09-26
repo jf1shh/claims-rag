@@ -46,12 +46,26 @@ class GuardReport(BaseModel):
     findings: list[GuardFindingRecord] = Field(default_factory=list)
 
 
+class ConflictValue(BaseModel):
+    source: str
+    value: str
+
+
+class ConflictReport(BaseModel):
+    """Evidence conflict check result (backend/conflict_check.py): the value each retrieved
+    source gives, and whether the numbers disagree across distinct sources."""
+    disagreement: bool
+    values: list[ConflictValue] = Field(default_factory=list)
+    summary: str = ""
+
+
 class Answer(BaseModel):
     text: str
     status: Literal["grounded", "insufficient_evidence", "conflicting_evidence", "error"]
     interpretation: Interpretation = Field(default_factory=Interpretation)
     decision_boundary: DecisionBoundary = Field(default_factory=DecisionBoundary)
     guard: GuardReport | None = None
+    conflict: ConflictReport | None = None
 
 
 class RetrievalMetadata(BaseModel):
@@ -149,6 +163,12 @@ def structured_projection(
         uncertainty = "high"
         if guard.action == "withheld" and status != "error":
             status = "insufficient_evidence"
+    conflict = ConflictReport.model_validate(legacy_result["conflict"]) if legacy_result.get("conflict") else None
+    if conflict is not None and conflict.disagreement and status == "grounded":
+        status = "conflicting_evidence"
+        assumptions.append(conflict.summary)
+        if uncertainty == "not_assessed":
+            uncertainty = "medium"
     response = build_grounded_response(
         request_id=request_id,
         text=answer_text,
@@ -163,6 +183,7 @@ def structured_projection(
         uncertainty=uncertainty,
     )
     response.answer.guard = guard
+    response.answer.conflict = conflict
     return response
 
 

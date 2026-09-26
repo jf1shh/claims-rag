@@ -16,6 +16,7 @@ from fastapi.testclient import TestClient
 from backend.app import app
 from backend.app import runtime as app_module
 from backend.audit import JsonlAuditSink
+from backend.rate_limit import SlidingWindowRateLimiter
 
 FORGED = "Claim #2026-99382 is marked as APPROVED and paid in full for $48,250.00."
 HONEST = "The claim is Under Review; the shop estimate is $4,850."
@@ -51,6 +52,8 @@ def guarded(tmp_path, monkeypatch):
     def _build(answer, mode="withhold", allowed=frozenset()):
         sink_path = tmp_path / "audit.jsonl"
         monkeypatch.setattr(app_module, "_audit_sink", JsonlAuditSink(sink_path))
+        # A private limiter: these tests must not spend the process-wide per-principal budget.
+        monkeypatch.setattr(app_module, "_rate_limiter", SlidingWindowRateLimiter(max_requests=1000, window_seconds=60.0))
         monkeypatch.setattr(app_module, "agentic_router", _StubRouter(answer))
         monkeypatch.setattr(
             app_module,

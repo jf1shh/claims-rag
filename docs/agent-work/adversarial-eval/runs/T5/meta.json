@@ -1,0 +1,21 @@
+{
+  "route": "deepseek/deepseek-v4.1-flash",
+  "effort": "high",
+  "mode": "write",
+  "workspace": "/home/jaredf/Projects/jf1shh/auto-claims-rag",
+  "session": "01a0dda8-92f5-7c93-8d15-0779d714a2cc",
+  "exit_code": 0,
+  "seconds": 1976,
+  "usage": {
+    "input_tokens": 2914960,
+    "cached_input_tokens": 2864128,
+    "cache_write_input_tokens": 0,
+    "output_tokens": 28747,
+    "reasoning_output_tokens": 13171
+  },
+  "errors": [],
+  "log_tail": [
+    "2026-09-26T12:35:50.604419Z ERROR codex_core::tools::router: error=write_stdin failed: stdin is closed for this session; rerun exec_command with tty=true to keep stdin open"
+  ],
+  "resumed": false
+}

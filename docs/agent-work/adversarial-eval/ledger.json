@@ -1,6 +1,6 @@
 {
   "format": 1,
-  "revision": 12,
+  "revision": 16,
   "max_writers": 1,
   "workspace_roots": [
     "/home/jaredf/Projects/jf1shh/auto-claims-rag"
@@ -245,6 +245,83 @@
         },
         {
           "at": "2026-09-26T10:54:01+00:00",
+          "actor": "astra",
+          "from": "ready_for_review",
+          "to": "owner_accepted"
+        }
+      ]
+    },
+    "T5": {
+      "id": "T5",
+      "state": "owner_accepted",
+      "requester": "astra",
+      "requester_model": "claude-opus-5-5",
+      "requester_session": "claude-code:d7c1fbd9-136c-426b-a529-574eb8b600c3 (Astra-role fallback)",
+      "mode": "write",
+      "workspace": "/home/jaredf/Projects/jf1shh/auto-claims-rag",
+      "files": [
+        "backend/conflict_check.py",
+        "tests/test_conflict_check.py"
+      ],
+      "brief": "docs/agent-work/adversarial-eval/T5-flash-conflict-check.md",
+      "goal": "Evidence conflict check: LLM extracts per-source values, code decides disagreement",
+      "acceptance": [
+        "Contract implemented exactly; offline tests + ruff green"
+      ],
+      "checks": [
+        ".venv/bin/pytest tests/test_conflict_check.py -q"
+      ],
+      "depends_on": [],
+      "tools": [
+        "shell"
+      ],
+      "network": "model-only",
+      "network_reason": null,
+      "model": null,
+      "worker": {
+        "model": "deepseek/deepseek-v4.1-flash",
+        "session": "codex-exec:01a0dda8-92f5-7c93-8d15-0779d714a2cc"
+      },
+      "corrections": 0,
+      "report": {
+        "status": "ready_for_review",
+        "changed_files": [
+          "backend/conflict_check.py",
+          "tests/test_conflict_check.py"
+        ],
+        "out_of_scope": [],
+        "check_results": [
+          "test_conflict_check: 44 passed (worker)"
+        ],
+        "evidence": "meta.json route deepseek/deepseek-v4.1-flash, exit 0, 1976s",
+        "report_path": "docs/agent-work/adversarial-eval/runs/T5/report.md"
+      },
+      "review": {
+        "reviewer": "astra",
+        "decision": "owner_accepted",
+        "notes": "Reviewed; accepted non-str reply guard deviation; root reran full suite 577 passed after isolating rate limiter in new API tests; ruff clean."
+      },
+      "history": [
+        {
+          "at": "2026-09-26T12:20:03+00:00",
+          "actor": "astra",
+          "from": null,
+          "to": "requested"
+        },
+        {
+          "at": "2026-09-26T12:54:26+00:00",
+          "actor": "astra",
+          "from": "requested",
+          "to": "dispatched"
+        },
+        {
+          "at": "2026-09-26T12:54:26+00:00",
+          "actor": "astra",
+          "from": "dispatched",
+          "to": "ready_for_review"
+        },
+        {
+          "at": "2026-09-26T12:54:26+00:00",
           "actor": "astra",
           "from": "ready_for_review",
           "to": "owner_accepted"

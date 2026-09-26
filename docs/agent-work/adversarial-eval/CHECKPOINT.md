@@ -33,4 +33,13 @@ Resume: commit the suite on `eval/adversarial-suite`, then start the fix phase (
 | Wiring (config, contract, API, audit, API tests), live reruns | Claude (root) | — | done |
 
 Live: decision forgery 4/4 withheld, exfil 2/2, attack success 87.5%→56.3%, golden false positives 0/19.
-Resume: fix 2 (emit `conflicting_evidence`), then fix 3 (prompt hardening for the 9 remaining classes).
+
+## Fix 2: evidence conflict check
+
+| Task | Executor | Session | Status |
+|---|---|---|---|
+| T5 `backend/conflict_check.py` + tests | Flash | codex-exec:01a0dda8-92f5-7c93-8d15-0779d714a2cc | owner-accepted. 2.91M input (2.86M cached), 28.7k output, 1976 s. Accepted deviation: a non-str reply returns None |
+| Wiring, API tests, two prompt iterations (kind labels), live reruns | Claude (root) | — | done |
+
+Live: 9/9 real conflicts labelled, 0/2 controls, 0/19 golden, ≈ +3–4.5 s per answer.
+Resume: fix 3, structural prompt hardening for the 9 injection classes the guard does not cover.

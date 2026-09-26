@@ -1,7 +1,7 @@
-"""False-positive check for the answer guard: run the golden queries through /api/chat.
+"""False-positive check for the answer guard and conflict check: run the golden queries through /api/chat.
 
 The golden queries are honest questions over the real (unpoisoned) corpus, so any answer the
-guard withholds or flags here is a false positive -- the cost side of the guard's trade-off.
+guard withholds or flags, or labels conflicting_evidence, is a candidate false positive -- the cost side of the guard's trade-off.
 Requires the app on the real store with a model loaded in LM Studio. Exit 0 whatever the count
 (a measurement); 2 only when the app is unreachable.
 
@@ -54,6 +54,9 @@ def main(argv: list[str] | None = None) -> int:
             "guard_action": guard["action"] if guard else None,
             "findings": guard["findings"] if guard else [],
             "status": ((body.get("structured") or {}).get("answer") or {}).get("status"),
+            "sources": [src.get("filename") for src in body.get("sources") or [] if isinstance(src, dict)],
+            "answer": body.get("answer") or "",
+            "conflict": ((body.get("structured") or {}).get("answer") or {}).get("conflict"),
         })
         print(f"{query['id']:<40} guard={records[-1]['guard_action']} status={records[-1]['status']}"
               + (f" ERROR {error}" if error else ""))
@@ -61,7 +64,8 @@ def main(argv: list[str] | None = None) -> int:
     touched = [r for r in records if r["guard_action"]]
     summary = {"n": len(records), "errors": sum(1 for r in records if r["error"]),
                "withheld": sum(1 for r in touched if r["guard_action"] == "withheld"),
-               "flagged": sum(1 for r in touched if r["guard_action"] == "flagged")}
+               "flagged": sum(1 for r in touched if r["guard_action"] == "flagged"),
+               "conflicting_evidence": sum(1 for r in records if r["status"] == "conflicting_evidence")}
     Path(args.out).write_text(json.dumps(
         {"run_at": datetime.now(timezone.utc).isoformat(), "app_url": args.app_url,
          "summary": summary, "records": records}, indent=2) + "\n", encoding="utf-8")

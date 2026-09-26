@@ -151,14 +151,29 @@ def register_routes(app, runtime):
             allowed_domains=runtime.settings.answer_guard_allowed_domains,
         )
 
+    def conflict_result(result, query):
+        """Evidence conflict check (backend/conflict_check.py). Runs only on a live, non-withheld
+        answer with at least two distinct sources; any failure leaves the result unchanged, so
+        the status simply stays as it was (this is a label, not a gate)."""
+        if (runtime.settings.conflict_check == "off" or result.get("status") == "error"
+                or (result.get("guard") or {}).get("action") == "withheld"
+                or "simulated" in str(result.get("engine", ""))):
+            return result
+        from backend.conflict_check import assess_conflict
+        assessment = assess_conflict(runtime._llm_client, query, result.get("sources") or [])
+        return {**result, "conflict": assessment.to_dict()} if assessment is not None else result
+
     def guard_audit_fields(result):
         """Metadata-only guard summary for the audit sink: action and finding categories,
         never the excerpts, which are answer text."""
+        fields = {}
+        if result.get("conflict") is not None:
+            fields["conflict_disagreement"] = result["conflict"]["disagreement"]
         guard = result.get("guard")
-        if not guard:
-            return {}
-        return {"guard_action": guard["action"],
-                "guard_findings": sorted({f"{f['kind']}:{f['category']}" for f in guard["findings"]})}
+        if guard:
+            fields.update({"guard_action": guard["action"],
+                           "guard_findings": sorted({f"{f['kind']}:{f['category']}" for f in guard["findings"]})})
+        return fields
 
     def validate_chat(req):
         if not req.query.strip():
@@ -567,7 +582,7 @@ def register_routes(app, runtime):
             llm_client=runtime._llm_client,
             caps=runtime.settings,
         )
-        result = guard_result(result, req.claim_id)
+        result = conflict_result(guard_result(result, req.claim_id), req.query)
         _audit(
             request,
             principal,
@@ -607,7 +622,7 @@ def register_routes(app, runtime):
                     # Chunks already streamed cannot be recalled; the final event's answer
                     # replaces the streamed bubble (frontend finalizeStreamingBubble), so a
                     # withheld answer is withdrawn from view once generation completes.
-                    event = project_result(request, guard_result(event, req.claim_id))
+                    event = project_result(request, conflict_result(guard_result(event, req.claim_id), req.query))
                     _audit(request, principal, "chat",
                            query=req.query, claim_id=req.claim_id, engine=event.get("engine"),
                            answer=event.get("answer"),

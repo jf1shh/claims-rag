@@ -147,14 +147,60 @@ The guard also withheld `conf-sterling-rental-daily`. That is correct: the answe
 - The guard does not address canary echo, instruction override, fake delimiters, role hijack or citation
   poisoning. Those 9 cases still fail and need fix 3.
 
+## Fix 2: evidence conflict check (2026-09-26)
+
+`backend/conflict_check.py` implements "the model extracts, code decides":
+
+- **Extract.** After generation, one short temperature-0 call asks the model for the value each retrieved
+  source states for the quantity the question asks about, labelled `policy_value` or `claim_amount`. The
+  excerpts are escaped into `<source>` delimiters and treated as untrusted.
+- **Decide.** Code drops unknown filenames and `claim_amount` entries (receipts, estimates, payments).
+  There is a disagreement only when two or more distinct sources give different number sets. Non-numeric
+  values never count.
+- **Label.** On a disagreement, `structured.answer.status` becomes `conflicting_evidence`,
+  `structured.answer.conflict` carries the per-source values, and the summary is added to
+  `interpretation.assumptions`. The answer text is never rewritten.
+- **Skip.** The check does not run when `CONFLICT_CHECK=off`, on simulated, error or withheld answers,
+  or with fewer than two sources. Any failure leaves the status unchanged: it is a label, not a gate.
+
+Why not detect conflicts from the answer's wording? That was measured first. Several real-conflict answers
+state both values with no disagreement words ("without the rider … with it …"), and a control answer used
+"conflict" and "discrepancy" to say there was none.
+
+| | Baseline | Fix 2 |
+|---|---|---|
+| Real conflicts labelled `conflicting_evidence` | 0/9 | **9/9** |
+| Agreeing controls wrongly labelled | 0/2 | 0/2 |
+| Golden answers wrongly labelled (`eval/golden_guard_check.py`) | — | **0/19** |
+| Golden run, 19 queries | 147 s with the check off | 202–233 s across three runs with it on (≈ +3 to +4.5 s per answer) |
+
+These are single runs; `eval/adversarial_results_fix2.json` and `eval/golden_guard_results.json` hold the
+records. Two iterations were needed to get there:
+
+- The first version flagged `chen-custom-equipment-cap` in the golden set: a $5,000 policy cap against a
+  $5,900 receipt total. Telling the model to omit claimed amounts did not help.
+- Asking it to **label** each value's kind, then filtering in code, did.
+
+The guard still takes precedence. In earlier runs, contaminated conflict answers were withheld (and so
+labelled `insufficient_evidence`) before the check ran. Which answers carry payloads varies between runs.
+
+**Limits:**
+
+- The check reads the same untrusted excerpts as the generator. A poisoned document can shape the
+  extraction, although its output is used only as a label.
+- Only numeric disagreement is detected.
+- It adds one model call per answer.
+
 ## What this points at
+
+Status of the three fixes:
 
 Status of the three fixes:
 
 1. **Done, see fix 1.** *Enforce the decision boundary against the answer text.* Add a post-generation check: coverage,
    payment, denial and referral assertions, and URLs or emails absent from an allowlist, must fail
    closed or be flagged. Setting `decision_status` alone is not enough.
-2. **Emit `conflicting_evidence`.** Detect disagreeing values across the evidence set and set the status.
+2. **Done, see fix 2.** *Emit `conflicting_evidence`.* Detect disagreeing values across the evidence set and set the status.
    Then tighten the conflict check to require the disagreement to be stated.
 3. **Harden the prompt structurally** with datamarking or spotlighting of source text, plus an
    ingestion-time scan for instruction-shaped text. Then rerun this suite and compare it against this
