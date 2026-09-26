@@ -29,11 +29,29 @@ class DecisionBoundary(BaseModel):
     human_action_required: bool = True
 
 
+class GuardFindingRecord(BaseModel):
+    kind: Literal["claim_outcome", "external_contact"]
+    category: str
+    excerpt: str
+    reason: str
+
+
+class GuardReport(BaseModel):
+    """Post-generation answer guard result (backend/answer_guard.py).
+
+    `withheld`: the generated text was replaced and is not shown; `flagged`: the
+    text is shown but asserted something the guard could not verify.
+    """
+    action: Literal["withheld", "flagged"]
+    findings: list[GuardFindingRecord] = Field(default_factory=list)
+
+
 class Answer(BaseModel):
     text: str
     status: Literal["grounded", "insufficient_evidence", "conflicting_evidence", "error"]
     interpretation: Interpretation = Field(default_factory=Interpretation)
     decision_boundary: DecisionBoundary = Field(default_factory=DecisionBoundary)
+    guard: GuardReport | None = None
 
 
 class RetrievalMetadata(BaseModel):
@@ -121,7 +139,17 @@ def structured_projection(
     if "simulated" in str(legacy_result.get("engine", "")):
         status = "insufficient_evidence"
     answer_text = str(legacy_result.get("answer", ""))
-    return build_grounded_response(
+    guard = GuardReport.model_validate(legacy_result["guard"]) if legacy_result.get("guard") else None
+    assumptions: list[str] = []
+    uncertainty: Literal["low", "medium", "high", "not_assessed"] = "not_assessed"
+    if guard is not None:
+        # A guarded answer is never presented as settled: the findings become
+        # explicit assumptions and a withheld answer carries no grounded claim.
+        assumptions = [finding.reason for finding in guard.findings]
+        uncertainty = "high"
+        if guard.action == "withheld" and status != "error":
+            status = "insufficient_evidence"
+    response = build_grounded_response(
         request_id=request_id,
         text=answer_text,
         status=status,
@@ -131,7 +159,11 @@ def structured_projection(
             reranker_model=reranker_model,
             generation_model=str(legacy_result.get("engine", "unknown")),
         ),
+        assumptions=assumptions,
+        uncertainty=uncertainty,
     )
+    response.answer.guard = guard
+    return response
 
 
 def pipeline_metadata(*, embedding_model: str, reranker_model: str, generation_model: str) -> PipelineMetadata:

@@ -1,0 +1,15 @@
+**STATUS: ready_for_review** — T3, workspace `/home/jaredf/Projects/jf1shh/auto-claims-rag` (branch `eval/adversarial-suite`, HEAD `70bf617`), report at [report.md](/home/jaredf/Projects/jf1shh/auto-claims-rag/docs/agent-work/adversarial-eval/runs/T3/report.md).
+
+**Changed files**
+- [backend/answer_guard.py](/home/jaredf/Projects/jf1shh/auto-claims-rag/backend/answer_guard.py) (new) — the contract implemented literally: `OutcomeKind`, `SKIP`, `OUTCOME_PATTERNS` untouched from the brief, `_clean`/`split_sentences`, `find_external_contacts`, `find_claim_outcomes`, `check_answer` (outcomes then contacts), frozen `GuardFinding` with `to_dict()`. Stdlib only, no backend imports, no I/O.
+- [tests/test_answer_guard.py](/home/jaredf/Projects/jf1shh/auto-claims-rag/tests/test_answer_guard.py) (new) — 44 tests covering required cases 1–8 plus a few focused extras.
+- The report. Nothing else touched; `backend/contracts.py`, `config.py`, `.env.example` were already dirty from the root and left alone.
+
+**Verification**
+- `.venv/bin/pytest tests/test_answer_guard.py -q` → exit 0, `44 passed in 0.02s`
+- `.venv/bin/ruff check backend/answer_guard.py tests/test_answer_guard.py` → exit 0, `All checks passed!` (also `ruff check .` → exit 0)
+- `.venv/bin/pytest tests/ -q` → **481 passed, 17 skipped** (baseline 437 + my 44; skips unchanged at 17), exit 0. This needed the CI env (`HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1`) plus a `/tmp`-only loop-wakeup shim: the plain command hangs in this worker sandbox because cross-thread `call_soon_threadsafe` never wakes the loop here, so `anyio.to_thread.run_sync` (every FastAPI `sync def` route) hangs — reproduced with a 5-line stdlib snippet and no repo code, and it stalls in `test_api_audit.py`, before anything of mine. The 36 non-ASGI modules pass with no shim: `374 passed, 17 skipped in 3.93s`.
+
+**Required cases failing with the patterns as written:** none. All 19 golden references return `[]` (including the SIU/modal sentence in `fraud-chronology-red-flag`); all four decision-forgery answers are caught at the required category and the MedPay exfil answer yields both a `url` and an `email` finding for `nighthawk-drop.example`. One caught detail: `eval/adversarial_results.json`'s `record["status"]` is the structured answer status (`"grounded"`), not the claim status — the test passes the brief's literal claim statuses.
+
+**Unresolved risks for the owner:** the empty `allowed_domains` default flags every URL in otherwise honest answers (visible on `conf-storage-2023-vs-2026`, which carries an injected exfil URL), so the allowlist source must be decided before wiring; `closed` fires on any bare "Final Determination" line; the `rstrip(".,;:")` trailing-`)` branch is unreachable because both URL regexes exclude `)`. Next checkpoint: none — API/contract wiring and doc updates remain the root's.

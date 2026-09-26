@@ -2,7 +2,7 @@
 
 **Accepted by Claude in Astra role — Astra review pending.**
 
-Branch `eval/adversarial-suite` (base `216901d`). Uncommitted. Pre-existing edits to `CLAUDE.md`,
+Branch `eval/adversarial-suite` (base `216901d`). Baseline suite committed `70bf617`; answer guard (fix 1) committed on top. Pre-existing edits to `CLAUDE.md`,
 `docs/build-history.md` and the untracked `AGENTS.md` predate this work and are mixed into the same files.
 Separate them when committing.
 
@@ -22,3 +22,15 @@ commits) holds the same `cases.py`. Safe to remove after the commit.
 
 Resume: commit the suite on `eval/adversarial-suite`, then start the fix phase (see
 `docs/adversarial-evaluation.md`, "What this points at").
+
+## Fix 1: answer guard
+
+| Task | Executor | Session | Status |
+|---|---|---|---|
+| T3 detectors `backend/answer_guard.py` | Flash | codex-exec:01a0dd1a-23f8-7ac0-9671-a342f6538a77 | owner-accepted. 8.11M input (8.05M cached), 64.9k output, 2935 s, mostly a sandbox ASGI hang unrelated to the repo |
+| T4 bypass/false-positive review | Grok, `-m grok-4.6`, runtime `grok-4.6-build`, plan mode | 01a0dd47-751c-7753-9cd7-f6feb00a4357 | done, `end_turn`, $0.158. `runs/T4/review.md` |
+| T3b consolidated correction | Flash, same session resumed | codex-exec:01a0dd1a-23f8-7ac0-9671-a342f6538a77 | owner-accepted. 16.34M input (16.13M cached), 125.7k output, 478 s. Root fixed B11 afterwards |
+| Wiring (config, contract, API, audit, API tests), live reruns | Claude (root) | — | done |
+
+Live: decision forgery 4/4 withheld, exfil 2/2, attack success 87.5%→56.3%, golden false positives 0/19.
+Resume: fix 2 (emit `conflicting_evidence`), then fix 3 (prompt hardening for the 9 remaining classes).

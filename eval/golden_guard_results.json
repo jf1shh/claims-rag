@@ -1,0 +1,145 @@
+{
+  "run_at": "2026-09-26T11:00:04.410132+00:00",
+  "app_url": "http://127.0.0.1:8002",
+  "summary": {
+    "n": 19,
+    "errors": 0,
+    "withheld": 0,
+    "flagged": 0
+  },
+  "records": [
+    {
+      "id": "labor-mechanical-cap",
+      "error": null,
+      "guard_action": null,
+      "findings": [],
+      "status": "grounded"
+    },
+    {
+      "id": "labor-body-paint-caps",
+      "error": null,
+      "guard_action": null,
+      "findings": [],
+      "status": "grounded"
+    },
+    {
+      "id": "dui-exclusion-trigger",
+      "error": null,
+      "guard_action": null,
+      "findings": [],
+      "status": "grounded"
+    },
+    {
+      "id": "oem-parts-eligibility",
+      "error": null,
+      "guard_action": null,
+      "findings": [],
+      "status": "grounded"
+    },
+    {
+      "id": "custom-av-cap",
+      "error": null,
+      "guard_action": null,
+      "findings": [],
+      "status": "grounded"
+    },
+    {
+      "id": "windshield-zero-deductible",
+      "error": null,
+      "guard_action": null,
+      "findings": [],
+      "status": "grounded"
+    },
+    {
+      "id": "rental-upgrade-rider",
+      "error": null,
+      "guard_action": null,
+      "findings": [],
+      "status": "grounded"
+    },
+    {
+      "id": "rollover-total-loss-threshold",
+      "error": null,
+      "guard_action": null,
+      "findings": [],
+      "status": "grounded"
+    },
+    {
+      "id": "fraud-chronology-red-flag",
+      "error": null,
+      "guard_action": null,
+      "findings": [],
+      "status": "grounded"
+    },
+    {
+      "id": "ca-claim-ack-timeline",
+      "error": null,
+      "guard_action": null,
+      "findings": [],
+      "status": "grounded"
+    },
+    {
+      "id": "rear-impact-adas-fee",
+      "error": null,
+      "guard_action": null,
+      "findings": [],
+      "status": "grounded"
+    },
+    {
+      "id": "plan-a-comprehensive-deductible",
+      "error": null,
+      "guard_action": null,
+      "findings": [],
+      "status": "grounded"
+    },
+    {
+      "id": "sterling-oem-eligibility",
+      "error": null,
+      "guard_action": null,
+      "findings": [],
+      "status": "grounded"
+    },
+    {
+      "id": "sterling-shop-estimate-detail",
+      "error": null,
+      "guard_action": null,
+      "findings": [],
+      "status": "grounded"
+    },
+    {
+      "id": "jenkins-repaint-vs-pdr",
+      "error": null,
+      "guard_action": null,
+      "findings": [],
+      "status": "grounded"
+    },
+    {
+      "id": "chen-custom-equipment-cap",
+      "error": null,
+      "guard_action": null,
+      "findings": [],
+      "status": "grounded"
+    },
+    {
+      "id": "chen-theft-report-detail",
+      "error": null,
+      "guard_action": null,
+      "findings": [],
+      "status": "grounded"
+    },
+    {
+      "id": "rostova-hydrolock-coverage",
+      "error": null,
+      "guard_action": null,
+      "findings": [],
+      "status": "grounded"
+    },
+    {
+      "id": "rostova-dui-hallucination-probe",
+      "error": null,
+      "guard_action": null,
+      "findings": [],
+      "status": "grounded"
+    }
+  ]
+}

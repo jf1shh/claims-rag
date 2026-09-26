@@ -138,6 +138,28 @@ def register_routes(app, runtime):
                    for source, evidence in zip(result.get("sources") or [], structured["evidence"], strict=True)]
         return {**result, "sources": sources, "structured": structured}
 
+    def guard_result(result, claim_id):
+        """Post-generation answer guard (backend/answer_guard.py), applied before audit and
+        projection so neither the caller nor the structured contract sees an unsupported
+        claim outcome or off-allowlist contact as the assistant's answer."""
+        from backend.agentic_router import claim_record_status
+        from backend.answer_guard import apply_guard
+        return apply_guard(
+            result,
+            mode=runtime.settings.answer_guard_mode,
+            record_status=claim_record_status(claim_id),
+            allowed_domains=runtime.settings.answer_guard_allowed_domains,
+        )
+
+    def guard_audit_fields(result):
+        """Metadata-only guard summary for the audit sink: action and finding categories,
+        never the excerpts, which are answer text."""
+        guard = result.get("guard")
+        if not guard:
+            return {}
+        return {"guard_action": guard["action"],
+                "guard_findings": sorted({f"{f['kind']}:{f['category']}" for f in guard["findings"]})}
+
     def validate_chat(req):
         if not req.query.strip():
             raise HTTPException(status_code=400, detail="Query must not be empty.")
@@ -545,6 +567,7 @@ def register_routes(app, runtime):
             llm_client=runtime._llm_client,
             caps=runtime.settings,
         )
+        result = guard_result(result, req.claim_id)
         _audit(
             request,
             principal,
@@ -554,6 +577,7 @@ def register_routes(app, runtime):
             engine=req.engine,
             answer=result.get("answer"),
             sources=[source.get("filename") for source in result.get("sources", [])],
+            **guard_audit_fields(result),
         )
         return project_result(request, result)
 
@@ -580,12 +604,15 @@ def register_routes(app, runtime):
                 if event["type"] == "chunk":
                     yield f"data: {json.dumps({'text': event['text']})}\n\n"
                 elif event["type"] == "final":
-                    event = project_result(request, event)
+                    # Chunks already streamed cannot be recalled; the final event's answer
+                    # replaces the streamed bubble (frontend finalizeStreamingBubble), so a
+                    # withheld answer is withdrawn from view once generation completes.
+                    event = project_result(request, guard_result(event, req.claim_id))
                     _audit(request, principal, "chat",
                            query=req.query, claim_id=req.claim_id, engine=event.get("engine"),
                            answer=event.get("answer"),
                            sources=[s.get("filename") for s in (event.get("sources") or [])],
-                           status=event.get("status"))
+                           status=event.get("status"), **guard_audit_fields(event))
                     yield f"data: {json.dumps({k: v for k, v in event.items() if k != 'type'})}\n\n"
             yield "data: [DONE]\n\n"
 

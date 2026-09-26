@@ -75,6 +75,15 @@ CLAIMS_DATA = [
     }
 ]
 
+
+def claim_record_status(claim_id: Optional[str]) -> Optional[str]:
+    """The claim record's own status (e.g. "Under Review"), or None for global scope or an
+    unknown claim. The answer guard checks asserted outcomes against this."""
+    if not claim_id:
+        return None
+    claim = next((c for c in CLAIMS_DATA if c["id"] == claim_id), None)
+    return claim.get("status") if claim else None
+
 class AgenticRAGRouter:
 
     def _get_claim_context_markdown(self, claim_id: str) -> str:

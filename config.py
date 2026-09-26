@@ -147,6 +147,11 @@ class Settings:
     context_max_claim_chunks: int = 8      # Phase 5.3 dossier cap
     context_max_global_matches: int = 4    # global/claim match cap (was hardcoded :4)
     context_max_prompt_chars: int = 60_000 # total user-prompt budget guardrail
+    # Post-generation answer guard (backend/answer_guard.py): "withhold" replaces an answer that
+    # asserts an unsupported claim outcome or an off-allowlist URL/email; "flag" keeps it but
+    # records the findings; "off" disables the check. Fail-closed by default.
+    answer_guard_mode: str = "withhold"
+    answer_guard_allowed_domains: frozenset[str] = frozenset()
 
     @classmethod
     def from_env(cls, environ: Mapping[str, str] | None = None) -> "Settings":
@@ -231,6 +236,12 @@ class Settings:
             context_max_claim_chunks=_int(env.get("CONTEXT_MAX_CLAIM_CHUNKS"), 8, "CONTEXT_MAX_CLAIM_CHUNKS"),
             context_max_global_matches=_int(env.get("CONTEXT_MAX_GLOBAL_MATCHES"), 4, "CONTEXT_MAX_GLOBAL_MATCHES"),
             context_max_prompt_chars=_int(env.get("CONTEXT_MAX_PROMPT_CHARS"), 60_000, "CONTEXT_MAX_PROMPT_CHARS"),
+            answer_guard_mode=env.get("ANSWER_GUARD_MODE", "withhold").strip().lower(),
+            answer_guard_allowed_domains=frozenset(
+                domain.strip().lower()
+                for domain in env.get("ANSWER_GUARD_ALLOWED_DOMAINS", "").split(",")
+                if domain.strip()
+            ),
         )
 
     def validate_for_environment(self) -> None:
@@ -242,6 +253,8 @@ class Settings:
             parsed = urlparse(origin)
             if parsed.scheme not in {"http", "https"} or not parsed.netloc:
                 raise ValueError(f"CORS_ORIGINS contains an invalid URL: {origin!r}")
+        if self.answer_guard_mode not in {"withhold", "flag", "off"}:
+            raise ValueError("ANSWER_GUARD_MODE must be withhold, flag, or off")
         if self.vector_store not in {"sqlite", "postgres"}:
             raise ValueError("VECTOR_STORE must be sqlite or postgres")
         if not self.tenant_id.strip():
