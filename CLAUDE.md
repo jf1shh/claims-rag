@@ -107,6 +107,9 @@ auto-claims-rag/
 │   ├── rate_limit.py           ← per-principal sliding-window request limiter (Phase 4.4)
 │   ├── llm_client.py           ← ChatClient seam: OpenAICompatibleClient + per-stage model routing (Phase 5.1); complete_stream() SSE token streaming (Phase 5.3)
 │   ├── health.py / audit.py / contracts.py / tenant_context.py / harness.py  ← Phase 0 foundation
+│   ├── answer_guard.py         ← post-generation guard: unsupported claim outcomes / off-allowlist contacts (2026-09-26)
+│   ├── conflict_check.py       ← evidence conflict check → conflicting_evidence (2026-09-26)
+│   ├── prompt_defense.py       ← sanitize / sandwich / datamark prompt-injection defenses (2026-09-26)
 ├── frontend/
 │   ├── index.html              ← Claims Handler Dashboard UI
 │   ├── style.css               ← ClaimCenter/Jutro light-mode styling
@@ -188,6 +191,10 @@ Or in Docker: `docker compose up --build` (see `docs/operations/local-and-produc
 | FastAPI Backend | `backend/app.py` | **Active** | Serving on port 8000; per-claim scoping + document serving. |
 | Web Frontend | `frontend/*` | **Active** | Claims queue, per-claim folders, viewable citations, pipeline logs. |
 | Batch Ingest CLI | ingest_all.py | Active | Batch-indexes the sample/seed document set. |
+| Answer Guard | `backend/answer_guard.py` | **Active** | Post-generation: withholds unsupported claim-outcome assertions and off-allowlist contacts (`ANSWER_GUARD_MODE`, default withhold). |
+| Conflict Check | `backend/conflict_check.py` | **Active** | Model extracts per-source values; code decides numeric disagreement, giving `conflicting_evidence` (`CONFLICT_CHECK`, default llm). |
+| Prompt Defense | `backend/prompt_defense.py` | **Active** | `PROMPT_DEFENSE` default `sanitize`; `sandwich`/`datamark` opt-in (measured quality cost). |
+| Adversarial Eval | `eval/adversarial/*`, `eval/run_adversarial_eval.py` | **Active** | Known and white-box held-out injection/conflict suites against a scratch store; `eval/golden_guard_check.py` for false positives. |
 | Eval Harness | `eval/*` | **Active** | Naive-vs-hybrid+rerank Context Precision/Recall + live Faithfulness + live Factual Correctness (vs. reference), judged locally via LM Studio. Requires backend server running. |
 
 ---
@@ -234,7 +241,7 @@ September 6: portfolio hardening implemented and verified; see [validation and r
 
 Local environment maintenance (2026-09-23): removed 18 orphan NVIDIA/CUDA distributions left after the earlier ROCm migration. PyTorch remains `2.13.0+rocm7.2`; all 180 remaining distributions pass `uv pip check`, and an RX 9070 XT tensor operation plus `sentence_transformers` import pass. Both Triton distributions were retained because their file namespaces can overlap. This is environment cleanup, not a new retrieval benchmark or phase change.
 
-As of September 6, the authoritative state is [portfolio-hardening.md](docs/portfolio-hardening.md): factory-owned dependencies, tenant/claim authorization, bounded parsing, concurrent audit appends, immutable versioned sources, privacy defaults, and isolated PR CI are implemented. Live answer-quality evaluation **was rerun on 2026-09-22** with the generator/judge loaded and `SIMULATION_MODE=false` — see the baseline entry under Known Issues and `docs/portfolio-hardening.md`. Adversarial and human-reviewed cases remain unrun. Earlier accomplishments below describe their original sessions, not current deployment or certification.
+As of September 6, the authoritative state is [portfolio-hardening.md](docs/portfolio-hardening.md): factory-owned dependencies, tenant/claim authorization, bounded parsing, concurrent audit appends, immutable versioned sources, privacy defaults, and isolated PR CI are implemented. Live answer-quality evaluation **was rerun on 2026-09-22** with the generator/judge loaded and `SIMULATION_MODE=false` — see the baseline entry under Known Issues and `docs/portfolio-hardening.md`. The adversarial evaluation ran on 2026-09-26, and three measured fixes followed (answer guard, conflict check, retrieved-text sanitizer): see [adversarial-evaluation.md](docs/adversarial-evaluation.md). Human-reviewed cases remain unrun. Earlier accomplishments below describe their original sessions, not current deployment or certification.
 
 ### Confirmed Working
 * Ingestion of PDF, DOCX, XLSX, and TXT files (parent/child chunking + FTS5 index), producing real binaries in `stored_documents/` and clean, non-duplicated chunks.

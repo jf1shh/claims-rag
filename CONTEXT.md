@@ -10,6 +10,10 @@
 | Change LLM / inference behavior | `backend/llm_client.py`, `backend/agentic_router.py` | `tests/test_llm_client.py`, `tests/test_llm_stream.py`, `tests/test_agentic_router_llm.py` |
 | Change streaming, context caps, or prompt-injection delimiting | `backend/agentic_router.py` (`_assemble_context`, `_online_pipeline`, `run_query_stream`), `backend/app.py` (`/api/chat/stream`) | `tests/test_router_context.py`, `tests/test_prompt_injection.py`, `tests/test_router_stream.py`, `tests/test_api_chat_stream.py`, `tests/test_api_ttf.py` |
 | Change API contracts | `backend/app.py` | Contract tests and foundation spec |
+| Change the answer guard (withheld outcomes / contacts) | `backend/answer_guard.py`, `backend/api.py` (`guard_result`) | `docs/adversarial-evaluation.md` fix 1, `tests/test_answer_guard.py`, `tests/test_api_answer_guard.py`, `eval/golden_guard_check.py` |
+| Change the conflict check (`conflicting_evidence`) | `backend/conflict_check.py`, `backend/contracts.py`, `backend/api.py` (`conflict_result`) | `docs/adversarial-evaluation.md` fix 2, `tests/test_conflict_check.py`, `tests/test_api_conflict_check.py` |
+| Change prompt-injection defenses | `backend/prompt_defense.py`, `backend/agentic_router.py` (`_assemble_context`) | `docs/adversarial-evaluation.md` fix 3, `eval/prompt_defense_ab.json`; re-run the held-out set, not only the known one |
+| Run or extend the adversarial suite | `eval/adversarial/`, `eval/run_adversarial_eval.py` | `docs/agent-work/adversarial-eval/SPEC.md` (case contract), `docs/adversarial-evaluation.md` |
 | Change auth, RBAC, or rate limits | `backend/authn.py`, `backend/rbac.py`, `backend/rate_limit.py` | `SECURITY.md`, `tests/test_authn.py`, `tests/test_api_auth.py`, `tests/test_rbac.py`, `tests/test_api_rbac.py`, `tests/test_rate_limit.py`, `tests/test_api_limits.py` |
 | Run unit tests | `tests/` | `README.md` |
 | Run retrieval parity | `eval/parity_runner.py` | `docs/enterprise-migration.md` |

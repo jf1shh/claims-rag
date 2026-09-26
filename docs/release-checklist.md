@@ -21,6 +21,10 @@ Record the actual output and exit code for every command. Do not state that CI i
 - P0 isolation, input validation, evidence grounding, and migration checks pass.
 - Every material answer claim can be connected to evidence IDs.
 - Responses default to `not_a_decision` and identify human action requirements.
+- When prompts, the answer guard, the conflict check or `PROMPT_DEFENSE` change, re-run
+  `eval/run_adversarial_eval.py` (known and `--cases-module eval.adversarial.cases_holdout`) and
+  `eval/golden_guard_check.py`, and compare against `docs/adversarial-evaluation.md`. A lower attack
+  rate that costs golden answer quality needs an explicit owner decision.
 - Configuration has safe development and explicit production behavior.
 - `/health/live` works when model services are unavailable.
 - `/health/ready` reports dependency failure without leaking internals.

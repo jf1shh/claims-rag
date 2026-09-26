@@ -116,6 +116,31 @@ model alongside these numbers; earlier revisions of this table carried figures f
 3. **Faithfulness scoring gap**: claim-scoped answers grounded in a prompt-injected dossier weren't checked against it, so correct answers scored as unfaithful. Fixed.
 4. **Multi-hop retrieval gap**: a claim's own documents were competing semantically for a slot against global policy docs and losing. Fixed by always including them directly — which then exposed a *second* bug (the LLM only reasoned about one of two line items despite having both). Both fixed and verified.
 5. **The eval harness's own default metric config penalized correct answers**: Ragas's default `mode="f1"` docked well-cited, correct answers for true elaboration not in the terse reference text. Switched to `mode="recall"`.
+6. **The decision boundary didn't check the answer it described**: under prompt injection the model declared claims approved, paid or denied while the structured contract still said `not_a_decision`. Found by the adversarial suite below; fixed with a post-generation answer guard.
+
+### Adversarial evaluation (2026-09-26)
+
+A second suite attacks the system on purpose: 38 synthetic poisoned or conflicting documents and 27 cases
+(`eval/adversarial/`), plus a **held-out set written by a different model after it had read the defense
+code** (`eval/adversarial/cases_holdout.py`). The held-out set exists to keep the defenses from being
+tuned to known payloads. The baseline showed the generator obeying instructions planted in retrieved
+documents 87.5% of the time. It also never labelled conflicting sources as a conflict. Three fixes
+followed, each measured before and after with default settings (single runs or pairs on small case
+counts, so read these as indicative):
+
+| | Before | After |
+|---|---|---|
+| Forged claim decisions (approved / paid / denied / referred) shown to the user | 4/4 | **0/4**, withheld by the answer guard |
+| Attacker links or contacts shown to the user | 1/2 | **0/2** |
+| Known injection attack success | 87.5% | 25% (answer guard plus the default sanitizer, one run) |
+| Real source conflicts labelled `conflicting_evidence` | 0/9 | **9/9** (0/2 agreeing controls and 0/19 golden answers mislabelled) |
+| Golden answer quality (faithfulness / correctness), same-day run | 0.898 / 0.818 | unchanged by the defaults |
+
+The most useful result was a negative one. A "sandwich" reminder after the sources halves injection
+success on the held-out set (42% → 17–25%), but only because it narrows answers: golden answers got 39%
+shorter and correctness fell by about 0.12. A reworded version kept answer quality and lost all of the
+protection. So that reminder is opt-in, not default. Full method, numbers and limits:
+[docs/adversarial-evaluation.md](docs/adversarial-evaluation.md).
 
 
 ### Verification scope after the September 6 hardening
@@ -147,6 +172,13 @@ Claims-facing responses follow the same separation:
 ## Security posture
 
 This repository contains synthetic data only. Review [`SECURITY.md`](SECURITY.md) before handling uploaded content or changing routes, storage, providers, or authentication. Every `/api/*` route requires authentication — a Bearer JWT verified against your OIDC issuer's JWKS, an `X-API-Key` from the service-accounts file, or (local dev only) the explicit development identity — and permissions are enforced per role and per claim (`docs/enterprise-migration.md` Phase 4). The production foundation is designed around tenant isolation, per-principal rate limiting and enforced upload/query caps (429/413), safe paths and URLs, evidence-required synthesis, concurrent durable audit appends without chat text, and non-leaking errors.
+
+Retrieved documents are treated as untrusted. By default, instruction-shaped sentences in retrieved text
+are neutralised before generation (`PROMPT_DEFENSE`). An answer that asserts a claim outcome the claim
+record does not support, or that contains an off-allowlist link or contact, is withheld for human review
+(`ANSWER_GUARD_MODE`). When retrieved sources state different values, the answer is labelled
+`conflicting_evidence` (`CONFLICT_CHECK`). These are measured mitigations, not guarantees: see the
+adversarial evaluation above.
 
 ## Try it locally
 
@@ -191,12 +223,21 @@ Run these commands from the repository root and report their actual output:
 .venv/bin/python eval/parity_runner.py
 ```
 
+The adversarial suite needs LM Studio. It runs against a scratch copy of the store, never the live one:
+
+```bash
+.venv/bin/python -B eval/adversarial/ingest.py          # prints the scratch-server command to run next
+.venv/bin/python -B eval/run_adversarial_eval.py --no-judge
+.venv/bin/python -B eval/golden_guard_check.py --app-url http://127.0.0.1:8000   # guard/conflict false positives
+```
+
 `GET /health/live` checks process liveness; `GET /health/ready` checks configured dependencies. A green local check does not claim remote CI or production readiness.
 
 ## Known limitations
 
 - **Faithfulness measures groundedness, not correctness** — an answer can be fully faithful to partial context and still be wrong. Factual Correctness closes this by scoring against a verified reference instead.
 - Context Precision/Recall reflect single-shot retrieval via a debug endpoint, not the full pipeline's guaranteed claim-document inclusion; Factual Correctness *is* scored against the real `/api/chat` pipeline.
+- **Prompt injection is reduced, not solved.** The default sanitizer removes none of the held-out payloads, which were written after reading its code. With no prompt defense they succeeded in 42% of cases; the default configuration was not run live on that set. The answer guard stops forged claim decisions and exfiltration links, not every injected phrase. See [docs/adversarial-evaluation.md](docs/adversarial-evaluation.md).
 - Both LLM-judged metrics are bounded by a local 14B judge's own reasoning quality (a deliberate local-only tradeoff) and show real run-to-run variance — treat single-run scores as noisy, trust trends across reruns.
 
 ## Tech stack
