@@ -233,9 +233,18 @@ Findings:
   they point the same way in both runs.
 - **Datamarking alone made this model worse** on the held-out set and cost the most faithfulness.
 
+**Why sandwich costs quality, and why rewording it did not help.** With sandwich on, golden answers were
+39% shorter (median 1,130 → 705 characters) and dropped related values the references expect. The
+reminder's "Answer only the question in `<user_query>`" line causes this. A reworded reminder removed that
+line and asked for normal completeness. It recovered quality (faithfulness 0.882, correctness 0.789), but
+held-out attack success rose to 50% (12/24, 2 runs), worse than no defense at all. The known-set rate was
+25% (4/16). So the narrowing **is** the protection: it trims injected extras and legitimate related facts
+alike. The reworded version was rejected and the strict wording restored. `eval/prompt_defense_ab.json`
+(`sandwich_reworded_v2_rejected`) records both versions.
+
 **Default: `PROMPT_DEFENSE=sanitize`** (owner decision). It adds protection against naive injection at no
-measured quality cost. `sandwich` and `datamark` stay available by setting. The next step is to reword the
-sandwich reminder and re-measure its quality cost before promoting it.
+measured quality cost. `sandwich` and `datamark` stay available by setting. Turning sandwich on trades about 0.12 correctness
+for roughly halving held-out injection success. That is a deployment choice, and the settings allow it.
 
 All numbers above are single runs or pairs on 12–16 cases, so a difference of one or two cases is within
 noise.

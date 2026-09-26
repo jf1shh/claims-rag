@@ -51,4 +51,4 @@ Live: 9/9 real conflicts labelled, 0/2 controls, 0/19 golden, ≈ +3–4.5 s per
 | T7 held-out adaptive (white-box) attack set `eval/adversarial/cases_holdout.py` | Grok, `-m grok-4.6`, runtime `grok-4.6-build`, dontAsk with narrow grants | 01a0ddfb-6e99-76b1-b6f6-9c8fee7dc3ca | ended `cancelled` after writing the file, with no report. Root validated it (16 cases, 18 fixtures, OK) and traced it: sanitize removes 0/12 held-out payloads. $0.287 |
 | Router/config wiring, router tests, A/B sweeps, replicates, golden evals | Claude (root) | — | done. Default `sanitize` by owner decision; record in `eval/prompt_defense_ab.json` |
 
-Resume: reword `SANDWICH_REMINDER`, then re-run the held-out suite twice and one same-day golden eval (with none as control), and promote it if correctness holds.
+Sandwich rewording measured and rejected (quality recovered, held-out protection lost); strict wording kept, opt-in. **Adversarial work complete on this branch; nothing outstanding for Astra review beyond the flag above.**
