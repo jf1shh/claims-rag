@@ -9,7 +9,7 @@ AutoClaimsRAG is a local-first, evidence-grounded research assistant for auto in
 | `backend/` | FastAPI application, retrieval engine, router, and domain services |
 | `frontend/` | Browser UI for claims, documents, chat, and pipeline traces |
 | `tests/` | Unit and integration tests for parsing, retrieval, scoping, and API behavior |
-| `eval/` | Golden queries, retrieval parity, and answer-quality evaluation |
+| `eval/` | Golden queries, retrieval parity, answer-quality evaluation, and the adversarial suite (`eval/adversarial/`, results in `docs/adversarial-evaluation.md`) |
 | `docs/` | Approved specifications, plans, migration and operational documentation |
 | `docs/build-history.md` | Completed phases 1-18, Debugging History, and the full session log — moved out of `CLAUDE.md` 2026-09-05; not loaded by default |
 | `alembic/` | Postgres schema migrations (`alembic.ini` at root); `0001_initial_enterprise_schema.py` defines tenant_id/RLS/HNSW |

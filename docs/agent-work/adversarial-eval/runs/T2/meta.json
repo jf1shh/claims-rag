@@ -1,0 +1,23 @@
+{
+  "route": "deepseek/deepseek-v4.1-flash",
+  "effort": "high",
+  "mode": "write",
+  "workspace": "/home/jaredf/Projects/jf1shh/auto-claims-rag",
+  "session": "01a0dcbe-f290-7f93-8656-2558b655dd26",
+  "exit_code": 0,
+  "seconds": 224,
+  "usage": {
+    "input_tokens": 3290484,
+    "cached_input_tokens": 3238400,
+    "cache_write_input_tokens": 0,
+    "output_tokens": 50830,
+    "reasoning_output_tokens": 24244
+  },
+  "errors": [],
+  "log_tail": [
+    "2026-09-26T08:05:52.394406Z ERROR codex_core::tools::router: error=apply_patch verification failed: invalid hunk at line 6, '' is not a valid hunk header. Valid hunk headers: '*** Add File: {path}', '*** Delete File: {path}', '*** Update File: {path}'",
+    "2026-09-26T08:06:22.150492Z ERROR codex_core::tools::router: error=apply_patch verification failed: invalid hunk at line 4, '' is not a valid hunk header. Valid hunk headers: '*** Add File: {path}', '*** Delete File: {path}', '*** Update File: {path}'",
+    "2026-09-26T08:07:39.549438Z ERROR codex_core::tools::router: error=exec_command failed: CreateProcess { message: \"Rejected(\\\"`/usr/bin/bash -lc \\\\\\\"rm -rf /tmp/advcheck && mkdir -p /tmp/advcheck && .venv/bin/python - <<'PY'\\\\nimport sqlite3\\\\nconn = sqlite3.connect(\\\\\\\\\\\\\\\"/tmp/advcheck/source.db\\\\\\"
+  ],
+  "resumed": false
+}

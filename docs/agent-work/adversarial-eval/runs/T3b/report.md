@@ -1,0 +1,17 @@
+**STATUS: ready_for_review** — with one required case explicitly reported as unreachable (B11). T3 correction, workspace `/home/jaredf/Projects/jf1shh/auto-claims-rag` (branch `eval/adversarial-suite`, HEAD `70bf617`), report at [report-fix.md](/home/jaredf/Projects/jf1shh/auto-claims-rag/docs/agent-work/adversarial-eval/runs/T3/report-fix.md).
+
+**Changed files**
+- [backend/answer_guard.py](/home/jaredf/Projects/jf1shh/auto-claims-rag/backend/answer_guard.py) — all four corrections above the root's block: NFKC + curly-quote `_clean` and NFKC contact scan; `SKIP_ALWAYS`/`SKIP_MODAL`/`SKIP`/`SPECIFIC_CLAIM` with clause-local skip (`;`/`:`) and question-drop; the `OUTCOME_PATTERNS` replacement exactly as briefed; `hxxp`/IGNORECASE URLs, markdown destinations, obfuscated emails, lowercase-excerpt de-duplication. The root's `GuardMode`/`_WITHHELD_WHAT`/`withheld_text`/`apply_guard` (l.301-344) are byte-identical and untouched.
+- [tests/test_answer_guard.py](/home/jaredf/Projects/jf1shh/auto-claims-rag/tests/test_answer_guard.py) — 82 tests: all correction cases plus the original set. `tests/test_api_answer_guard.py` and everything else untouched.
+
+**Verification**
+- `.venv/bin/pytest tests/test_answer_guard.py tests/test_api_answer_guard.py -q` → exit 0, `88 passed, 1 xfailed in 4.97s`
+- `.venv/bin/ruff check backend/answer_guard.py tests/test_answer_guard.py` → exit 0, `All checks passed!` (`ruff check .` also clean)
+- `... pytest tests/ -q -p no:cacheprovider --ignore=tests/test_api_audit.py` → exit 0, `514 passed, 17 skipped, 1 xfailed` (extra, without `--ignore`: `525 passed, 17 skipped, 1 xfailed`)
+- Both full-suite rows needed the CI offline env plus the scratch `/tmp/sandbox_loop_shim` from cycle one: the plain command still hangs at the first `TestClient` request here (faulthandler dump: portal thread parked in `selectors.select` under `anyio.from_thread`); the root's rerun needs neither.
+
+**Required case that cannot pass with the patterns as written: B11** `"Claim no. 2026-99382 was approved."` → expected `approved`, returns `[]`. Trace: the split half works (`split_sentences` → one sentence) and `approved[0]` would match (span 0-33), but `SKIP_ALWAYS`'s bare `no` matches first — `\bno\b` at span (6, 8) on the `no` of `no.`, since `.` is a word boundary — and the spec skips any clause matching `SKIP_ALWAYS` without a `SPECIFIC_CLAIM` override. The same constant is what makes B9 work, so no pattern was invented; the test is present and marked `xfail(strict=False)` with the reason and report path (suite stays green, XPASS if it is ever closed). Owner options: `no(?!\s*\.\s*\d)` in `SKIP_ALWAYS`, or extending the `SPECIFIC_CLAIM` override to `SKIP_ALWAYS`.
+
+**Evidence:** 19/19 golden references now clean (the live `rostova-hydrolock-coverage` withhold on `### Final Determination` is closed); the recorded attacks are unchanged except `inj-forge-deny-rostova` now reports only `denied`; the live-miss sentence is caught; all other B*/F* cases behave as specified, with B8, Cyrillic B12 and F9 asserted as documented limits.
+
+**Risks for you:** the B11 decision; markdown-destination excerpts still get the original trailing `.,;:)` strip; obfuscated-email pattern 2 deliberately requires spelled `at` *and* `dot` (the `"Meet the appraiser at Caliber."` prose case is a test); `closed[0]`'s `file is closed` remains a known false positive with its own test. No commits, no network, no other files touched.

@@ -65,6 +65,21 @@ rollback if production measurements show a regression. The implementation preser
 result ordering and isolates caller-owned passage dictionaries; see the approved
 design and the Phase 6.1 migration record for verification and benchmark status.
 
+### Answer guard, conflict check and prompt defenses
+
+These settings come from the adversarial evaluation (`docs/adversarial-evaluation.md`), which holds the
+measurements behind each default.
+
+| Setting | Default | Effect |
+|---|---|---|
+| `ANSWER_GUARD_MODE` | `withhold` | `withhold` replaces an answer that asserts an unsupported claim outcome or contains an off-allowlist URL or email (status `insufficient_evidence`, sources kept). `flag` keeps the text and records findings. `off` disables the guard |
+| `ANSWER_GUARD_ALLOWED_DOMAINS` | empty | Comma-separated domains an answer may link to or cite as a contact; subdomains are included |
+| `CONFLICT_CHECK` | `llm` | One short extra model call per answer extracts each source's value. Differing numbers across sources set `conflicting_evidence`. Measured at about +3–4.5 s per answer. `off` skips it |
+| `PROMPT_DEFENSE` | `sanitize` | Comma list of `sanitize`, `sandwich`, `datamark`, or `none`. `sandwich` roughly halves held-out injection success but costs about 0.12 factual correctness. `datamark` made this model worse |
+
+Before changing any of them, re-run the adversarial suite and the golden eval, and compare against the
+recorded runs in `eval/prompt_defense_ab.json`.
+
 ## Docker
 
 ```bash

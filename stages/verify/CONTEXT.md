@@ -15,7 +15,11 @@ Run focused tests first, then the full pytest suite, retrieval parity/evaluation
 - Evidence-required synthesis and refusal behavior pass.
 - Claim and tenant isolation pass.
 - Input, path, URL, and upload limits pass.
-- API contracts and decision boundary remain valid.
+- API contracts and decision boundary remain valid. The answer guard keeps asserted claim outcomes
+  consistent with the claim record (`tests/test_answer_guard.py`, `tests/test_api_answer_guard.py`).
+- Adversarial regression: for changes to prompts, `backend/answer_guard.py`, `backend/conflict_check.py`
+  or `backend/prompt_defense.py`, compare `eval/run_adversarial_eval.py` (known and held-out) and
+  `eval/golden_guard_check.py` against `docs/adversarial-evaluation.md` and `eval/prompt_defense_ab.json`.
 - Documentation and configuration match the implementation.
 
 ## Audit

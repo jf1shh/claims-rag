@@ -71,5 +71,7 @@ implementation_plan.md
 *.db-shm
 *.db-journal
 *.jsonl.lock
+*.json.lock
 
 .venv
+eval/adversarial/.work/

@@ -75,6 +75,15 @@ CLAIMS_DATA = [
     }
 ]
 
+
+def claim_record_status(claim_id: Optional[str]) -> Optional[str]:
+    """The claim record's own status (e.g. "Under Review"), or None for global scope or an
+    unknown claim. The answer guard checks asserted outcomes against this."""
+    if not claim_id:
+        return None
+    claim = next((c for c in CLAIMS_DATA if c["id"] == claim_id), None)
+    return claim.get("status") if claim else None
+
 class AgenticRAGRouter:
 
     def _get_claim_context_markdown(self, claim_id: str) -> str:
@@ -116,10 +125,32 @@ class AgenticRAGRouter:
         max_global = getattr(caps, "context_max_global_matches", 4)
         max_chars = getattr(caps, "context_max_prompt_chars", 60000)
 
+        # Prompt-injection defenses (backend/prompt_defense.py, PROMPT_DEFENSE). `sanitize`
+        # rewrites the excerpts themselves, so the evidence returned to callers is exactly the
+        # text the model saw; `datamark` is render-only (users keep readable excerpts);
+        # `sandwich` restates the untrusted-data rule after the sources.
+        from backend.prompt_defense import (
+            DATAMARK, DATAMARK_SYSTEM_NOTE, SANDWICH_REMINDER, datamark, parse_defenses, sanitize,
+        )
+        defenses = parse_defenses(getattr(caps, "prompt_defense", "none"))
+
+        def _sanitized(matches_in):
+            out = []
+            for match in matches_in or []:
+                result = sanitize(str(match.get("content", "")))
+                out.append({**match, "content": result.text, "sanitized_sentences": len(result.removed)}
+                           if result.removed else match)
+            return out
+
+        if "sanitize" in defenses:
+            claim_chunks = _sanitized(claim_chunks)
+            global_matches = _sanitized(global_matches)
+        sandwich = f"{SANDWICH_REMINDER}\n\n" if "sandwich" in defenses else ""
+
         claim_context = self._get_claim_context_markdown(claim_id) if claim_id else ""
         overhead = (f"Active Claim ID: {claim_id if claim_id else 'None (Global Scope)'}\n\n"
                     f"{claim_context}\n\nHere are the matching reference sources from the policy guidelines:\n\n"
-                    f"<user_query>{query_text}</user_query>\n\nGenerate your structured response:")
+                    f"<user_query>{query_text}</user_query>\n\n{sandwich}Generate your structured response:")
         max_chars = max(0, max_chars - len(overhead))
         dossier = list(claim_chunks or [])[:max_claim]
         global_top = sorted(global_matches or [], key=lambda m: m.get("score", 0.0), reverse=True)
@@ -140,6 +171,8 @@ class AgenticRAGRouter:
             "caps, deductibles) if asked. If the source guidelines exclude coverage or indicate fraud, "
             "state it clearly. Cite source filenames in your explanation."
         )
+        if "datamark" in defenses:
+            system_prompt += " " + DATAMARK_SYSTEM_NOTE
 
         def _escape_source_field(value: Any) -> str:
             # Neutralize characters that would let a document's own content
@@ -150,9 +183,13 @@ class AgenticRAGRouter:
             # closing the file="..." attribute.
             return str(value).replace("&", "&amp;").replace("<", "&lt;").replace('"', "&quot;")
 
+        def _source_content(match: Dict[str, Any]) -> str:
+            content = str(match["content"])
+            return datamark(content) if "datamark" in defenses else content
+
         def _render_source_block(match: Dict[str, Any]) -> str:
             filename = _escape_source_field(match["filename"])
-            content = _escape_source_field(match["content"])
+            content = _escape_source_field(_source_content(match))
             return f"<source file=\"{filename}\" score=\"{match.get('score', 0.0):.3f}\">\n{content}\n</source>"
 
         blocks = [_render_source_block(match) for match in top_matches]
@@ -204,10 +241,11 @@ class AgenticRAGRouter:
                 footer = "\n</source>"
                 content_budget = budget - sep - len(header) - len(footer)
                 if content_budget > 0:
-                    truncated_content = _truncate_escaped(_escape_source_field(match["content"]), content_budget)
+                    truncated_content = _truncate_escaped(_escape_source_field(_source_content(match)), content_budget)
                     kept_blocks.append(header + truncated_content + footer)
                     import html
-                    kept_matches.append({**match, "content": html.unescape(truncated_content)})
+                    # Evidence stays readable: undo the render-only datamark on the returned excerpt.
+                    kept_matches.append({**match, "content": html.unescape(truncated_content).replace(DATAMARK, " ")})
                 break
             top_matches = kept_matches
             filenames = [m["filename"] for m in top_matches]
@@ -219,7 +257,7 @@ class AgenticRAGRouter:
             f"{claim_context}\n\n"
             f"Here are the matching reference sources from the policy guidelines:\n{source_text}\n"
             f"<user_query>{query_text}</user_query>\n\n"
-            "Generate your structured response:"
+            f"{sandwich}Generate your structured response:"
         )
         return system_prompt, user_prompt, top_matches, filenames
 

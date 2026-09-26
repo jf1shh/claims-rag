@@ -1,0 +1,19 @@
+{
+  "route": "deepseek/deepseek-v4.1-flash",
+  "effort": "high",
+  "mode": "write",
+  "workspace": "/home/jaredf/Projects/jf1shh/auto-claims-rag",
+  "session": "01a0ddf8-3554-7360-b422-280f16cf2584",
+  "exit_code": 0,
+  "seconds": 179,
+  "usage": {
+    "input_tokens": 2811758,
+    "cached_input_tokens": 2769024,
+    "cache_write_input_tokens": 0,
+    "output_tokens": 35897,
+    "reasoning_output_tokens": 16552
+  },
+  "errors": [],
+  "log_tail": [],
+  "resumed": false
+}

@@ -33,6 +33,18 @@ model caches, or logs.
   Pre-migration documents are explicitly `legacy-unversioned` until reingested.
 - Synthesis checks for evidence again after context trimming. Source escaping/delimiting is a
   prompt-injection mitigation, not a proof that a model will ignore every malicious instruction.
+- Retrieved text is untrusted, and three measured controls sit around generation
+  (`docs/adversarial-evaluation.md`):
+  - `PROMPT_DEFENSE=sanitize` (the default) neutralises instruction-shaped sentences in excerpts.
+  - `ANSWER_GUARD_MODE=withhold` (the default) replaces an answer that asserts an unsupported claim
+    outcome (approved, paid, denied, referred, closed) or contains a URL or email outside
+    `ANSWER_GUARD_ALLOWED_DOMAINS`. The audit log records the guard's action and finding categories,
+    never the excerpts.
+  - `CONFLICT_CHECK=llm` labels disagreeing sources as `conflicting_evidence`.
+
+  Measured limits: attacks written with knowledge of the sanitizer still get through. The opt-in
+  `sandwich` defense cuts that, at a measured answer-quality cost. Streamed tokens are visible until the
+  final event replaces a withheld answer.
   Nearest-neighbor retrieval is not a calibrated relevance test; nonempty matches do not alone
   establish that a question is answerable. This requires ongoing adversarial/model evaluation.
 - JSON and final SSE answers include a validated `structured` evidence/interpretation/decision
