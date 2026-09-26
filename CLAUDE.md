@@ -232,6 +232,8 @@ September 6: portfolio hardening implemented and verified; see [validation and r
 
 ## Current State
 
+Local environment maintenance (2026-09-23): removed 18 orphan NVIDIA/CUDA distributions left after the earlier ROCm migration. PyTorch remains `2.13.0+rocm7.2`; all 180 remaining distributions pass `uv pip check`, and an RX 9070 XT tensor operation plus `sentence_transformers` import pass. Both Triton distributions were retained because their file namespaces can overlap. This is environment cleanup, not a new retrieval benchmark or phase change.
+
 As of September 6, the authoritative state is [portfolio-hardening.md](docs/portfolio-hardening.md): factory-owned dependencies, tenant/claim authorization, bounded parsing, concurrent audit appends, immutable versioned sources, privacy defaults, and isolated PR CI are implemented. Live answer-quality evaluation **was rerun on 2026-09-22** with the generator/judge loaded and `SIMULATION_MODE=false` — see the baseline entry under Known Issues and `docs/portfolio-hardening.md`. Adversarial and human-reviewed cases remain unrun. Earlier accomplishments below describe their original sessions, not current deployment or certification.
 
 ### Confirmed Working

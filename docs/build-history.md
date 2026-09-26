@@ -657,3 +657,7 @@ Per-phase implementation narratives formerly under `Current State → Confirmed 
 * **Publish staging (branch `chore/publish-staging`).** Staged publish preparation; nothing was made public.
 * **History audit before any publish.** Git history was audited for content that must not be published; the remedy is tracked outside this repo.
 * **Not done**: adversarial evaluation (prompt injection via document content; conflicting-source queries such as endorsement vs. state statute) remains unrun and is now the named next evidence item. Nothing was made public; no history was rewritten.
+
+## Workspace maintenance — 2026-09-23
+
+Removed 18 orphan CUDA/NVIDIA packages from `.venv` after verifying no retained distribution requires them and no recorded files overlap retained distributions. Their recorded logical size was 2,881,035,012 bytes; this is not a physical disk-reclamation claim. Package/version inventory is retained in the local workspace optimization record. Preserved AMD torch `2.13.0+rocm7.2` and both Triton distributions. Before and after: sentence-transformers imports, GPU is RX 9070 XT, 16×16 ones matrix product sum is 4096. After: `uv pip check` passes all 180 remaining distributions. No application source, model, customer data or retrieval settings changed; current phase and remaining performance work stay unchanged.
