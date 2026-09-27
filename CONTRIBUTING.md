@@ -1,4 +1,4 @@
-# Contributing to AutoClaimsRAG
+# Contributing to ClaimsRAG
 
 ## Before changing code
 

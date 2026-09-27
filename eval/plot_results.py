@@ -31,7 +31,7 @@ def main():
     faithfulness_labels = FAITHFULNESS_HISTORY_LABELS + ["golden-corpus refresh"]
 
     fig, axes = plt.subplots(1, 3, figsize=(15, 4.5))
-    fig.suptitle("AutoClaimsRAG Evaluation Results (19 golden queries, local LM Studio judge)", fontsize=12)
+    fig.suptitle("ClaimsRAG Evaluation Results (19 golden queries, local LM Studio judge)", fontsize=12)
 
     # Panel 1: Context Precision / Recall, naive vs hybrid+rerank
     ax = axes[0]

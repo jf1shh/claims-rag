@@ -1,4 +1,4 @@
-# Local single-container run of AutoClaimsRAG (SQLite/filesystem profile,
+# Local single-container run of ClaimsRAG (SQLite/filesystem profile,
 # matching the app's own MVP default -- see docs/enterprise-migration.md for
 # the Postgres/S3/SQS profile, which is opt-in via the same env vars .env.example
 # documents and isn't wired into this file to keep the default path simple).
@@ -30,7 +30,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
-      - autoclaimsrag-data:/app/data
+      - claimsrag-data:/app/data
 
 volumes:
-  autoclaimsrag-data:
+  claimsrag-data:

@@ -1,12 +1,12 @@
-# AutoClaimsRAG
+# ClaimsRAG
 
-[![tests](https://github.com/jf1shh/auto-claims-rag/actions/workflows/tests.yml/badge.svg)](https://github.com/jf1shh/auto-claims-rag/actions/workflows/tests.yml)
+[![tests](https://github.com/jf1shh/claims-rag/actions/workflows/tests.yml/badge.svg)](https://github.com/jf1shh/claims-rag/actions/workflows/tests.yml)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![release](https://img.shields.io/github/v/release/jf1shh/auto-claims-rag)](https://github.com/jf1shh/auto-claims-rag/releases/tag/v1.0.0)
+[![release](https://img.shields.io/github/v/release/jf1shh/claims-rag)](https://github.com/jf1shh/claims-rag/releases/tag/v1.0.0)
 
 A local-first, agentic RAG system for auto insurance claims handling — built to show what happens when domain expertise and modern retrieval/agentic AI techniques compound instead of substitute for each other.
 
-![AutoClaimsRAG demo — selecting a theft claim and running an OEM parts rider audit against a local LM Studio model](assets/demo.gif)
+![ClaimsRAG demo — selecting a theft claim and running an OEM parts rider audit against a local LM Studio model](assets/demo.gif)
 
 *Live demo: selecting a theft claim, then running an "OEM Parts Rider" audit. The agentic router plans sub-queries, retrieves from both global policy documents and the claim's own dossier (police report, parts receipts), and a fully local 14B model synthesizes a grounded, per-line-item answer with clickable source citations.*
 
@@ -14,7 +14,7 @@ A local-first, agentic RAG system for auto insurance claims handling — built t
 
 ## Why this exists
 
-Claims handlers spend a meaningful share of every day hunting through scattered PDFs, spreadsheets, and adjuster guides for the one fact that resolves a claim — a labor rate cap, an exclusion clause, a rider's eligibility window. AutoClaimsRAG was built by an insurance claims/appraisal professional with 17 years in the industry, so the evaluation and design decisions are shaped by what real adjusting judgment calls look like: exclusion stacking, regional rate caps, SIU fraud patterns, endorsement math, subrogation eligibility.
+Claims handlers spend a meaningful share of every day hunting through scattered PDFs, spreadsheets, and adjuster guides for the one fact that resolves a claim — a labor rate cap, an exclusion clause, a rider's eligibility window. ClaimsRAG was built by an insurance claims/appraisal professional with 17 years in the industry, so the evaluation and design decisions are shaped by what real adjusting judgment calls look like: exclusion stacking, regional rate caps, SIU fraud patterns, endorsement math, subrogation eligibility.
 
 Everything in this repo runs on synthetic, generated seed data — no proprietary or confidential content of any kind.
 
@@ -161,7 +161,7 @@ against a database containing the requested number of tenant corpora.
 
 ## ICM workflow
 
-AutoClaimsRAG uses an additive **Interpretable Context Methodology (ICM)** layer to make engineering context and evidence visible. `IDENTITY.md` maps the repository, `CONTEXT.md` routes work, and `stages/{sense,propose,act,verify,learn}/` define the workflow contracts. ICM does not replace the approved specifications, tests, or CI; it points contributors to them.
+ClaimsRAG uses an additive **Interpretable Context Methodology (ICM)** layer to make engineering context and evidence visible. `IDENTITY.md` maps the repository, `CONTEXT.md` routes work, and `stages/{sense,propose,act,verify,learn}/` define the workflow contracts. ICM does not replace the approved specifications, tests, or CI; it points contributors to them.
 
 Claims-facing responses follow the same separation:
 

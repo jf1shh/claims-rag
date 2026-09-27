@@ -20,7 +20,7 @@ def format_finding(finding: Finding) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Run deterministic AutoClaimsRAG foundation gates")
+    parser = argparse.ArgumentParser(description="Run deterministic ClaimsRAG foundation gates")
     parser.add_argument("--mode", choices=("advisory", "gate"), default="advisory")
     parser.add_argument("--root", type=Path, default=ROOT)
     args = parser.parse_args(argv)

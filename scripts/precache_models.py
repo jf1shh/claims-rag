@@ -1,4 +1,4 @@
-"""Pre-download the two local models AutoClaimsRAG needs.
+"""Pre-download the two local models ClaimsRAG needs.
 
 The app deliberately forces offline mode (HF_HUB_OFFLINE=1 in backend/app.py),
 so on a fresh machine the models must already be in the Hugging Face cache or

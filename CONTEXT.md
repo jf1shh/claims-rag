@@ -1,4 +1,4 @@
-# AutoClaimsRAG — ICM Routing
+# ClaimsRAG — ICM Routing
 
 ## What do you want to do?
 

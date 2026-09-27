@@ -1,5 +1,5 @@
 [tool.ruff]
-# Lint settings for the AutoClaimsRAG repo. Keep deliberately small: we want
+# Lint settings for the ClaimsRAG repo. Keep deliberately small: we want
 # lightweight, deterministic gates (unused imports, undefined names, bare
 # excepts, etc.) — not opinionated style churn.
 line-length = 120

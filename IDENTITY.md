@@ -1,6 +1,6 @@
-# AutoClaimsRAG — Identity
+# ClaimsRAG — Identity
 
-AutoClaimsRAG is a local-first, evidence-grounded research assistant for auto insurance claims. It uses synthetic data in this repository and must not be described as an autonomous claims adjudicator.
+ClaimsRAG is a local-first, evidence-grounded research assistant for auto insurance claims. It uses synthetic data in this repository and must not be described as an autonomous claims adjudicator.
 
 ## Workspace map
 

@@ -1,6 +1,6 @@
 # Security
 
-The repository contains synthetic data only. AutoClaimsRAG is a claims research assistant;
+The repository contains synthetic data only. ClaimsRAG is a claims research assistant;
 its answers are interpretations for human review, never completed coverage, fraud, payment,
 denial, or referral decisions. Do not commit customer documents, credentials, runtime data,
 model caches, or logs.

@@ -1,6 +1,6 @@
 # Portfolio hardening — September 6, 2026
 
-This remediation addresses the implementation findings from the maintainer's repository review. AutoClaimsRAG remains a synthetic claims research portfolio project. Passing these checks does not certify claims correctness or a production deployment.
+This remediation addresses the implementation findings from the maintainer's repository review. ClaimsRAG remains a synthetic claims research portfolio project. Passing these checks does not certify claims correctness or a production deployment.
 
 ## Implemented changes
 

@@ -1,13 +1,13 @@
-# AutoClaimsRAG — Engineering Guide
+# ClaimsRAG — Engineering Guide
 
 > **This is a living document.** Every session reads it at the start and updates it at the end.
-> **GitHub Repository**: [jf1shh/auto-claims-rag](https://github.com/jf1shh/auto-claims-rag)
+> **GitHub Repository**: [jf1shh/claims-rag](https://github.com/jf1shh/claims-rag)
 
 ---
 
 ## What This Project Is
 
-AutoClaimsRAG is a high-performance local RAG (Retrieval-Augmented Generation) system designed for auto insurance claims handlers to query reference documentation using natural language. It allows users to search, extract, and draft responses from guidelines, endorsements, state codes, and adjuster reports. The application runs entirely locally: it generates embeddings using a local CPU-based model (`sentence-transformers/all-MiniLM-L6-v2`), indexes them in a local SQLite database, and answers queries through a **stateful agentic RAG router** that plans, retrieves, self-corrects, and synthesizes.
+ClaimsRAG is a high-performance local RAG (Retrieval-Augmented Generation) system designed for auto insurance claims handlers to query reference documentation using natural language. It allows users to search, extract, and draft responses from guidelines, endorsements, state codes, and adjuster reports. The application runs entirely locally: it generates embeddings using a local CPU-based model (`sentence-transformers/all-MiniLM-L6-v2`), indexes them in a local SQLite database, and answers queries through a **stateful agentic RAG router** that plans, retrieves, self-corrects, and synthesizes.
 
 Retrieval is **hybrid**: dense vector search over child chunks is fused with FTS5 keyword search over parent chunks via Reciprocal Rank Fusion (RRF), then re-ordered by a local cross-encoder reranker. Documents can be scoped globally or attached to a specific claim folder. Generation is routed to a local LM Studio server (OpenAI-compatible `/v1`) with a high-fidelity rule-based simulation fallback when no LLM is loaded.
 
@@ -73,7 +73,7 @@ The project moves forward along the plan — never sideways or backwards.
 ### File Structure
 
 ```
-auto-claims-rag/
+claims-rag/
 ├── requirements.txt            ← Python project dependencies
 ├── config.py / app_factory.py  ← Typed settings + dependency-injected app factory (Phase 0)
 ├── Dockerfile / docker-compose.yml  ← Self-contained container image (Phase 6 infra)

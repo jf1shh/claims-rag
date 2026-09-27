@@ -1,4 +1,4 @@
-# AutoClaimsRAG — single-image container for the FastAPI backend + static frontend.
+# ClaimsRAG — single-image container for the FastAPI backend + static frontend.
 #
 # The app forces Hugging Face offline mode at import time (backend/app.py sets
 # HF_HUB_OFFLINE=1), so the embedding + reranker models must already be in the
