@@ -1,4 +1,4 @@
-# AutoClaimsRAG agent entry point
+# ClaimsRAG agent entry point
 
 Read [CLAUDE.md](CLAUDE.md) — the engineering guide and the canonical rules for
 this repository. It is a living document: every session reads it at the start and

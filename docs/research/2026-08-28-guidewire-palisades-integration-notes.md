@@ -1,7 +1,7 @@
 # Guidewire Palisades Integration Notes
 
 **Date:** 2026-08-28  
-**Scope:** Public Guidewire Palisades documentation and official Guidewire material reviewed for useful AutoClaimsRAG design patterns.
+**Scope:** Public Guidewire Palisades documentation and official Guidewire material reviewed for useful ClaimsRAG design patterns.
 
 ## Source limitations
 
@@ -15,7 +15,7 @@ The official Palisades ClaimCenter release highlights identify **Cloud API for C
 
 Source: [What's new in ClaimCenter for Palisades](https://docs.guidewire.com/cloud/palisades/whatsnew/topics/cc-release_highlights.html)
 
-Useful implication: an AutoClaimsRAG integration should treat upstream API versions and endpoint permissions as explicit configuration and deployment artifacts, not assume that a token automatically grants access to every claim/document operation.
+Useful implication: an ClaimsRAG integration should treat upstream API versions and endpoint permissions as explicit configuration and deployment artifacts, not assume that a token automatically grants access to every claim/document operation.
 
 ### 2. ClaimCenter exposes lifecycle-style operations, not just read-only records
 
@@ -23,7 +23,7 @@ The Palisades release page lists bulk invoice resources and custom actions inclu
 
 Source: [What's new in ClaimCenter for Palisades](https://docs.guidewire.com/cloud/palisades/whatsnew/topics/cc-release_highlights.html)
 
-Useful implication: future AutoClaimsRAG adapters must distinguish retrieval/read operations from commands or state-changing actions. Commands should require explicit human approval, idempotency, audit events, and command/result correlation.
+Useful implication: future ClaimsRAG adapters must distinguish retrieval/read operations from commands or state-changing actions. Commands should require explicit human approval, idempotency, audit events, and command/result correlation.
 
 ### 3. Guidewire describes an API-first integration framework
 
@@ -31,7 +31,7 @@ Guidewire’s official integration-framework page describes connecting external 
 
 Source: [Guidewire Integration Framework](https://www.guidewire.com/de/developers/developer-tools-and-guides/integration-framework)
 
-Useful implication: AutoClaimsRAG should provide a provider-neutral integration adapter and avoid embedding carrier-specific logic inside retrieval or answer generation.
+Useful implication: ClaimsRAG should provide a provider-neutral integration adapter and avoid embedding carrier-specific logic inside retrieval or answer generation.
 
 ### 4. Guidewire App Events support downstream event-driven workflows
 
@@ -39,7 +39,7 @@ Guidewire’s official App Events article states that App Events are generally a
 
 Source: [Simplify Event-Driven Integrations on Guidewire Cloud with App Events](https://www.guidewire.com/de/resources/blog/technology/simplify-event-driven-integrations-on-guidewire-cloud-with-app-events)
 
-Useful implication: AutoClaimsRAG should support event-driven ingestion and re-evaluation instead of polling every claim. Relevant event types might include claim created/updated, document added, exposure updated, invoice changed, or claim status changed, with tenant and claim scope carried through the event envelope.
+Useful implication: ClaimsRAG should support event-driven ingestion and re-evaluation instead of polling every claim. Relevant event types might include claim created/updated, document added, exposure updated, invoice changed, or claim status changed, with tenant and claim scope carried through the event envelope.
 
 ### 5. The Palisades release includes new document-related API surface elsewhere in the platform
 
@@ -52,10 +52,10 @@ Useful implication: document synchronization should be built as a versioned, met
 ## What is not established
 
 - The public sources reviewed do not establish which insurers use Palisades or ClaimCenter. Customer-specific usage should not be claimed without a reliable company or Guidewire source.
-- The sources do not establish that AutoClaimsRAG can access a customer’s ClaimCenter tenant without customer-provided credentials, permissions, and an approved integration arrangement.
+- The sources do not establish that ClaimsRAG can access a customer’s ClaimCenter tenant without customer-provided credentials, permissions, and an approved integration arrangement.
 - The sources reviewed do not provide enough authenticated API detail to implement a production ClaimCenter connector safely.
 
-## Design changes recommended for AutoClaimsRAG
+## Design changes recommended for ClaimsRAG
 
 ### A. Add an upstream integration boundary
 
@@ -120,5 +120,5 @@ Before enabling a ClaimCenter adapter:
 - **Foundation:** define `ClaimsSystemAdapter`, remote provenance fields, event envelope, and read-only contract tests using fakes.
 - **Phase 1/2:** implement a read-only ClaimCenter adapter after authenticated API access and permissions are available; synchronize claim metadata and documents into the existing tenant-aware data plane.
 - **Phase 3:** consume App Events or an equivalent customer-approved webhook/event channel to trigger idempotent ingestion jobs.
-- **Phase 4:** integrate identity and role mapping; map upstream roles/scopes to AutoClaimsRAG permissions.
+- **Phase 4:** integrate identity and role mapping; map upstream roles/scopes to ClaimsRAG permissions.
 - **Later:** consider explicitly approved state-changing commands such as invoice or claim actions. Keep these outside retrieval and require human confirmation, idempotency, audit, and rollback/compensation semantics.

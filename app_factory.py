@@ -260,7 +260,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 close_reranker()
             dependencies.queue.close()
 
-    app = FastAPI(title="AutoClaimsRAG API", lifespan=lifespan)
+    app = FastAPI(title="ClaimsRAG API", lifespan=lifespan)
     app.state.settings = resolved
     app.state.dependencies = dependencies
     app.state.runtime = runtime

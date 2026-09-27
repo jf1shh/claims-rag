@@ -1,5 +1,5 @@
 """
-Domain-grounded retrieval + groundedness evaluation for AutoClaimsRAG.
+Domain-grounded retrieval + groundedness evaluation for ClaimsRAG.
 
 Two things are measured, both against the golden query set in golden_queries.py:
 
@@ -156,7 +156,7 @@ async def score_correctness(correctness_metric, response, reference):
 
 
 async def main():
-    print("=== AutoClaimsRAG Domain-Grounded Evaluation ===\n")
+    print("=== ClaimsRAG Domain-Grounded Evaluation ===\n")
 
     model = get_loaded_model()
     print(f"Judge model (LM Studio): {model}\n")

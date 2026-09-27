@@ -11,7 +11,7 @@
 > CLAUDE.md's What's Next and is the source of truth for the migration. Each phase
 > updates its milestone statuses here.
 
-Target: a multi-tenant, production-grade version of AutoClaimsRAG. Everything is
+Target: a multi-tenant, production-grade version of ClaimsRAG. Everything is
 provider-neutral except where noted (assumes AWS: managed Postgres on RDS/Aurora,
 S3, SQS, Fargate/Lambda workers, KMS).
 

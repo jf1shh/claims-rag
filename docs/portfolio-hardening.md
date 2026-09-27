@@ -1,6 +1,6 @@
 # Portfolio hardening — September 6, 2026
 
-This remediation addresses the implementation findings from the maintainer's repository review. AutoClaimsRAG remains a synthetic claims research portfolio project. Passing these checks does not certify claims correctness or a production deployment.
+This remediation addresses the implementation findings from the maintainer's repository review. ClaimsRAG remains a synthetic claims research portfolio project. Passing these checks does not certify claims correctness or a production deployment.
 
 ## Implemented changes
 
@@ -14,7 +14,7 @@ This remediation addresses the implementation findings from the maintainer's rep
 | Audit/privacy | Cooperating processes append under a file lock, fsync writes, and recover a torn final record. API audit records omit full questions and answers; operational metadata can still be sensitive. Errors and status responses omit internal paths/provider details. Browser API responses are not cached. |
 | Evidence/functionality | Simulation is enforced server-side in JSON and streaming paths. Context is checked again after trimming. Responses include a structured evidence projection, source/chunk/version identifiers where available, and the exact supplied excerpts. Live retrieval honors configured rerank settings. |
 | Browser | API-key and bearer authentication use the correct headers; credentials are validated and stored for the browser session. Legacy persistent tokens are cleared. External fonts are removed. Dialog focus handling and labels improve keyboard access; ranking scores are no longer presented as confidence percentages. |
-| Packaging/CI | Docker uses explicit runtime copies, excludes environment/secret files, and Compose binds to loopback. Demo seeding includes its PDF dependency and uses temporary generated inputs. PRs and public runs use hosted CI; only private pushes may use the local runner. |
+| Packaging/CI | Docker uses explicit runtime copies, excludes environment/secret files, and Compose binds to loopback. Demo seeding includes its PDF dependency and uses temporary generated inputs. While the repository is private, pushes and owner-only PRs use the local runner; public runs use hosted CI. |
 | Evaluation honesty | Metric summaries include scored/failed counts and identify reference-coverage correctness. Parity embeddings are deterministic. Historical performance and answer-quality numbers are labeled separately from current verification. |
 
 ## Verification performed

@@ -15,13 +15,13 @@ env:
   TRANSFORMERS_OFFLINE: "1"
 
 jobs:
-  # Only private pushes may use the local runner; every PR and public run uses hosted Linux.
+  # While the repo is private, pushes and PRs (owner-only) use the local runner; any public run uses hosted Linux.
   pytest-linux:
-    runs-on: ${{ github.event.repository.private && github.event_name == 'push' && fromJSON('["self-hosted", "linux", "autoclaimsrag"]') || 'ubuntu-latest' }}
+    runs-on: ${{ github.event.repository.private && fromJSON('["self-hosted", "linux", "claimsrag"]') || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        if: github.event_name != 'push' || !github.event.repository.private
+        if: ${{ !github.event.repository.private }}
         with:
           python-version: '3.12'
 
@@ -69,7 +69,7 @@ jobs:
   # >>> BEFORE MAKING THIS REPO PUBLIC: same change as pytest-linux above --
   # switch `runs-on` to `ubuntu-latest`. See that comment for why.
   postgres:
-    runs-on: ${{ github.event.repository.private && github.event_name == 'push' && fromJSON('["self-hosted", "linux", "autoclaimsrag"]') || 'ubuntu-latest' }}
+    runs-on: ${{ github.event.repository.private && fromJSON('["self-hosted", "linux", "claimsrag"]') || 'ubuntu-latest' }}
     services:
       postgres:
         image: pgvector/pgvector:pg16
@@ -89,7 +89,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        if: github.event_name != 'push' || !github.event.repository.private
+        if: ${{ !github.event.repository.private }}
         with:
           python-version: '3.12'
 

@@ -1,4 +1,4 @@
-# Domain-grounded golden query set for AutoClaimsRAG retrieval evaluation.
+# Domain-grounded golden query set for ClaimsRAG retrieval evaluation.
 #
 # Every `reference` answer below was verified against the actual text stored in
 # rag_store.db (not against agentic_router.py's simulated-mode narrative, which

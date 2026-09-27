@@ -1,8 +1,8 @@
-# AutoClaimsRAG Enterprise Foundation Implementation Plan
+# ClaimsRAG Enterprise Foundation Implementation Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Convert the local AutoClaimsRAG prototype into a secure, configurable, observable, testable foundation ready for Postgres, object storage, async ingestion, and enterprise tenancy.
+**Goal:** Convert the local ClaimsRAG prototype into a secure, configurable, observable, testable foundation ready for Postgres, object storage, async ingestion, and enterprise tenancy.
 
 **Architecture:** Preserve the existing `VectorStore` retrieval seam and add focused boundaries for configuration, application construction, blob storage, audit events, tenant context, and structured grounded responses. Keep SQLite/filesystem/local-model mode as the hermetic development profile while making production boundaries explicit and migration-safe. Add an ICM navigation layer and a deterministic Python harness whose critical controls are tested and whose new sensors are advisory until proven.
 

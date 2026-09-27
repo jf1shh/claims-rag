@@ -51,7 +51,7 @@ def _provision_schema(dsn: str) -> None:
 
 
 def _start_docker_postgres(port: int) -> str:
-    name = f"autoclaimsrag-loadtest-pg-{secrets.token_hex(4)}"
+    name = f"claimsrag-loadtest-pg-{secrets.token_hex(4)}"
     subprocess.run(
         [
             "docker", "run", "-d", "--name", name,

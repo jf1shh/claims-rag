@@ -1,4 +1,4 @@
-# AutoClaimsRAG Enterprise Foundation Design
+# ClaimsRAG Enterprise Foundation Design
 
 **Date:** 2026-08-28
 **Status:** Draft for review
@@ -6,9 +6,9 @@
 
 ## Goal
 
-Make AutoClaimsRAG installable, secure-by-default, observable, and ready for production data-plane scaling while preserving its local-first developer experience and existing retrieval behavior.
+Make ClaimsRAG installable, secure-by-default, observable, and ready for production data-plane scaling while preserving its local-first developer experience and existing retrieval behavior.
 
-AutoClaimsRAG is a claims research and document-grounding system. It helps handlers find and verify evidence from policy and claim documents; it does not independently make coverage, fraud, or payment decisions.
+ClaimsRAG is a claims research and document-grounding system. It helps handlers find and verify evidence from policy and claim documents; it does not independently make coverage, fraud, or payment decisions.
 
 ## Current system
 
@@ -80,7 +80,7 @@ Model/provider configuration must also be injectable rather than allowing reques
 
 ### F6. Harness controls and ICM navigation
 
-AutoClaimsRAG will adopt the useful governance patterns from the other repositories without copying their frontend-specific tooling. The implementation is Python/FastAPI, so runtime contracts use Pydantic, tests use pytest, and the harness is a deterministic Python or cross-platform command-line layer.
+ClaimsRAG will adopt the useful governance patterns from the other repositories without copying their frontend-specific tooling. The implementation is Python/FastAPI, so runtime contracts use Pydantic, tests use pytest, and the harness is a deterministic Python or cross-platform command-line layer.
 
 ICM is an additive navigation and evidence layer, not a second application framework. It must point to authoritative artifacts rather than duplicate them.
 
