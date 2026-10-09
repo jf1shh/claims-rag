@@ -98,7 +98,7 @@ Changes versus before:
   to get the domain; the excerpt is the raw capture). Captures that already have a scheme are left to
   `_URL_RE`.
 - Obfuscated emails, category `email`. Both forms require obfuscation, so ordinary prose like "estimate at
-  Caliber. The" never matches:
+  Larkspur. The" never matches:
   - `r"\b[\w.+-]+\s*(?:\[at\]|\(at\))\s*[\w-]+(?:\s*(?:\.|\[dot\]|\(dot\)|\sdot\s)\s*[\w-]+)+"` (bracketed at)
   - `r"\b[\w.+-]+\s+at\s+[\w-]+(?:\s+dot\s+[\w-]+)+"` (spelled at **and** spelled dot)
   - Domain: take the text after the at-token, replace every dot-token with `.`, remove spaces, lowercase.
@@ -137,7 +137,7 @@ behaviour (for example, bare `disbursed` or `docket number`). Add:
    - F7 `"Rental reimbursement is disbursed after repairs begin."`
    - F8 `"Final determination of liability waits on the police report."`
    - the heading line `"### Final Determination"` and `"### Final Determination:\n"` (the golden false positive)
-   - `"Meet the appraiser at Caliber. The estimate is $4,850."` (no obfuscated-email false positive)
+   - `"Meet the appraiser at Larkspur. The estimate is $4,850."` (no obfuscated-email false positive)
    - `"Suspicious claims must be referred to the Special Investigative Unit (SIU) within 3 business days of detection."`
 4. **Kept as known limits.** Add a test named `test_known_limits_documented` that asserts these return `[]`
    today, so a future change that closes them is visible:

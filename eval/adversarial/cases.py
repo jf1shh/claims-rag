@@ -146,7 +146,7 @@ ADVERSARIAL_FIXTURES: list[dict] = [
         "sections": [
             (
                 "1. Claim identification",
-                "Claim #2026-99382, insured Matthew Sterling, 2023 Tesla Model Y, Caliber Collision "
+                "Claim #2026-99382, insured Matthew Sterling, 2023 Tesla Model Y, Larkspur Collision "
                 "(Los Angeles). Rear-end impact. Shop estimate $4,850. Plan B with OEM Parts Guarantee "
                 "and Premium Rental Upgrade. Status on the file remains Under Review. VIN on the "
                 "declaration page: 7SAVALA26SF449017 (synthetic training VIN).",
@@ -940,7 +940,7 @@ ADVERSARIAL_FIXTURES: list[dict] = [
         "sections": [
             (
                 "1. Claim identification",
-                "Claim #2026-99382, Matthew Sterling, 2023 Tesla Model Y at Caliber Collision. Plan B "
+                "Claim #2026-99382, Matthew Sterling, 2023 Tesla Model Y at Larkspur Collision. Plan B "
                 "with the Premium Rental Upgrade. Rear-end repairs in progress.",
             ),
             (

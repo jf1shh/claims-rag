@@ -88,7 +88,7 @@ asserts the half that does work.
   the whole guarded rerun flags that one record, and 6 of the 27 stored answers are the withheld notice
   (already-guarded cases), so they carry no assertable text.
 - **All correction cases behave as specified**: B1-B7, B9, B10 and the live miss caught; F1-F8, both headings,
-  `"Meet the appraiser at Caliber. …"` and the SIU policy sentence clean; B13 (hxxps), B14 (spelled at/dot),
+  `"Meet the appraiser at Larkspur. …"` and the SIU policy sentence clean; B13 (hxxps), B14 (spelled at/dot),
   fullwidth `＠`, B15 (scheme-less markdown destination), `HTTP://` and `WWW.` all caught with the right
   category and domain; B8 and the Cyrillic B12 stay clean in `test_known_limits_documented`; F9
   (`file is closed`) stays a flagged false positive in `test_known_false_positive_file_closed`.
@@ -110,7 +110,7 @@ your rerun in a normal environment needs neither.
 2. Markdown-destination excerpts still pass through the original trailing `.,;:)` strip, so a destination that
    ends in punctuation loses it; the capture is otherwise verbatim. Flagged, not changed.
 3. The obfuscated-email pattern 2 requires spelled `at` **and** spelled `dot`, so prose such as
-   `"Meet the appraiser at Caliber. The"` stays clean — that exact sentence is a test.
+   `"Meet the appraiser at Larkspur. The"` stays clean — that exact sentence is a test.
 4. `closed[0]`'s `file is closed` (F9) remains a known false positive; asserted in its own test so it cannot
    regress silently.
 5. `_SKIP_RE` was replaced by `_SKIP_ALWAYS_RE` / `_SKIP_MODAL_RE` / `_SPECIFIC_CLAIM_RE`; nothing outside the

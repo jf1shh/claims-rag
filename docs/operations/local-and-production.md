@@ -95,35 +95,30 @@ Runtime state (`rag_store.db`, `stored_documents/`, `jobs.db`, `audit.log.jsonl`
 
 This image is a development/portfolio-demo profile, same as local SQLite mode (see Production boundary below) — it isn't a production deployment artifact on its own.
 
-## Local CI (self-hosted runner)
+## CI
 
-CI for this repo runs on a **self-hosted GitHub Actions runner** (`runs-on: [self-hosted, linux, claimsrag]`), not a GitHub-hosted VM — the repo is private, GitHub-hosted minutes are capped, and self-hosted matches the project's "runs entirely on my own machine, no cloud" design constraint. See `.github/workflows/tests.yml` and CLAUDE.md (Current State) for the full history and rationale.
+The repository is public, so `.github/workflows/tests.yml` runs both jobs on GitHub-hosted `ubuntu-latest` runners. Each job's `runs-on` is an expression that sends runs to the maintainer's self-hosted runner only while the repository is **private** (owner-only pushes and PRs). A public repository's runs — including external pull requests — never reach the maintainer's machine.
 
-> **Before making this repository public — required checklist** (do this *together with* flipping visibility, not before or instead):
->
-> 1. In `.github/workflows/tests.yml`, change `runs-on: [self-hosted, linux, claimsrag]` to `runs-on: ubuntu-latest` in both jobs (`pytest-linux` and `postgres`) — each `runs-on` line has a `>>> BEFORE MAKING THIS REPO PUBLIC` comment marking exactly where.
-> 2. Push that change and confirm both jobs go green on GitHub-hosted runners before merging anything else.
-> 3. Optionally stop/disable the self-hosted runner service (`systemctl --user disable --now actions-runner-claims-rag.service`) once nothing routes to it — it's no longer needed.
->
-> **Why this is the whole fix, not a tradeoff**: `tests.yml` triggers on plain `pull_request`, which a self-hosted runner must never execute untrusted code for once the repo is public — an external PR's code would run on Jared's own machine. Self-hosted was adopted *only* because GitHub-hosted minutes are capped on private repos; that cap doesn't exist for public repos (GitHub Actions is free/unlimited on standard hosted runners there). So switching to `ubuntu-latest` at the moment of going public simultaneously removes the security risk and the reason self-hosted was needed in the first place — there's no cost/benefit tradeoff to weigh, just do it. (A Windows leg could also be re-added at this point if the account billing issue — see below — is separately resolved; that's independent and optional.)
+- **What runs**:
+  - `pytest-linux` runs `ruff check .`, the foundation gates, the full `pytest tests/` suite, and the retrieval-parity self-check.
+  - `postgres` starts `pgvector/pgvector:pg16` in a workflow step and runs the full suite with `POSTGRES_DSN` set (so PG-gated cases execute), then `parity_runner --backend-b postgres --tolerance 0.9`.
+  - There is no Windows job; the two Windows-only traversal cases skip on Linux.
+- **No model downloads**: the workflow sets `HF_HUB_OFFLINE=1` and hosted runners start with an empty model cache, so any test that constructs the real embedding/reranker model fails there. API tests must stub `_get_embedding_engine` as well as the router (see the Critical Constraints in `CLAUDE.md`). Reproduce locally with an empty `HF_HOME` and `HF_HUB_OFFLINE=1`.
+- **Docker Hub pulls**: hosted runners share Docker Hub's anonymous pull limit, which can fail the `postgres` job before any test runs (`toomanyrequests`). Set the repository secrets `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN` (a read-only Docker Hub access token) under Settings → Secrets and variables → Actions. The start step logs in only when both are set; otherwise (forks, or before they exist) it pulls anonymously. The image is started as a step rather than a `services:` container because a service container's `credentials:` rejects empty secrets instead of skipping login.
+- **Status**: a run stuck *queued* on a hosted runner is GitHub capacity, not this repo. A red badge reflects the latest *completed* run on `main`.
 
-- **What runs**: `tests.yml` has two jobs, both on the self-hosted runner — `pytest-linux` (ruff + full `pytest tests/` + retrieval-parity self-check) and `postgres` (PG-gated tests + `parity_runner --backend-b postgres --tolerance 0.9` against a `pgvector/pgvector:pg16` service container, which requires Docker on the runner host). There is **no Windows leg** (no self-hosted Windows box; GitHub-hosted runners are blocked account-wide by a billing failure) — the two Windows-only traversal test cases always skip.
-- **How the runner is installed**: registered against this repo under `~/actions-runner-claims-rag` (runner `cachyos-x8664-claimsrag`, label `claimsrag`) and running as a systemd **user** service (`~/.config/systemd/user/actions-runner-claims-rag.service`) on the host, so it needs no root. Without `loginctl enable-linger`, a user service only runs while the owner is logged in. Both jobs build a per-run venv from the host's system `python3.12` (no `actions/setup-python` — no prebuilt release exists for this host's distro, CachyOS rolling).
+### Self-hosted runner (private-repository fallback only)
 
-### Checking the runner is healthy
+Kept for the case where the repository is made private again (GitHub-hosted minutes are capped on private repositories). It is registered under `~/actions-runner-claims-rag` (runner `cachyos-x8664-claimsrag`, label `claimsrag`) as a systemd **user** service (`actions-runner-claims-rag.service`); without `loginctl enable-linger` it only runs while the owner is logged in. On that host the jobs skip `actions/setup-python` (no prebuilt release for CachyOS rolling) and build a venv from the system `python3.12`. While the repo stays public nothing routes to it, and it can be disabled with `systemctl --user disable --now actions-runner-claims-rag.service`.
 
-A CI run that sits queued/stuck (not failed) usually means the runner's systemd service is down — check before assuming a workflow bug:
+If it is needed again, check it before assuming a workflow bug — a private-repo run stuck queued usually means the service is down:
 
 ```bash
 systemctl --user status actions-runner-claims-rag.service
 gh api repos/jf1shh/claims-rag/actions/runners --jq '.runners[] | {name, status}'
 ```
 
-The runner must show `status: online` (or a queued run never starts). Restart it with `systemctl --user restart actions-runner-claims-rag.service` on the runner host.
-
-### If the repo moves to a different machine
-
-The runner does **not** follow the git repo — it must be re-registered on the new host (`~/actions-runner-claims-rag/config.sh` against a fresh registration token from `gh api -X POST repos/jf1shh/claims-rag/actions/runners/registration-token`), and Docker + system Python 3.12 must be available there.
+The runner does not follow the git repo: on a new host it must be re-registered (`~/actions-runner-claims-rag/config.sh` with a token from `gh api -X POST repos/jf1shh/claims-rag/actions/runners/registration-token`), with Docker and system Python 3.12 available.
 
 ## Health
 
