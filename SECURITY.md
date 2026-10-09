@@ -57,8 +57,11 @@ model caches, or logs.
   control log access, retention and archival. A torn trailing append is recovered on next write.
 - API responses disable caching; unexpected errors use generic messages, not exception details.
   The frontend uses system font fallbacks and makes no Google Fonts requests.
-- Pull-request CI and public-repository CI use GitHub-hosted runners. The personal runner is
-  eligible only for pushes to a private repository. Hosted PR reviews remain disabled.
+- The repository is public and all CI (pushes and pull requests) runs on GitHub-hosted runners.
+  The maintainer's personal runner is used only while the repository is private, when only the
+  owner can push or open pull requests, so external pull-request code never runs on it. CI
+  secrets are limited to optional Docker Hub pull credentials, which GitHub withholds from fork
+  pull requests. Hosted PR reviews remain disabled.
 
 ## Data lifecycle and deployment limitations
 

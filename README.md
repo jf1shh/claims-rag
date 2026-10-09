@@ -223,6 +223,8 @@ Run these commands from the repository root and report their actual output:
 .venv/bin/python eval/parity_runner.py
 ```
 
+CI ([`tests.yml`](.github/workflows/tests.yml)) runs the same checks on GitHub-hosted Ubuntu runners, plus a second job against Postgres + pgvector. Model downloads are disabled there, so tests must not load the real embedding model; to match CI locally, prefix the pytest command with `HF_HUB_OFFLINE=1 HF_HOME=$(mktemp -d)`.
+
 The adversarial suite needs LM Studio. It runs against a scratch copy of the store, never the live one:
 
 ```bash
