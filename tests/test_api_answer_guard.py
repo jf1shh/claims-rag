@@ -55,6 +55,8 @@ def guarded(tmp_path, monkeypatch):
         # A private limiter: these tests must not spend the process-wide per-principal budget.
         monkeypatch.setattr(app_module, "_rate_limiter", SlidingWindowRateLimiter(max_requests=1000, window_seconds=60.0))
         monkeypatch.setattr(app_module, "agentic_router", _StubRouter(answer))
+        # The endpoint evaluates embedding_engine=... before the stub ignores it; keep the model unloaded.
+        monkeypatch.setattr(app_module, "_get_embedding_engine", lambda: object())
         monkeypatch.setattr(
             app_module,
             "settings",
