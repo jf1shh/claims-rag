@@ -67,29 +67,38 @@ jobs:
   # (pgvector HNSW is approximate vs SQLite's exact brute-force search).
   postgres:
     runs-on: ${{ github.event.repository.private && fromJSON('["self-hosted", "linux", "claimsrag"]') || 'ubuntu-latest' }}
-    services:
-      postgres:
-        image: pgvector/pgvector:pg16
-        # Hosted runners share Docker Hub's anonymous pull limit, which failed
-        # this job before any test ran. The runner skips login when either
-        # secret is empty (forks, or before they are set) and pulls anonymously.
-        credentials:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: rag
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
     env:
       POSTGRES_DSN: postgresql://postgres:postgres@localhost:5432/rag
+      PG_CONTAINER: claimsrag-pg-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
+      # Started as a step, not a `services:` container: hosted runners share
+      # Docker Hub's anonymous pull limit (it failed this job before any test
+      # ran), and a service container's `credentials:` rejects empty secrets
+      # instead of skipping login. Here login happens only when both secrets
+      # are set; forks, or a repo without them, pull anonymously.
+      - name: Start Postgres (pgvector)
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          if [ -n "$DOCKERHUB_USERNAME" ] && [ -n "$DOCKERHUB_TOKEN" ]; then
+            echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
+          fi
+          for attempt in 1 2 3; do
+            docker pull pgvector/pgvector:pg16 && break
+            [ "$attempt" = 3 ] && exit 1
+            sleep $((attempt * 10))
+          done
+          docker run -d --name "$PG_CONTAINER" -p 5432:5432 \
+            -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=rag \
+            pgvector/pgvector:pg16
+          for _ in $(seq 30); do
+            docker exec "$PG_CONTAINER" pg_isready -U postgres -h localhost && exit 0
+            sleep 2
+          done
+          docker logs "$PG_CONTAINER"
+          exit 1
+
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         if: ${{ !github.event.repository.private }}
@@ -118,3 +127,10 @@ jobs:
 
       - name: Inter-backend retrieval parity (Postgres vs SQLite)
         run: .venv/bin/python eval/parity_runner.py --backend-b postgres --tolerance 0.9
+
+      # Self-hosted runners keep Docker state between jobs.
+      - name: Stop Postgres
+        if: always()
+        run: |
+          docker rm -f "$PG_CONTAINER" || true
+          docker logout || true
