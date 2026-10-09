@@ -1,19 +1,19 @@
 /* =========================================================================
-   GUIDEWIRE CLAIMCENTER JUTRO THEME (LIGHT MODE)
+   CLAIMSRAG ADJUSTER THEME (LIGHT MODE)
    ========================================================================= */
 
 :root {
-    /* Guidewire Corporate Color Palette */
-    --gw-primary: #005a9c;          /* Guidewire Classic Blue */
-    --gw-primary-dark: #003e6d;
-    --gw-primary-light: #e6f0fa;
-    --gw-accent: #0f766e;           /* Jutro Teal Accent */
+    /* Brand color palette */
+    --brand-primary: #005a9c;          /* Primary blue */
+    --brand-primary-dark: #003e6d;
+    --brand-primary-light: #e6f0fa;
+    --brand-accent: #0f766e;           /* Teal accent */
     
     /* Neutral Clean Greys */
     --bg-app: #f1f5f9;              /* Cool grey application background */
     --bg-card: #ffffff;             /* Solid white panels */
     --bg-header: #ffffff;
-    --bg-sidebar: #0f172a;          /* Dark slate navigation sidebar (modern Jutro style) */
+    --bg-sidebar: #0f172a;          /* Dark slate navigation sidebar (modern enterprise style) */
     --bg-sidebar-light: #f8fafc;    /* Light inner sidebar background */
     --bg-input: #ffffff;
     --bg-hover: #f1f5f9;
@@ -90,7 +90,7 @@ body {
     font-family: var(--font-heading);
     font-size: 16px;
     font-weight: 700;
-    color: var(--gw-primary);
+    color: var(--brand-primary);
     letter-spacing: -0.2px;
 }
 
@@ -225,8 +225,8 @@ body {
 }
 
 .claims-list-item.active {
-    border-left: 4px solid var(--gw-primary);
-    background: var(--gw-primary-light);
+    border-left: 4px solid var(--brand-primary);
+    background: var(--brand-primary-light);
     border-color: var(--border-color);
 }
 
@@ -240,7 +240,7 @@ body {
 .claims-list-item .case-id {
     font-family: var(--font-heading);
     font-weight: 700;
-    color: var(--gw-primary);
+    color: var(--brand-primary);
     font-size: 12px;
 }
 
@@ -292,7 +292,7 @@ body {
 }
 
 .upload-zone:hover {
-    border-color: var(--gw-primary);
+    border-color: var(--brand-primary);
 }
 
 .upload-icon {
@@ -334,13 +334,13 @@ body {
 }
 
 .btn-primary {
-    background: var(--gw-primary);
+    background: var(--brand-primary);
     color: #ffffff;
-    border-color: var(--gw-primary-dark);
+    border-color: var(--brand-primary-dark);
 }
 
 .btn-primary:hover {
-    background: var(--gw-primary-dark);
+    background: var(--brand-primary-dark);
 }
 
 .btn-sm {
@@ -468,11 +468,11 @@ body {
     font-family: var(--font-heading);
     font-size: 12px;
     font-weight: 700;
-    color: var(--gw-primary);
+    color: var(--brand-primary);
     text-transform: uppercase;
     letter-spacing: 0.3px;
     margin-bottom: 10px;
-    border-bottom: 2px solid var(--gw-primary-light);
+    border-bottom: 2px solid var(--brand-primary-light);
     padding-bottom: 4px;
 }
 
@@ -507,12 +507,12 @@ body {
 
 .grid-item .est-value {
     font-weight: 700;
-    color: var(--gw-primary);
+    color: var(--brand-primary);
     font-size: 12px;
 }
 
 .grid-item .highlight-blue {
-    color: var(--gw-primary);
+    color: var(--brand-primary);
 }
 
 /* Endorsements Box */
@@ -538,8 +538,8 @@ body {
 }
 
 .endorsement-chip {
-    background: var(--gw-primary-light);
-    color: var(--gw-primary-dark);
+    background: var(--brand-primary-light);
+    color: var(--brand-primary-dark);
     border: 1px solid var(--border-color);
     padding: 1px 6px;
     border-radius: 2px;
@@ -620,13 +620,13 @@ body {
 }
 
 .btn-audit:hover {
-    background: var(--gw-primary-light);
-    border-color: var(--gw-primary);
+    background: var(--brand-primary-light);
+    border-color: var(--brand-primary);
 }
 
 .btn-audit .btn-icon {
     font-size: 16px;
-    color: var(--gw-primary);
+    color: var(--brand-primary);
 }
 
 .btn-audit .btn-label-group {
@@ -687,7 +687,7 @@ body {
 }
 
 .message.user .message-bubble {
-    background: var(--gw-primary);
+    background: var(--brand-primary);
     color: #ffffff;
     border-bottom-right-radius: 2px;
 }
@@ -720,7 +720,7 @@ body {
     font-family: var(--font-heading);
     font-size: 13px;
     font-weight: 700;
-    color: var(--gw-primary);
+    color: var(--brand-primary);
     margin-bottom: 8px;
 }
 
@@ -760,9 +760,9 @@ body {
 }
 
 .suggested-query-btn:hover {
-    background: var(--gw-primary-light);
-    color: var(--gw-primary);
-    border-color: var(--gw-primary);
+    background: var(--brand-primary-light);
+    color: var(--brand-primary);
+    border-color: var(--brand-primary);
 }
 
 /* Input form panel */
@@ -810,9 +810,9 @@ body {
 }
 
 .engine-option input[type="radio"]:checked + .engine-chip {
-    background: var(--gw-primary);
+    background: var(--brand-primary);
     color: #ffffff;
-    border-color: var(--gw-primary-dark);
+    border-color: var(--brand-primary-dark);
 }
 
 .engine-option input[type="radio"]:checked + .engine-chip .engine-indicator {
@@ -837,7 +837,7 @@ body {
 }
 
 .input-form textarea:focus {
-    border-color: var(--gw-primary);
+    border-color: var(--brand-primary);
 }
 
 .send-btn {
@@ -877,8 +877,8 @@ body {
 }
 
 .source-card:hover {
-    border-color: var(--gw-primary);
-    background: var(--gw-primary-light);
+    border-color: var(--brand-primary);
+    background: var(--brand-primary-light);
 }
 
 .source-file {
@@ -894,7 +894,7 @@ body {
 
 .source-score-badge .score-num {
     font-weight: 700;
-    color: var(--gw-accent);
+    color: var(--brand-accent);
 }
 
 /* Loading helper bubble */
@@ -950,8 +950,8 @@ body {
 }
 
 .tab-btn.active {
-    color: var(--gw-primary);
-    border-bottom-color: var(--gw-primary);
+    color: var(--brand-primary);
+    border-bottom-color: var(--brand-primary);
     background: #ffffff;
 }
 
@@ -982,7 +982,7 @@ body {
     border-radius: 2px;
 }
 
-.trace-item.system { border-left-color: var(--gw-primary); }
+.trace-item.system { border-left-color: var(--brand-primary); }
 .trace-item.success { border-left-color: var(--accent-success); }
 .trace-item.error { border-left-color: var(--accent-error); }
 
@@ -1053,7 +1053,7 @@ body {
 .modal-header h2 {
     font-size: 13px;
     font-weight: 700;
-    color: var(--gw-primary);
+    color: var(--brand-primary);
     text-transform: uppercase;
 }
 
@@ -1124,7 +1124,7 @@ body {
 }
 
 .resizer:hover, .resizer.dragging {
-    background: var(--gw-primary);
+    background: var(--brand-primary);
 }
 
 /* Visual drag indicator overlay */
@@ -1201,8 +1201,8 @@ body {
 }
 
 .claim-upload-zone:hover, .claim-upload-zone.dragover {
-    border-color: var(--gw-primary);
-    background: var(--gw-primary-light);
+    border-color: var(--brand-primary);
+    background: var(--brand-primary-light);
 }
 
 .claim-upload-icon {
@@ -1216,7 +1216,7 @@ body {
 }
 
 .claim-upload-zone:hover .claim-upload-text {
-    color: var(--gw-primary);
+    color: var(--brand-primary);
 }
 
 .doc-name.clickable {
@@ -1224,6 +1224,6 @@ body {
 }
 
 .doc-name.clickable:hover {
-    color: var(--gw-primary);
+    color: var(--brand-primary);
     text-decoration: underline;
 }

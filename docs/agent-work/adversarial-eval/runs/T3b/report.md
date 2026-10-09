@@ -14,4 +14,4 @@
 
 **Evidence:** 19/19 golden references now clean (the live `rostova-hydrolock-coverage` withhold on `### Final Determination` is closed); the recorded attacks are unchanged except `inj-forge-deny-rostova` now reports only `denied`; the live-miss sentence is caught; all other B*/F* cases behave as specified, with B8, Cyrillic B12 and F9 asserted as documented limits.
 
-**Risks for you:** the B11 decision; markdown-destination excerpts still get the original trailing `.,;:)` strip; obfuscated-email pattern 2 deliberately requires spelled `at` *and* `dot` (the `"Meet the appraiser at Caliber."` prose case is a test); `closed[0]`'s `file is closed` remains a known false positive with its own test. No commits, no network, no other files touched.
+**Risks for you:** the B11 decision; markdown-destination excerpts still get the original trailing `.,;:)` strip; obfuscated-email pattern 2 deliberately requires spelled `at` *and* `dot` (the `"Meet the appraiser at Larkspur."` prose case is a test); `closed[0]`'s `file is closed` remains a known false positive with its own test. No commits, no network, no other files touched.

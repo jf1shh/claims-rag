@@ -371,7 +371,7 @@ def test_relative_markdown_destinations_are_not_contacts():
         "Final determination of liability waits on the police report.",  # F8
         "### Final Determination",  # the golden false positive, heading only
         "### Final Determination:\n",  # ... and its colon form
-        "Meet the appraiser at Caliber. The estimate is $4,850.",  # no obfuscated-email FP
+        "Meet the appraiser at Larkspur. The estimate is $4,850.",  # no obfuscated-email FP
         "Suspicious claims must be referred to the Special Investigative Unit (SIU) within 3 business days.",
     ],
 )

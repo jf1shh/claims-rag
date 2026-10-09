@@ -120,7 +120,7 @@ The apostrophe is U+2019 RIGHT SINGLE QUOTATION MARK. SKIP lists ASCII `hasn't` 
 
 `closed[0]`: `file is closed`. Statistical-close language on an Under Review file.
 
-**F10.** `Caliber emailed from estimates@caliber.com about the supplement.`
+**F10.** `Larkspur emailed from estimates@larkspur-collision.example about the supplement.`
 
 `_EMAIL_RE` matches; default `allowed_domains` is empty, so `_is_allowed` is always false. Quoting a shop address from the dossier is reported as `external_contact`. Same for `www.insurance.ca.gov` via `_WWW_RE`.
 
