@@ -8,7 +8,7 @@ A local-first, agentic RAG system for auto insurance claims handling — built t
 
 ![ClaimsRAG demo — selecting a theft claim and running an OEM parts rider audit against a local LM Studio model](assets/demo.gif)
 
-*Live demo: selecting a theft claim, then running an "OEM Parts Rider" audit. The agentic router plans sub-queries, retrieves from both global policy documents and the claim's own dossier (police report, parts receipts), and a fully local 14B model synthesizes a grounded, per-line-item answer with clickable source citations.*
+*Live demo: selecting a theft claim, then running an "OEM Parts Rider" audit. The agentic router plans sub-queries, retrieves from both global policy documents and the claim's own dossier (police report, parts receipts), and a fully local 14B model synthesizes a grounded, per-line-item answer with clickable source citations. Recorded 2026-07-19 with `qwen2.5-14b-instruct-1m`; the current UI adds a sign-in gate and streamed answers, and the server now checks answers with the answer guard and conflict check — all of which this recording predates.*
 
 **Jump to:** [Why this exists](#why-this-exists) · [What it does](#what-it-does) · [FAQ (plain English)](#faq-plain-english) · [Architecture](#architecture) · [Evaluation](#evaluation--because-it-looks-right-isnt-good-enough) · [Try it locally](#try-it-locally) · [ICM workflow](#icm-workflow) · [Security posture](#security-posture) · [Known limitations](#known-limitations) · [Tech stack](#tech-stack)
 
