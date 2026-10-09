@@ -680,3 +680,5 @@ Live result (`qwen3-coder-30b-a3b-instruct` as generator and judge, `SIMULATION_
 ## Public-repo CI fix — 2026-10-09
 
 Repo made public, so `tests.yml` now routes both jobs to hosted `ubuntu-latest` with no model cache. Two API test fixtures loaded the real embedding model through the chat endpoint's argument evaluation; both now stub `_get_embedding_engine`. Verified locally with an empty HF cache and `HF_HUB_OFFLINE=1`: ruff clean, foundation gate passed (0 blocking), pytest 660 passed / 17 skipped / 1 xfailed, parity self-check 1.0. Postgres job not run locally (Docker Hub rate-limited the image pull); PG-gated tests and the parity runner use fake embedders only.
+
+Follow-up: the hosted `postgres` job then failed in "Initialize containers" on Docker Hub's anonymous pull limit (`toomanyrequests`); one re-run passed. Added `credentials:` (`DOCKERHUB_USERNAME` / `DOCKERHUB_TOKEN` repo secrets) to the service container; with the secrets unset the runner skips login and pulls anonymously.
