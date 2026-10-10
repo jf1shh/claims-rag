@@ -248,4 +248,4 @@ FastAPI (JSON + SSE streaming) · SQLite (custom hybrid vector + FTS5 store, def
 
 ## About
 
-Built independently by [Jared Fisher](https://www.linkedin.com/in/jared-f-17680b7a) — 17 years in auto insurance claims and appraisal — as a demonstration of applying domain expertise directly to RAG and agentic AI system design, evaluation, and debugging.
+Built independently by [Jared Fisher](https://www.linkedin.com/in/jaredfisher-ai/) — 17 years in auto insurance claims and appraisal — as a demonstration of applying domain expertise directly to RAG and agentic AI system design, evaluation, and debugging.
