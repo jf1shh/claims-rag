@@ -2,7 +2,7 @@
 
 The golden queries are honest questions over the real (unpoisoned) corpus, so any answer the
 guard withholds or flags, or labels conflicting_evidence, is a candidate false positive -- the cost side of the guard's trade-off.
-Requires the app on the real store with a model loaded in LM Studio. Exit 0 whatever the count
+Requires the app on the real store with a model loaded in Lemonade. Exit 0 whatever the count
 (a measurement); 2 only when the app is unreachable.
 
 Usage:

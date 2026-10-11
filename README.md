@@ -6,7 +6,7 @@
 
 A local-first, agentic RAG system for auto insurance claims handling — built to show what happens when domain expertise and modern retrieval/agentic AI techniques compound instead of substitute for each other.
 
-![ClaimsRAG demo — selecting a theft claim and running an OEM parts rider audit against a local LM Studio model](assets/demo.gif)
+![ClaimsRAG demo — selecting a theft claim and running an OEM parts rider audit against a local Lemonade model](assets/demo.gif)
 
 *Live demo: selecting a theft claim, then running an "OEM Parts Rider" audit. The agentic router plans sub-queries, retrieves from both global policy documents and the claim's own dossier (police report, parts receipts), and a fully local 14B model synthesizes a grounded, per-line-item answer with clickable source citations.*
 
@@ -23,7 +23,7 @@ Everything in this repo runs on synthetic, generated seed data — no proprietar
 - Natural-language search over auto insurance guidelines, endorsements, state statutes, and adjuster reports (PDF/DOCX/XLSX/TXT), with hybrid retrieval and pool-bounded cross-encoder reranking
 - Per-claim document scoping — upload a claim's own dossier (police report, telematics, shop estimates) and query it alongside global policy documents in the same conversation
 - An agentic router that plans multi-step retrieval, self-corrects when the first pass comes back empty, and **refuses to answer rather than let the model fabricate one** when nothing relevant was found
-- Runs entirely locally: embedding, reranking, vector search, and generation (via LM Studio) all execute on-device — the default inference profile keeps document content and queries on the host; remote adapters are opt-in
+- Runs entirely locally: embedding, reranking, vector search, and generation (via Lemonade) all execute on-device — the default inference profile keeps document content and queries on the host; remote adapters are opt-in
 - Answers stream token-by-token over SSE instead of waiting for the full response, with bounded/capped context assembly and prompt-injection-delimited source blocks to reduce prompt-injection risk; delimiting does not guarantee that every model ignores malicious instructions
 
 ## FAQ (plain English)
@@ -195,7 +195,7 @@ python3.12 -m venv .venv
 .venv/bin/python -m uvicorn backend.app:app --reload --port 8000
 # → http://localhost:8000
 
-# 4. (Optional) Point LM Studio at port 1234 with any OpenAI-compatible chat model
+# 4. (Optional) Point Lemonade at port 13305 with any OpenAI-compatible chat model
 #    loaded, then run the eval harness:
 .venv/bin/python eval/run_eval.py
 ```
@@ -223,7 +223,7 @@ Run these commands from the repository root and report their actual output:
 .venv/bin/python eval/parity_runner.py
 ```
 
-The adversarial suite needs LM Studio. It runs against a scratch copy of the store, never the live one:
+The adversarial suite needs Lemonade. It runs against a scratch copy of the store, never the live one:
 
 ```bash
 .venv/bin/python -B eval/adversarial/ingest.py          # prints the scratch-server command to run next

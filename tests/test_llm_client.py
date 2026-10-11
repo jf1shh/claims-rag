@@ -85,7 +85,7 @@ def test_complete_posts_to_chat_completions_with_stage_model():
     http = FakeHTTP()
     http._post_resp = _completion_body("plan ok")
     client = OpenAICompatibleClient(
-        base_url="http://127.0.0.1:1234", default_model="M",
+        base_url="http://127.0.0.1:13305", default_model="M",
         planning_model="fast", synthesis_model="domain",
         http=http,
     )
@@ -96,7 +96,7 @@ def test_complete_posts_to_chat_completions_with_stage_model():
     )
     assert out == "plan ok"
     p = http.posts[0]
-    assert p["url"] == "http://127.0.0.1:1234/v1/chat/completions"
+    assert p["url"] == "http://127.0.0.1:13305/v1/chat/completions"
     assert p["json"]["model"] == "fast"
     assert p["json"]["temperature"] == 0.0 and p["json"]["max_tokens"] == 150
     assert p["json"]["messages"] == [{"role": "user", "content": "q"}]

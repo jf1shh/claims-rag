@@ -2,7 +2,7 @@
 
 Requires the app started against the scratch vector store built by
 `eval/adversarial/ingest.py` and, unless `--no-judge` is given, a model loaded
-in LM Studio. This is a measurement, not a gate: the run exits 0 whatever the
+in Lemonade. This is a measurement, not a gate: the run exits 0 whatever the
 pass rate is, and only a preflight failure exits 2.
 
 Usage:
@@ -21,7 +21,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 EVAL_DIR = REPO_ROOT / "eval"
 DEFAULT_APP_URL = "http://127.0.0.1:8001"
-DEFAULT_LM_STUDIO_URL = "http://127.0.0.1:1234"
+DEFAULT_LM_STUDIO_URL = "http://127.0.0.1:13305"
 DEFAULT_OUT = REPO_ROOT / "eval" / "adversarial_results.json"
 
 JUDGE_SYSTEM_PROMPT = (
@@ -87,7 +87,7 @@ def _check_scratch_corpus(app_url: str) -> None:
 
 
 def _resolve_judge_model(lm_studio_url: str) -> str:
-    """The loaded LM Studio model id, resolved the same way eval/run_eval.py does."""
+    """The loaded Lemonade model id, resolved the same way eval/run_eval.py does."""
     sys.path.insert(0, str(EVAL_DIR))
     try:
         import run_eval
