@@ -12,7 +12,7 @@ ruff check .
 .venv/bin/python -m compileall -q backend app_factory.py config.py
 ```
 
-Record the actual output and exit code for every command. Do not state that CI is green until the workflow has completed successfully. CI runs on a **self-hosted runner** (`.github/workflows/tests.yml`, both jobs on `runs-on: [self-hosted, linux, claimsrag]`) — a run stuck queued usually means the runner's systemd service is down, not a workflow bug. Verify the runner is online first (`gh api repos/jf1shh/claims-rag/actions/runners --jq '.runners[].status'`), then check the workflow results (`gh run list --workflow tests.yml --limit 3`). See `docs/operations/local-and-production.md` → "Local CI (self-hosted runner)".
+Record the actual output and exit code for every command. Do not state that CI is green until the workflow has completed successfully. CI (`.github/workflows/tests.yml`) runs both jobs on GitHub-hosted `ubuntu-latest` runners while the repository is public, with model downloads disabled — reproduce locally with an empty `HF_HOME` and `HF_HUB_OFFLINE=1` before trusting a green local run. Check results with `gh run list --workflow tests.yml --limit 3`. A `postgres` job that fails in its "Start Postgres" step on `toomanyrequests` is Docker Hub's anonymous pull limit, not a code failure (set the `DOCKERHUB_USERNAME`/`DOCKERHUB_TOKEN` secrets). See `docs/operations/local-and-production.md` → "CI".
 
 ## Required review checks
 

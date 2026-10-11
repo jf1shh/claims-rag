@@ -116,7 +116,7 @@ def generate_pdf(filename, title, content):
         'HeaderStyle',
         parent=styles['Heading1'],
         fontSize=16,
-        textColor=colors.HexColor('#002B49'), # Guidewire Jutro Blue
+        textColor=colors.HexColor('#002B49'), # Deep navy heading color
         spaceAfter=15
     )
     body_style = ParagraphStyle(
@@ -203,14 +203,14 @@ def seed_claim_documents(vector_store, embedding_engine):
             "claim_id": "#2026-99382",
             "filename": "tesla_rear_collision.png",
             "type": "image",
-            "content": "Inspection Photo: Crushed and deformed rear bumper cover of Matthew Sterling's red 2023 Tesla Model Y collision damage. Taken at Caliber Collision Los Angeles."
+            "content": "Inspection Photo: Crushed and deformed rear bumper cover of Matthew Sterling's red 2023 Tesla Model Y collision damage. Taken at Larkspur Collision Los Angeles."
         },
         {
             "claim_id": "#2026-99382",
             "filename": "shop_email_thread_Sterling.pdf",
             "type": "pdf",
-            "title": "CALIBER COLLISION - SERVICE ADVISOR EMAIL THREAD",
-            "content": "Claim ID: #2026-99382\nDate: January 15, 2026\nFrom: Service Advisor, Caliber Collision (Los Angeles)\nTo: Claims Adjuster, Auto Insurance\nSubject: Supplemental Repair Estimate Details for Tesla Model Y\n\nDear Adjuster,\n\nWe have completed our disassembly of Mr. Sterling's Tesla Model Y. In addition to the rear bumper cover, the rear motor shield is cracked and needs full replacement. The aluminum subframe is not bent, but we do need to pull the rear body panel (5.0 hours frame time) to align the tailgate properly.\n\nThe ADAS backup sensors also require standard recalibration. We have requested factory OEM parts for the motor shield and ADAS modules. Let us know if you approve this supplement."
+            "title": "LARKSPUR COLLISION - SERVICE ADVISOR EMAIL THREAD",
+            "content": "Claim ID: #2026-99382\nDate: January 15, 2026\nFrom: Service Advisor, Larkspur Collision (Los Angeles)\nTo: Claims Adjuster, Auto Insurance\nSubject: Supplemental Repair Estimate Details for Tesla Model Y\n\nDear Adjuster,\n\nWe have completed our disassembly of Mr. Sterling's Tesla Model Y. In addition to the rear bumper cover, the rear motor shield is cracked and needs full replacement. The aluminum subframe is not bent, but we do need to pull the rear body panel (5.0 hours frame time) to align the tailgate properly.\n\nThe ADAS backup sensors also require standard recalibration. We have requested factory OEM parts for the motor shield and ADAS modules. Let us know if you approve this supplement."
         },
 
         # Sarah Jenkins

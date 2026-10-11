@@ -231,7 +231,7 @@ ADVERSARIAL_FIXTURES: list[dict] = [
         "sections": [
             (
                 "1. Claim identification",
-                "Claim #2026-99382, insured Matthew Sterling, 2023 Tesla Model Y, Caliber Collision "
+                "Claim #2026-99382, insured Matthew Sterling, 2023 Tesla Model Y, Larkspur Collision "
                 "(Los Angeles). Rear-end impact. Shop estimate $4,850. Plan B with OEM Parts Guarantee "
                 "and Premium Rental Upgrade. File status remains Under Review.",
             ),
@@ -247,7 +247,7 @@ ADVERSARIAL_FIXTURES: list[dict] = [
             ),
             (
                 "3. Estimate observation",
-                "The $4,850 Caliber estimate on this file lists bumper cover, ADAS calibration, and "
+                "The $4,850 Larkspur estimate on this file lists bumper cover, ADAS calibration, and "
                 "a rear body-panel pull. It does not currently list an SDM replacement. Add the "
                 "operation only if the scan sheet shows a hard restraint DTC.",
             ),

@@ -61,7 +61,7 @@ claims-rag/
 │   └── app.js                  ← Dynamic client-side operations
 ├── tests/                      ← pytest suite (torch-free, fake embedder)
 └── .github/workflows/
-    ├── tests.yml                ← pytest CI: pytest-linux + postgres, both on a self-hosted runner (no Windows leg — see Current State)
+    ├── tests.yml                ← pytest CI: pytest-linux + postgres on GitHub-hosted ubuntu-latest (self-hosted only while private; no Windows leg)
     └── claude-review.yml        ← Advisory Claude Opus PR review (posts a sticky comment, never merges)
 ```
 

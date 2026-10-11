@@ -62,8 +62,8 @@ The project moves forward along the plan — never sideways or backwards.
 ## Running the Project
 
 Ensure the virtual environment is used to run all python scripts. The project runs
-on Linux (self-hosted CI, all dev sessions since 2026-08-29) -- use `.venv/bin/`,
-not `.venv\Scripts\`.
+on Linux (GitHub-hosted `ubuntu-latest` CI since the repo went public on 2026-10-09;
+all dev sessions since 2026-08-29) -- use `.venv/bin/`, not `.venv\Scripts\`.
 
 ```bash
 # 1. Generate synthetic seed guidelines (PDF + DOCX/XLSX/TXT) and ingest them

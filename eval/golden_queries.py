@@ -141,7 +141,7 @@ GOLDEN_QUERIES = [
         "id": "sterling-shop-estimate-detail",
         "claim_id": "#2026-99382",
         "query": "What additional repair work did the body shop identify beyond the original estimate for Matthew Sterling's claim?",
-        "reference": "Caliber Collision found the rear motor shield is cracked and needs full replacement, and "
+        "reference": "Larkspur Collision found the rear motor shield is cracked and needs full replacement, and "
                       "identified 5.0 hours of frame time needed to pull the rear body panel to align the "
                       "tailgate, in addition to the rear bumper cover.",
         "source": "shop_email_thread_Sterling.pdf",

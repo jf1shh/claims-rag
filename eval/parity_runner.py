@@ -91,7 +91,7 @@ def _build_corpus():
         ("telematic_privacy_notice.pdf", "pdf", 380, "Telematics privacy notice. Driving data is used for claim verification only and is retained per the state records schedule."),
         # Claim-scoped dossiers (matched to the golden claim ids)
         ("police_report_Sterling.pdf", "pdf", 720, "Police report claim 2026-99382. Tesla Model Y stopped at red light was rear-ended at 18 mph by a failing-to-stop vehicle. Stationary 8.4 seconds prior to impact, brake pressure 100 percent.", "#2026-99382"),
-        ("shop_email_Sterling.pdf", "pdf", 580, "Caliber Collision supplement for claim 2026-99382. Rear motor shield cracked, requires replacement. Rear body panel pull 5.0 hours for tailgate alignment. ADAS recalibration required.", "#2026-99382"),
+        ("shop_email_Sterling.pdf", "pdf", 580, "Larkspur Collision supplement for claim 2026-99382. Rear motor shield cracked, requires replacement. Rear body panel pull 5.0 hours for tailgate alignment. ADAS recalibration required.", "#2026-99382"),
         ("hail_damage_log_Jenkins.pdf", "pdf", 660, "Hail damage photo log claim 2026-10492. 18 hood dents, 24 roof dents, paint unbroken. Windshield cracked radially 4 inches. PDR applicable for unbroken paint.", "#2026-10492"),
         ("oem_glass_quote_Jenkins.xlsx", "xlsx", 430, "OEM windshield quote claim 2026-10492. OEM spec glass 1200 dollars. Aftermarket backordered 6 weeks. Zero-deductible glass endorsement active.", "#2026-10492"),
         ("custom_equipment_receipts_Chen.xlsx", "xlsx", 510, "Receipts claim 2026-30291. Enkei wheels 2400 dollars and Alpine infotainment console 3500 dollars, purchased 2025-08-14 from Elite Custom Auto Sound, total invoice 5900 dollars.", "#2026-30291"),
