@@ -12,7 +12,7 @@ class ChatClientError(Exception):
 
 class ChatClient(ABC):
     """Contract for calling an LLM for one stage of the agentic pipeline.
-    Provider-neutral: any OpenAI-compatible endpoint (LM Studio local dev,
+    Provider-neutral: any OpenAI-compatible endpoint (Lemonade local dev,
     vLLM / TGI / SGLang / a gateway in production) implements this."""
 
     @abstractmethod

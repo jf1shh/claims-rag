@@ -233,8 +233,8 @@ function setupEngineSelection() {
     });
 }
 
-// Check Backend Status (LM Studio, DB)
-// Tracks the last observed LM Studio state so the 10-second poll only
+// Check Backend Status (Lemonade, DB)
+// Tracks the last observed Lemonade state so the 10-second poll only
 // switches engines / writes a trace log when availability actually changes.
 // Reacting on every poll spammed the trace log and silently stomped a
 // manually-selected engine every 10 seconds.
@@ -263,7 +263,7 @@ async function checkBackendStatus() {
             currentEngine = 'lm-studio';
             const radioEl = document.querySelector('input[name="llm-engine"][value="lm-studio"]');
             if (radioEl) radioEl.checked = true;
-            logSystemEvent("Auto-connected to active LM Studio endpoint");
+            logSystemEvent("Auto-connected to active Lemonade endpoint");
         } else if (simulationEnabled) {
             currentEngine = 'simulated';
             const radioEl = document.querySelector('input[name="llm-engine"][value="simulated"]');
@@ -288,11 +288,11 @@ function updateStatusIndicator(id, isActive, models) {
     if (isActive) {
         indicator.className = 'status-indicator active';
         const modelName = models.length > 0 ? models[0] : 'Ready';
-        label.innerText = `LM Studio: ${modelName}`;
+        label.innerText = `Lemonade: ${modelName}`;
         chip.style.borderColor = 'rgba(16, 185, 129, 0.3)';
     } else {
         indicator.className = 'status-indicator error';
-        label.innerText = `LM Studio: Offline`;
+        label.innerText = `Lemonade: Offline`;
         chip.style.borderColor = 'rgba(239, 68, 68, 0.15)';
     }
 }

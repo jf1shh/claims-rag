@@ -7,7 +7,7 @@
 # never needs network access to boot -- matching the app's own "runs entirely
 # locally" design constraint.
 #
-# LM Studio (the LLM) is a native desktop app, not something this image can
+# Lemonade (the LLM) is a native host service, not something this image can
 # contain -- point LLM_BASE_URL at the host (see docker-compose.yml) or leave
 # LLM_PROVIDER unset/SIMULATION_MODE=true to run without a live model.
 
@@ -27,7 +27,7 @@ RUN pip install --upgrade pip
 # sentence-transformers pulls torch with no version/variant pin, so pip
 # resolves the default CUDA build (~7GB of nvidia-cu13 wheels) even though
 # this app is CPU-only end to end (embedding, reranking, generation all run
-# via LM Studio, not in-process GPU inference). Installing the CPU-only wheel
+# via Lemonade, not in-process GPU inference). Installing the CPU-only wheel
 # first satisfies that dependency before requirements.txt is processed.
 RUN pip install torch --index-url https://download.pytorch.org/whl/cpu
 RUN pip install -r requirements.txt

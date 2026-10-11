@@ -118,7 +118,7 @@ class Settings:
     # also the device name ROCm builds of torch use for AMD cards.
     rerank_device: str = "auto"
     llm_provider: str = "lm-studio"
-    llm_base_url: str = "http://127.0.0.1:1234"
+    llm_base_url: str = "http://127.0.0.1:13305"
     llm_model: str | None = None
     planning_model: str | None = None       # Phase 5.1 per-stage routing
     synthesis_model: str | None = None
@@ -210,7 +210,7 @@ class Settings:
             rerank_batch_max_pending=_int(env.get("RERANK_BATCH_MAX_PENDING"), 1024, "RERANK_BATCH_MAX_PENDING"),
             rerank_device=(env.get("RERANK_DEVICE") or "auto").strip().lower(),
             llm_provider=env.get("LLM_PROVIDER", "lm-studio").strip().lower(),
-            llm_base_url=env.get("LLM_BASE_URL", "http://127.0.0.1:1234").rstrip("/"),
+            llm_base_url=env.get("LLM_BASE_URL", "http://127.0.0.1:13305").rstrip("/"),
             llm_model=env.get("LLM_MODEL") or None,
             planning_model=env.get("PLANNING_MODEL") or None,
             synthesis_model=env.get("SYNTHESIS_MODEL") or None,

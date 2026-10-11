@@ -1,5 +1,5 @@
 """
-Wires Ragas up to a local LM Studio server as the judge model, entirely offline.
+Wires Ragas up to a local Lemonade server as the judge model, entirely offline.
 
 Two real compatibility gaps had to be worked around here, both discovered by
 actually running this against the installed package versions rather than
@@ -42,8 +42,8 @@ from openai import AsyncOpenAI  # noqa: E402
 from ragas.llms.base import InstructorLLM, InstructorModelArgs  # noqa: E402
 
 
-def get_lm_studio_judge(model: str, base_url: str = "http://127.0.0.1:1234/v1", max_tokens: int = 4096) -> InstructorLLM:
-    """Returns a Ragas-compatible LLM wrapper pointed at a local LM Studio server.
+def get_lm_studio_judge(model: str, base_url: str = "http://127.0.0.1:13305/v1", max_tokens: int = 4096) -> InstructorLLM:
+    """Returns a Ragas-compatible LLM wrapper pointed at a local Lemonade server.
 
     max_tokens defaults to 4096, well above InstructorModelArgs's default 1024 --
     the Faithfulness metric's statement-extraction step needs to enumerate every

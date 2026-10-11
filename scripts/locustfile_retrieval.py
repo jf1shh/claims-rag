@@ -6,7 +6,7 @@ seeded by scripts/seed_retrieval_load_corpus.py. Measures p50/p95/p99 via
 Locust's own stats -- no custom latency-tracking code.
 
 Two tasks, weighted: /api/chat with engine=simulated (exercises the full
-retrieval path without requiring a live LM Studio -- retrieval cost is what
+retrieval path without requiring a live Lemonade -- retrieval cost is what
 Phase 6.1 measures, not LLM synthesis latency) and /api/eval/search (raw
 retrieval, no synthesis at all).
 

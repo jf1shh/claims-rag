@@ -248,7 +248,7 @@ def register_routes(app, runtime):
         OpenAICompatibleClient with a TTL'd model cache) rather than an inline
         HTTP round-trip, so this endpoint and /api/chat agree on the served
         models. With LLM_PROVIDER=none (simulation only) there is nothing to
-        probe and the LM Studio block reports inactive."""
+        probe and the Lemonade block reports inactive."""
         models = runtime._llm_client.models() if runtime._llm_client is not None else []
         lm_studio_models = models or []
         lm_studio_active = bool(models and models != ["local-model"] and any("embed" not in name.lower() for name in models))
