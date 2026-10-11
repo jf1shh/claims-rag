@@ -85,7 +85,7 @@ This architecture is built for one adjuster's local corpus — hundreds of docum
 
 ## Evaluation — because "it looks right" isn't good enough
 
-19 domain-grounded queries (not generic FAQ) — exclusion stacking, labor rate caps, SIU fraud red flags, OEM/LKQ parts eligibility, endorsement math, subrogation, plus a deliberate hallucination probe — each with a reference answer verified against the actual source documents. Three things are measured, all with a fully local LM Studio judge (zero calls to any hosted API):
+19 domain-grounded queries (not generic FAQ) — exclusion stacking, labor rate caps, SIU fraud red flags, OEM/LKQ parts eligibility, endorsement math, subrogation, plus a deliberate hallucination probe — each with a reference answer verified against the actual source documents. Three things are measured, all with a fully local Lemonade judge (zero calls to any hosted API):
 
 Most recent full run: **2026-09-22**, judge `qwen3-coder-30b-a3b-instruct` (local, 32k context), 1965 s,
 all 19 queries scored on every metric with zero scoring failures.
@@ -211,7 +211,7 @@ docker compose up
 # → http://localhost:8000 (loopback only)
 ```
 
-Builds a self-contained image (models pre-cached at build time — the app forces Hugging Face offline mode, so it never needs network at runtime), persists `rag_store.db`/`stored_documents/`/`jobs.db`/`audit.log.jsonl` in a named volume, and reaches a native LM Studio on the host via `host.docker.internal`. See `docker-compose.yml` and `Dockerfile`.
+Builds a self-contained image (models pre-cached at build time — the app forces Hugging Face offline mode, so it never needs network at runtime), persists `rag_store.db`/`stored_documents/`/`jobs.db`/`audit.log.jsonl` in a named volume, and reaches a native Lemonade on the host via `host.docker.internal`. See `docker-compose.yml` and `Dockerfile`.
 
 ### Verify locally
 
@@ -244,7 +244,7 @@ The adversarial suite needs Lemonade. It runs against a scratch copy of the stor
 
 ## Tech stack
 
-FastAPI (JSON + SSE streaming) · SQLite (custom hybrid vector + FTS5 store, default) with a Postgres + pgvector backend behind the same `VectorStore` interface · filesystem storage (default) with an S3-compatible `DocumentBlobStore` behind the same interface · OIDC/JWT + service-account authentication (`PyJWT`) · role-based access control with claim-level ACLs · sentence-transformers (`all-MiniLM-L6-v2`) · cross-encoder reranking (`ms-marco-MiniLM-L-6-v2`) · provider-neutral OpenAI-compatible LLM client with streaming completions (LM Studio locally; a private vLLM/TGI/SGLang gateway at enterprise scale) · Ragas (local evaluation) · vanilla JS frontend
+FastAPI (JSON + SSE streaming) · SQLite (custom hybrid vector + FTS5 store, default) with a Postgres + pgvector backend behind the same `VectorStore` interface · filesystem storage (default) with an S3-compatible `DocumentBlobStore` behind the same interface · OIDC/JWT + service-account authentication (`PyJWT`) · role-based access control with claim-level ACLs · sentence-transformers (`all-MiniLM-L6-v2`) · cross-encoder reranking (`ms-marco-MiniLM-L-6-v2`) · provider-neutral OpenAI-compatible LLM client with streaming completions (Lemonade locally; a private vLLM/TGI/SGLang gateway at enterprise scale) · Ragas (local evaluation) · vanilla JS frontend
 
 ## About
 
