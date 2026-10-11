@@ -9,7 +9,7 @@ Two things are measured, both against the golden query set in golden_queries.py:
    This is the headline "did the hybrid-search work pay off" number.
 
 2. Groundedness: Faithfulness of the live agentic router's actual generated
-   answers (via /api/chat, online LM Studio mode) against the sources it
+   answers (via /api/chat, online Lemonade mode) against the sources it
    cites — i.e. does the real system's output stay grounded in what it
    retrieved, not just in retrieval quality in isolation.
 
@@ -28,9 +28,9 @@ Two things are measured, both against the golden query set in golden_queries.py:
    that simply isn't in the terse reference text. Faithfulness already
    covers unsupported/fabricated claims; recall is the missing piece.
 
-Judge model: whatever's currently loaded in LM Studio, detected the same way
+Judge model: whatever's currently loaded in Lemonade, detected the same way
 the app itself does. Run this with the backend server already running
-(`uvicorn backend.app:app --port 8000`) and LM Studio serving a model.
+(`uvicorn backend.app:app --port 8000`) and Lemonade serving a model.
 
 Usage:
     .venv/Scripts/python.exe eval/run_eval.py
@@ -51,13 +51,13 @@ from golden_queries import GOLDEN_QUERIES
 from ragas_lm_studio import get_lm_studio_judge
 
 APP_URL = "http://127.0.0.1:8000"
-LM_STUDIO_URL = "http://127.0.0.1:1234"
+LM_STUDIO_URL = "http://127.0.0.1:13305"
 TOP_K = 4
 JUDGE_CONCURRENCY = 2
 
 
 def get_loaded_model() -> str:
-    """Return the id of a chat model actually resident in LM Studio.
+    """Return the id of a chat model actually resident in Lemonade.
 
     `/v1/models` lists what is *available*, not what is *loaded* — it returns
     every model on disk even when none is resident, so a check against it
@@ -70,7 +70,7 @@ def get_loaded_model() -> str:
         r.raise_for_status()
         entries = r.json()["data"]
     except Exception:
-        # Not LM Studio (or too old for /api/v0) — fall back to the OpenAI
+        # Not Lemonade (or too old for /api/v0) — fall back to the OpenAI
         # listing, which cannot distinguish loaded from available.
         r = requests.get(f"{LM_STUDIO_URL}/v1/models", timeout=5)
         r.raise_for_status()
@@ -83,9 +83,9 @@ def get_loaded_model() -> str:
     if not loaded:
         available = ", ".join(m["id"] for m in entries) or "(none)"
         raise RuntimeError(
-            "No model is loaded in LM Studio — {} lists models but none are "
+            "No model is loaded in Lemonade — {} lists models but none are "
             "resident.\nAvailable: {}\nLoad one first, e.g.:\n"
-            "  lms load qwen3-coder-30b-a3b-instruct --gpu max -c 8192 --parallel 4 --yes"
+            "  lemonade load Qwen3-Coder-30B-A3B-Instruct-GGUF --ctx-size 32768"
             .format(LM_STUDIO_URL, available)
         )
 
@@ -159,7 +159,7 @@ async def main():
     print("=== ClaimsRAG Domain-Grounded Evaluation ===\n")
 
     model = get_loaded_model()
-    print(f"Judge model (LM Studio): {model}\n")
+    print(f"Judge model (Lemonade): {model}\n")
 
     from ragas.metrics.collections import ContextPrecision, ContextRecall, Faithfulness, FactualCorrectness
 
