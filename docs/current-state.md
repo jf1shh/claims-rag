@@ -109,3 +109,7 @@ Priority after hardening: the answer/evidence leg of this is **done** (2026-09-2
 | ReportLab PDF | https://www.reportlab.com/docs/reportlab-userguide.pdf | 2026-07-16 |
 | Ragas | https://docs.ragas.io/en/stable/ | 2026-07-17 — docs describe an older/newer API shape than the installed 0.4.3; verify against the actually-installed package (`ragas.metrics.collections`, not the top-level `ragas.metrics` names) before trusting the docs literally. |
 | Instructor (structured LLM output) | https://python.useinstructor.com/ | 2026-07-17 |
+
+## Portfolio documentation — 2026-10-12
+
+README career context and About links align with Jared's confirmed October 10 LinkedIn version. Description and website now point readers to the local-first synthetic-data project and its dated evaluation. This is a documentation/metadata update; the build phase and pending load/evaluation work above remain unchanged. Verification: whitespace, link targets, and factual wording reviewed; no new retrieval or answer-quality run claimed.

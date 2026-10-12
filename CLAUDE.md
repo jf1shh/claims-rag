@@ -81,3 +81,7 @@ all dev sessions since 2026-08-29) -- use `.venv/bin/`, not `.venv\Scripts\`.
 ```
 
 Or in Docker: `docker compose up --build` (see `docs/operations/local-and-production.md`).
+
+## Portfolio wording update — 2026-10-12
+
+README author positioning now matches Jared's confirmed October 10 LinkedIn wording: 17 years at Liberty Mutual, 11 as senior appraiser, building with AI coding agents, moving into AI enablement and product. Retrieval behavior and dated evaluation evidence are unchanged.
