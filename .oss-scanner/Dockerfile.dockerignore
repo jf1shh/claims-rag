@@ -1,0 +1,16 @@
+# BuildKit uses this file instead of the repository's .dockerignore when building .oss-scanner/Dockerfile.
+# The root .dockerignore trims the runtime image and hides docs/, stages/, CONTEXT.md and .env.example,
+# which the documentation/hygiene tests read. Keep only local caches and real secrets out of the scanner image.
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.cache/
+*.db
+stored_documents/
+.env
+*.pem
+*.key
+secrets/
