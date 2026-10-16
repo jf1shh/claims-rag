@@ -688,3 +688,7 @@ Docs follow-up (same day): `docs/operations/local-and-production.md` "Local CI (
 ## Public portfolio wording — 2026-10-12
 
 Aligned README authorship and career wording with Jared's confirmed LinkedIn update: 17 years at Liberty Mutual, including 11 as senior appraiser; AI-assisted building; moving into AI enablement and product. Added consistent profile, LinkedIn, and portfolio links. Technical behavior, historical evaluation metrics, and limits were preserved. Whitespace and career-wording checks passed. No runtime, model, test, or evaluation configuration changed.
+
+## Trail-code graft map — 2026-10-16
+
+Added Trail-code v0.23.0 (`trail init --agents claude --no-global`) to cut code-discovery tokens in Claude Code sessions. Committed: a `SessionStart` hook in `.claude/settings.json` plus `.trail/hook.cjs`, `.trail/README.md` and `.trail/.gitignore`. The graph cache (`.trail/cache/`) and statusline shim are git-ignored; per-user prompt/edit/stop hooks live in the ignored `settings.local.json`. Telemetry disabled (`trail telemetry disable`). Global `~/.claude/settings.json` untouched. Hygiene and documentation-contract tests passed (5). No runtime, model, test or evaluation configuration changed.

@@ -113,3 +113,7 @@ Priority after hardening: the answer/evidence leg of this is **done** (2026-09-2
 ## Portfolio documentation — 2026-10-12
 
 README career context and About links align with Jared's confirmed October 10 LinkedIn version. Description and website now point readers to the local-first synthetic-data project and its dated evaluation. This is a documentation/metadata update; the build phase and pending load/evaluation work above remain unchanged. Verification: whitespace, link targets, and factual wording reviewed; no new retrieval or answer-quality run claimed.
+
+## Agent tooling — 2026-10-16
+
+Trail-code graft map wired for Claude Code (developer tooling only; no runtime change). Contributors run `npm install -g @trailhq/trail-code && trail build` for their local graph; see `.trail/README.md`.
