@@ -4,203 +4,125 @@
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![release](https://img.shields.io/github/v/release/jf1shh/claims-rag)](https://github.com/jf1shh/claims-rag/releases/tag/v1.0.0)
 
-A local-first, agentic RAG system for auto insurance claims handling — built to show what happens when domain expertise and modern retrieval/agentic AI techniques compound instead of substitute for each other.
+**An AI assistant for auto claims adjusters.** It answers questions from the policy documents and the claim file, works out the claim math in tested code instead of trusting a language model to do arithmetic, and cites a source for every number. It runs on one machine, and every document in it is synthetic.
 
-![ClaimsRAG demo — selecting a theft claim and running an OEM parts rider audit against a local Lemonade model](assets/demo.gif)
+Built by **Jared Fisher**: 17 years at Liberty Mutual, including 11 as senior appraiser, now building with AI coding agents and moving into AI enablement and product. Jared set the requirements, directed the build and checked the results; the claims judgment in the test cases is his.
 
-*Live demo: selecting a theft claim, then running an "OEM Parts Rider" audit. The agentic router plans sub-queries, retrieves from both global policy documents and the claim's own dossier (police report, parts receipts), and a fully local 14B model synthesizes a grounded, per-line-item answer with clickable source citations. Recorded 2026-07-19 with `qwen2.5-14b-instruct-1m`; the current UI adds a sign-in gate and streamed answers, and the server now checks answers with the answer guard and conflict check — all of which this recording predates.*
+![ClaimsRAG demo: selecting a theft claim and running an OEM parts rider audit against a local model](assets/demo.gif)
 
-**Jump to:** [Why this exists](#why-this-exists) · [What it does](#what-it-does) · [FAQ (plain English)](#faq-plain-english) · [Architecture](#architecture) · [Evaluation](#evaluation--because-it-looks-right-isnt-good-enough) · [Try it locally](#try-it-locally) · [ICM workflow](#icm-workflow) · [Security posture](#security-posture) · [Known limitations](#known-limitations) · [Tech stack](#tech-stack)
+*Recorded 2026-07-19: a theft claim is selected, then an OEM parts rider audit runs. The assistant plans its searches, pulls from both the policy documents and the claim's own file (police report, parts receipts), and writes a cited answer line by line. The current version also has sign-in, streamed answers and the answer checks described below; the recording predates them.*
 
-## Why this exists
+**Jump to:** [For a hiring manager](#for-a-hiring-manager) · [What it does for an adjuster](#what-it-does-for-an-adjuster) · [Results](#results) · [What testing found](#what-testing-found) · [Try it locally](#try-it-locally) · [How it works](#how-it-works) · [Known limitations](#known-limitations)
 
-Claims handlers spend a meaningful share of every day hunting through scattered PDFs, spreadsheets, and adjuster guides for the one fact that resolves a claim — a labor rate cap, an exclusion clause, a rider's eligibility window. ClaimsRAG was built independently by Jared Fisher with AI coding agents, drawing on 17 years at Liberty Mutual, including 11 as senior appraiser. Its evaluation and design decisions are shaped by real claims and appraisal judgment calls: exclusion stacking, regional rate caps, SIU fraud patterns, endorsement math, subrogation eligibility.
+## For a hiring manager
 
-Everything in this repo runs on synthetic, generated seed data — no proprietary or confidential content of any kind.
+What this project shows, in the order a claims-AI team tends to ask:
 
-## What it does
+- **Claims domain knowledge drives the design.** The test questions cover what adjusters and appraisers actually decide: labor rate caps, OEM versus aftermarket parts, total-loss thresholds, deductibles and endorsements, stacked exclusions, SIU red flags.
+- **The math is computed, not generated.** Labor caps, OEM parts eligibility, total loss and net settlement come from small, unit-tested functions. The model explains; the code computes. Each answer ends with a table of every input and the document it came from.
+- **Quality is measured, with dates.** A 19-question golden set is scored on retrieval, groundedness and correctness. A separate adversarial suite attacks the system with poisoned and conflicting documents. Every number below has a run date and a judge model.
+- **It says no when it should.** If nothing relevant is found, it refuses rather than inventing an answer. Answers that announce a claim decision (approved, paid, denied) that the claim record doesn't support are held back for a human.
+- **It stays on the machine.** Search, reranking, generation and evaluation all run locally by default. No claim content goes to a cloud API unless someone configures one.
+- **It is built like software a team would run:** sign-in on every API route, role and claim-level permissions (adjuster, supervisor, SIU, admin), an audit log, rate limits, a Postgres option, Docker, and CI on every pull request.
 
-- Natural-language search over auto insurance guidelines, endorsements, state statutes, and adjuster reports (PDF/DOCX/XLSX/TXT), with hybrid retrieval and pool-bounded cross-encoder reranking
-- Per-claim document scoping — upload a claim's own dossier (police report, telematics, shop estimates) and query it alongside global policy documents in the same conversation
-- An agentic router that plans multi-step retrieval, self-corrects when the first pass comes back empty, and **refuses to answer rather than let the model fabricate one** when nothing relevant was found
-- Runs entirely locally: embedding, reranking, vector search, and generation (via Lemonade) all execute on-device — the default inference profile keeps document content and queries on the host; remote adapters are opt-in
-- Answers stream token-by-token over SSE instead of waiting for the full response, with bounded/capped context assembly and prompt-injection-delimited source blocks to reduce prompt-injection risk; delimiting does not guarantee that every model ignores malicious instructions
+## What it does for an adjuster
 
-## FAQ (plain English)
+Ask a question about a claim, in plain English. For example, *"Audit the labor rates on this estimate"* on demo claim #2026-99382 returns this (shortened; the tool computes it, nothing is hard-coded):
 
-**What's "RAG"?** Instead of asking an AI chatbot to answer from what it memorized during training (which it can get subtly wrong or make up entirely), the system first searches your own documents for the relevant passages, then hands *those exact passages* to the AI and says "answer using only this." The answer comes with clickable citations back to the source file, so a claims handler can verify it in seconds instead of trusting it blindly.
+> **Result: OVER CAP** ($272.00 billed above the SOP caps)
+>
+> | # | Operation | Billed | SOP cap | Hours | Over cap |
+> | --- | --- | --- | --- | --- | --- |
+> | 1 | Replace Rear Bumper Cover | $75.00/hr | $62.00/hr Sheet Metal Repair | 6.0 | $78.00 |
+> | 2 | Refinish Bumper & Blend Trunk | $75.00/hr | $62.00/hr Refinishing / Painting | 8.0 | $104.00 |
+> | 4 | Pull Rear Body Panel (Alignment) | $85.00/hr | $75.00/hr Frame Alignment | 5.0 | $50.00 |
+> | 5 | Replace Rear Motor Shield & Alignment | $120.00/hr | $110.00/hr Mechanical Work | 4.0 | $40.00 |
+>
+> Shop total $4,850.00 does not match the itemized lines ($2,405.00); $2,445.00 is not itemized and is not paid until the shop supports it.
+>
+> **Tool inputs and citations:** each cap is cited to `SOP_Auto_Repair_Labor_Rates.pdf`, section 1, and each billed rate to the claim's estimate.
 
-**What does "agentic" mean here?** It doesn't just do one search and hope for the best. For "does this claim exceed the coverage cap," it plans what to look up (the endorsement terms *and* the claim's own receipt), runs both searches, checks whether it found anything useful, retries with a reworded search if not, and only then writes an answer. That plan → check → retry loop is what "agentic" means, versus a single input/output round trip.
+Four claims tools sit behind answers like this ([`backend/claims_tools.py`](backend/claims_tools.py)):
 
-**Does this send my data to OpenAI or the cloud?** The default local profile runs embedding, retrieval, reranking, generation and evaluation on your machine. Optional remote inference/reranking and S3 adapters send data to their configured services. Review the selected deployment profile and [data lifecycle](SECURITY.md) before using sensitive content.
+| Tool | Answers |
+|---|---|
+| `labor_rate_check` | Is each labor line within the SOP cap for its labor type? By how much is it over? |
+| `oem_rider_check` | Does the OEM parts rider apply, given vehicle age, mileage and the endorsements on the policy? |
+| `total_loss_check` | Is this a total loss under the state's rule (synthetic table)? It asks for ACV or salvage when they're missing instead of guessing. |
+| `deductible_apply` | What is the net settlement after the deductible, endorsements and excluded items? |
 
-**What happens if it doesn't know the answer?** It refuses when no source context survives retrieval and context assembly. Most chatbots will confidently invent a plausible-sounding answer (and a plausible-sounding, nonexistent source) rather than admit they found nothing. The application checks for an empty evidence set before synthesis. A nonempty nearest-neighbor result is not proof of relevance, and a model can still produce an unsupported claim; human source verification and adversarial evaluation remain necessary. That refusal path is tested directly in the evaluation results below (see the "hallucination probe" query).
+Other things an adjuster can do:
 
-**Is this connected to any real insurance company's systems or data?** No. Every document, claim, and policy number in this repo is synthetic — generated for this project, not pulled from any real claim file or company database. It was built independently, on personal time, using publicly available tools and made-up data, specifically to be shareable as a portfolio piece without touching anything confidential.
+- Search guidelines, endorsements, state rules and adjuster reports (PDF, Word, Excel, text) and get answers with clickable source citations.
+- Upload a claim's own file (police report, telematics, shop estimates) and ask about it alongside the policy documents in the same conversation.
+- See when sources disagree: if two documents give different values, the answer is labelled `conflicting_evidence`.
 
-**Could an insurance company actually use something like this?** As a proof of concept, yes — the retrieval and reasoning approach is sound and measured, not hand-waved. As-is, no: it's a single-machine tool with a small demo set of documents and one tenant per application instance. It's no longer single-*user* though: every API route now requires authentication (OIDC/SSO or service-account keys), and role-based permissions with claim-level ACLs (adjuster / supervisor / SIU / admin) are enforced. See [Scaling considerations](#scaling-considerations) and [Known limitations](#known-limitations) for exactly what would still need to change to go from "working demo" to "production system."
+Today the claims tools run in the demo's labelled simulation mode, which works without a language model loaded. Calling them from the live model path is on the [roadmap](docs/roadmap-focus.md).
 
-**Why build this instead of just pasting policy PDFs into ChatGPT?** Privacy is one reason — real claim files shouldn't go through a cloud chatbot. The bigger one: pasting one document at a time doesn't scale past a handful of files, can't scope a search to "just this claim's paperwork," doesn't cite which exact passage an answer came from, and is never *measured* for how often it's actually right (see [Evaluation](#evaluation--because-it-looks-right-isnt-good-enough)) — it just *looks* convincing.
+## Results
 
-## Architecture
+### Golden set: does it find the right documents and answer correctly?
 
-```
-Documents (PDF/DOCX/XLSX/TXT)
-        │
-        ▼
-DocumentParser ──▶ TextChunker (parent/child: 1200/200 + 250/50)
-        │
-        ▼
-EmbeddingEngine (all-MiniLM-L6-v2, local)
-        │
-        ▼
-SQLiteVectorStore
-  ├─ dense vector search (child chunks, in-memory normalized cache)
-  ├─ FTS5 keyword search (parent chunks)
-  └─ Reciprocal Rank Fusion ──▶ Reranker (local CPU/GPU or remote GPU, pool-bounded)
-        │
-        ▼
-AgenticRAGRouter
-  plan (decompose query) → retrieve (per sub-query) → self-correct (if empty) → synthesize
-        │
-        ▼
-FastAPI ──▶ frontend (claims queue, per-claim folders, chat, pipeline logs)
-```
+19 claims questions, each with a reference answer checked against the source documents. Scored with Ragas by a local judge model, so nothing goes to a hosted API.
 
-**Hybrid retrieval**: dense embeddings are good at paraphrase but weak on exact structured lookups — a query like "what's the comprehensive deductible" can under-rank a deductibles *spreadsheet* in favor of a narratively-similar case study PDF. SQLite FTS5 keyword search catches that case; the two signals are fused with Reciprocal Rank Fusion (no score calibration needed) and reordered by a cross-encoder reranker. The reranker is provider-neutral: local inference runs on a GPU when `RERANK_DEVICE=auto` finds one (CPU otherwise), independent requests can be coalesced into bounded local micro-batches, and production can instead point at a dedicated GPU HTTP service; candidate-pool and batch limits bound cost, while remote failures fall back locally.
+Latest full run: **2026-09-22**, judge and generator `qwen3-coder-30b-a3b-instruct`, all 19 questions scored on every metric with no scoring failures.
 
-**Agentic planning**: each query is decomposed into targeted sub-queries scoped to global policy, the active claim's dossier, or both. If retrieval comes back empty, a self-correction step retries with a rewritten query; if it's still empty, synthesis is skipped entirely and the system says so, rather than letting the LLM answer from its own knowledge and cite sources that don't exist.
-
-**Performance**: vector search runs against an in-memory, pre-normalized embedding matrix cache instead of re-reading every embedding BLOB and recomputing corpus norms on every query.
-
-### Scaling considerations
-
-This architecture is built for one adjuster's local corpus — hundreds of documents, single machine — not a multi-tenant system with millions of documents. Being upfront about where it would actually break:
-
-- **Vector search is brute-force, not ANN.** `search_similarity` matrix-multiplies the query against every cached embedding in scope (`matrix @ query`) — no HNSW/IVF index. Fine into the tens of thousands of chunks; the first real bottleneck at real scale.
-- **The embedding cache rebuilds in full on every write.** Any add/delete invalidates the whole in-memory matrix, and the next query rebuilds it from a full table scan — O(n) per write, not incremental. This is the actual ingestion-throughput ceiling, not the vector math.
-- **The embedding cache lives in one process's RAM**, backed by a single SQLite file with no built-in horizontal scaling or concurrent-writer support (already out of scope for the MVP, see above).
-- **What wouldn't need to change**: FTS5's inverted index scales sub-linearly with corpus size, and reranking cost is bounded by the configured candidate pool (`RERANK_CANDIDATE_POOL`), not total corpus size. The provider-neutral reranker seam also lets the in-process implementation move to a dedicated GPU service without changing retrieval callers.
-- **What I'd swap in at real scale**: an ANN index (FAISS/HNSW or a managed vector DB) with incremental upsert instead of full-cache rebuild. The other two swaps are already built behind seams and live in the repo — a `PostgresVectorStore` (Postgres + pgvector, tenant RLS, HNSW index) behind the `VectorStore` interface, and an `S3DocumentBlobStore` behind the `DocumentBlobStore` interface with presigned serving — selectable via config without touching the retrieval/agent pipeline. See `docs/enterprise-migration.md` for the phased roadmap.
-
-## Evaluation — because "it looks right" isn't good enough
-
-19 domain-grounded queries (not generic FAQ) — exclusion stacking, labor rate caps, SIU fraud red flags, OEM/LKQ parts eligibility, endorsement math, subrogation, plus a deliberate hallucination probe — each with a reference answer verified against the actual source documents. Three things are measured, all with a fully local Lemonade judge (zero calls to any hosted API):
-
-Most recent full run: **2026-09-22**, judge `qwen3-coder-30b-a3b-instruct` (local, 32k context), 1965 s,
-all 19 queries scored on every metric with zero scoring failures.
-
-| Metric | What it checks | Naive | Hybrid + Rerank |
+| Metric | What it checks | Plain vector search | Hybrid search + reranking |
 |---|---|---|---|
-| Context Precision | Retrieved chunks are actually relevant | 0.727 | 0.832 |
-| Context Recall | Nothing relevant was missed | 0.895 | 0.965 |
-| Faithfulness | Answer is grounded in retrieved context | — | 0.892 |
-| Reference-fact coverage (FactualCorrectness recall mode) | Answer covers what the verified reference requires | — | 0.797 |
+| Context precision | The documents it pulled are relevant | 0.727 | **0.832** |
+| Context recall | It didn't miss a relevant document | 0.895 | **0.965** |
+| Faithfulness | The answer sticks to the retrieved documents | — | **0.892** |
+| Reference-fact coverage | The answer covers what the reference requires | — | **0.797** |
 
-These are **LLM-judged metrics from a single run** and they move between runs. Against 2026-09-03, faithfulness
-(0.812 → 0.892) and reference-fact coverage (0.749 → 0.797) improved, while context precision fell in *both*
-arms by near-identical amounts (−0.053 hybrid, −0.052 naive). A change isolated to the hybrid path cannot
-explain a matched drop in the naive baseline, so read that as judge variance or corpus drift rather than a
-regression — and neither reading is established without a confirming run. Always quote the run date and judge
-model alongside these numbers; earlier revisions of this table carried figures from a different run than
-`eval/results.json` held, which is exactly the confusion the date line above is here to prevent.
+These are single-run scores from a language-model judge, and they move between runs. Compared with the 2026-09-03 run, faithfulness and coverage went up, while precision dropped by the same amount in *both* columns. A change to the hybrid path can't explain a matching drop in the plain baseline, so this reads as judge variance or corpus drift, and a confirming run is still to do. Hybrid beat plain search on precision in 9 of 19 questions and lost in 1.
 
 ![Evaluation results chart](assets/eval_results.png)
 
-**What stood out**: hybrid clearly wins on claim-scoped queries where naive vector search misses a source entirely (e.g. a shop-estimate document, 0.0→1.0 recall), and is reported honestly where it's *worse* (in the 2026-09-22 run hybrid beat naive on precision in 9 of 19 queries and lost in 1 — no cherry-picking). The most interesting result wasn't a hybrid-vs-naive story at all: one query needs two documents surfaced together (an endorsement cap *and* a claim's own receipt total), which single-shot retrieval never manages in either mode — that's the exact reason the agentic planner's guaranteed dossier-inclusion exists, and scored against the real pipeline it hits 1.0 Factual Correctness despite 0.0/0.0 on the isolated retrieval endpoint. The Faithfulness/Correctness gap is the metric doing its job: the same answers, judged two different ways, showing where "grounded" and "complete" diverge (the local 14B judge has real run-to-run variance on these two live-answer metrics — see Known Limitations).
+### Adversarial suite: can a poisoned document hijack it?
 
-### Bugs this eval harness actually found and fixed
-
-1. **Zero-context hallucination**: a planner misclassification could skip retrieval entirely and let the LLM synthesize with no context, fabricating citations. Fixed with a hard stop against zero-context synthesis.
-2. **Simulated demo mode's hardcoded facts didn't match the real source documents** (wrong coverage caps, wrong eligibility thresholds, a fabricated rejection). Corrected against the real corpus.
-3. **Faithfulness scoring gap**: claim-scoped answers grounded in a prompt-injected dossier weren't checked against it, so correct answers scored as unfaithful. Fixed.
-4. **Multi-hop retrieval gap**: a claim's own documents were competing semantically for a slot against global policy docs and losing. Fixed by always including them directly — which then exposed a *second* bug (the LLM only reasoned about one of two line items despite having both). Both fixed and verified.
-5. **The eval harness's own default metric config penalized correct answers**: Ragas's default `mode="f1"` docked well-cited, correct answers for true elaboration not in the terse reference text. Switched to `mode="recall"`.
-6. **The decision boundary didn't check the answer it described**: under prompt injection the model declared claims approved, paid or denied while the structured contract still said `not_a_decision`. Found by the adversarial suite below; fixed with a post-generation answer guard.
-
-### Adversarial evaluation (2026-09-26)
-
-A second suite attacks the system on purpose: 38 synthetic poisoned or conflicting documents and 27 cases
-(`eval/adversarial/`), plus a **held-out set written by a different model after it had read the defense
-code** (`eval/adversarial/cases_holdout.py`). The held-out set exists to keep the defenses from being
-tuned to known payloads. The baseline showed the generator obeying instructions planted in retrieved
-documents 87.5% of the time. It also never labelled conflicting sources as a conflict. Three fixes
-followed, each measured before and after with default settings (single runs or pairs on small case
-counts, so read these as indicative):
+38 synthetic poisoned or conflicting documents and 27 cases ([`eval/adversarial/`](eval/adversarial/)), plus a held-out set written by a different model *after* it had read the defense code, so the defenses can't be tuned to known attacks. Run 2026-09-26; small case counts, single runs or pairs, so read these as indicative.
 
 | | Before | After |
 |---|---|---|
-| Forged claim decisions (approved / paid / denied / referred) shown to the user | 4/4 | **0/4**, withheld by the answer guard |
+| Forged claim decisions shown to the user | 4/4 | **0/4** (held for review) |
 | Attacker links or contacts shown to the user | 1/2 | **0/2** |
-| Known injection attack success | 87.5% | 25% (answer guard plus the default sanitizer, one run) |
-| Real source conflicts labelled `conflicting_evidence` | 0/9 | **9/9** (0/2 agreeing controls and 0/19 golden answers mislabelled) |
-| Golden answer quality (faithfulness / correctness), same-day run | 0.898 / 0.818 | unchanged by the defaults |
+| Known injection attacks that succeeded | 87.5% | 25% |
+| Real source conflicts labelled `conflicting_evidence` | 0/9 | **9/9** (no false labels on 2 controls or 19 golden answers) |
+| Golden answer quality (faithfulness / correctness) | 0.898 / 0.818 | unchanged |
 
-The most useful result was a negative one. A "sandwich" reminder after the sources halves injection
-success on the held-out set (42% → 17–25%), but only because it narrows answers: golden answers got 39%
-shorter and correctness fell by about 0.12. A reworded version kept answer quality and lost all of the
-protection. So that reminder is opt-in, not default. Full method, numbers and limits:
-[docs/adversarial-evaluation.md](docs/adversarial-evaluation.md).
+The most useful result was a negative one. A reminder placed after the sources cut held-out injection success from 42% to 17–25%, but only by making answers narrower: golden answers got 39% shorter and correctness fell about 0.12. So it ships off by default. Full method and limits: [docs/adversarial-evaluation.md](docs/adversarial-evaluation.md).
 
+## What testing found
 
-### Verification scope after the September 6 hardening
+Measuring caught problems that a demo never would have:
 
-The documented ASGI entry point now uses the same application factory as integration tests,
-selects SQLite/Postgres from configuration, and shares its async queue with its worker.
-Security regression coverage includes actual authenticated downloads, wrong-tenant access,
-concurrent audit writes, parser limits, disabled simulation, and source storage failures.
-See [the remediation record](docs/portfolio-hardening.md) for measured checks and remaining work.
-
-The historical scores above are a recorded baseline, not results remeasured on this revision.
-Changing generator/judge models requires a new baseline. Evaluation output reports successful and
-failed sample counts per metric; the SQLite parity self-check uses deterministic fake embeddings
-and measures ranking consistency rather than semantic answer quality. Historical load numbers
-must also be rerun: the old API entry point ignored Postgres selection, and live chat did not
-forward the configured rerank pool. The repaired load harness measures one configured tenant
-against a database containing the requested number of tenant corpora.
-
-## ICM workflow
-
-ClaimsRAG uses an additive **Interpretable Context Methodology (ICM)** layer to make engineering context and evidence visible. `IDENTITY.md` maps the repository, `CONTEXT.md` routes work, and `stages/{sense,propose,act,verify,learn}/` define the workflow contracts. ICM does not replace the approved specifications, tests, or CI; it points contributors to them.
-
-Claims-facing responses follow the same separation:
-
-- **Evidence:** exact authorized excerpts, document versions and chunk IDs. Page/row locators remain optional and are not currently reconstructed by the parsers.
-- **Interpretation:** grounded explanation, calculations, assumptions, conflicts, and uncertainty.
-- **Decision boundary:** explicit human ownership of coverage, fraud, payment, denial, or referral decisions.
-
-## Security posture
-
-This repository contains synthetic data only. Review [`SECURITY.md`](SECURITY.md) before handling uploaded content or changing routes, storage, providers, or authentication. Every `/api/*` route requires authentication — a Bearer JWT verified against your OIDC issuer's JWKS, an `X-API-Key` from the service-accounts file, or (local dev only) the explicit development identity — and permissions are enforced per role and per claim (`docs/enterprise-migration.md` Phase 4). The production foundation is designed around tenant isolation, per-principal rate limiting and enforced upload/query caps (429/413), safe paths and URLs, evidence-required synthesis, concurrent durable audit appends without chat text, and non-leaking errors.
-
-Retrieved documents are treated as untrusted. By default, instruction-shaped sentences in retrieved text
-are neutralised before generation (`PROMPT_DEFENSE`). An answer that asserts a claim outcome the claim
-record does not support, or that contains an off-allowlist link or contact, is withheld for human review
-(`ANSWER_GUARD_MODE`). When retrieved sources state different values, the answer is labelled
-`conflicting_evidence` (`CONFLICT_CHECK`). These are measured mitigations, not guarantees: see the
-adversarial evaluation above.
+1. **Canned answers cited a file that doesn't exist.** Before the claims tools, the demo's labor answers cited a `Regional_Labor_Rates_2026.xlsx` that was never in the corpus, and called estimates compliant that exceed the SOP caps. The computed answers deliberately disagree with the old ones. Every demo claim's shop total also disagrees with its own line items; the answers now say so instead of paying the unitemized amount.
+2. **It could answer with no evidence.** A planner misclassification could skip search entirely and let the model write an answer with made-up citations. There is now a hard stop: no retrieved context, no answer.
+3. **A two-document question always failed.** One question needs an endorsement cap *and* the claim's own receipt. Single-shot search never surfaced both, so the planner now always includes the claim's own documents. Scored through the full pipeline, that question went to 1.0 correctness.
+4. **The scoring itself was unfair.** Ragas's default setting penalised correct, well-cited answers for detail the short reference didn't mention. It now scores recall against the reference.
+5. **Prompt injection forged claim decisions.** Instructions planted in documents made the model announce claims approved or denied. The adversarial suite found it; an answer guard now holds those answers back.
 
 ## Try it locally
 
 ```bash
-# 1. Create a virtual environment, then install dependencies
+# 1. Create a virtual environment and install dependencies
 python3.12 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 
-# 2. Download the local models once, then generate and ingest synthetic data
+# 2. Download the local models once, then generate and ingest the synthetic data
 .venv/bin/python scripts/precache_models.py
 .venv/bin/python scripts/seed_demo.py
 
-# 3. Start the backend (serves the frontend too)
+# 3. Start the app (backend and frontend on one port)
 .venv/bin/python -m uvicorn backend.app:app --reload --port 8000
 # → http://localhost:8000
 
-# 4. (Optional) Point Lemonade at port 13305 with any OpenAI-compatible chat model
-#    loaded, then run the eval harness:
+# 4. (Optional) Run any OpenAI-compatible chat model locally (Lemonade on port 13305),
+#    then run the evaluation:
 .venv/bin/python eval/run_eval.py
 ```
 
-Development enables an explicitly labeled rule-based simulation for exploring the demo. Its labor-rate, OEM-parts, total-loss and settlement answers are computed by deterministic, unit-tested tools (`backend/claims_tools.py`) and list every input with its source document. `SIMULATION_MODE=false` disables both explicit simulation and provider-failure fallback. Precache is required even for simulated retrieval. Missing optional demo photos are represented as text descriptions, not placeholder image binaries.
+Without a model loaded, development mode uses the labelled simulation, whose claim math comes from the tools above. `SIMULATION_MODE=false` turns simulation off, including the fallback when the model server is down. Step 2 is needed even for simulated search.
 
 ### Or run it in Docker
 
@@ -211,11 +133,9 @@ docker compose up
 # → http://localhost:8000 (loopback only)
 ```
 
-Builds a self-contained image (models pre-cached at build time — the app forces Hugging Face offline mode, so it never needs network at runtime), persists `rag_store.db`/`stored_documents/`/`jobs.db`/`audit.log.jsonl` in a named volume, and reaches a native Lemonade on the host via `host.docker.internal`. See `docker-compose.yml` and `Dockerfile`.
+The image includes the models and runs offline. Data persists in a named volume, and the container reaches a Lemonade server on the host through `host.docker.internal`. See `docker-compose.yml` and `Dockerfile`.
 
 ### Verify locally
-
-Run these commands from the repository root and report their actual output:
 
 ```bash
 .venv/bin/python -m pytest tests/ -q
@@ -223,28 +143,79 @@ Run these commands from the repository root and report their actual output:
 .venv/bin/python eval/parity_runner.py
 ```
 
-CI ([`tests.yml`](.github/workflows/tests.yml)) runs the same checks on GitHub-hosted Ubuntu runners, plus a second job against Postgres + pgvector. Model downloads are disabled there, so tests must not load the real embedding model; to match CI locally, prefix the pytest command with `HF_HUB_OFFLINE=1 HF_HOME=$(mktemp -d)`.
+CI ([`tests.yml`](.github/workflows/tests.yml)) runs the same checks on GitHub-hosted Ubuntu, plus a second job against Postgres + pgvector. Model downloads are disabled in CI; to match it, prefix pytest with `HF_HUB_OFFLINE=1 HF_HOME=$(mktemp -d)`.
 
-The adversarial suite needs Lemonade. It runs against a scratch copy of the store, never the live one:
+The adversarial suite needs a local model and runs against a scratch copy of the store:
 
 ```bash
 .venv/bin/python -B eval/adversarial/ingest.py          # prints the scratch-server command to run next
 .venv/bin/python -B eval/run_adversarial_eval.py --no-judge
-.venv/bin/python -B eval/golden_guard_check.py --app-url http://127.0.0.1:8000   # guard/conflict false positives
+.venv/bin/python -B eval/golden_guard_check.py --app-url http://127.0.0.1:8000
 ```
 
-`GET /health/live` checks process liveness; `GET /health/ready` checks configured dependencies. A green local check does not claim remote CI or production readiness.
+`GET /health/live` checks that the process is up; `GET /health/ready` checks its dependencies.
+
+## How it works
+
+```
+Documents (PDF/DOCX/XLSX/TXT)
+        │
+        ▼
+Parse ──▶ chunk (parent 1200/200, child 250/50)
+        │
+        ▼
+Embed locally (all-MiniLM-L6-v2)
+        │
+        ▼
+Vector store (SQLite by default, Postgres + pgvector optional)
+  ├─ dense vector search over child chunks
+  ├─ keyword search (FTS5) over parent chunks
+  └─ Reciprocal Rank Fusion ──▶ cross-encoder reranker
+        │
+        ▼
+Agentic router
+  plan sub-queries → search each → retry if empty → stop if still empty → write the answer
+  claims tools compute labor, parts, total-loss and settlement numbers (simulation path)
+  answer guard and conflict check run on the result
+        │
+        ▼
+FastAPI (JSON + streamed answers) ──▶ frontend (claims queue, claim folders, chat, pipeline trace)
+```
+
+- **Why hybrid search:** vector search is good at paraphrase but can miss exact lookups. "What's the comprehensive deductible?" can rank a narrative case study above the deductibles spreadsheet. Keyword search catches that; the two are fused and then reranked.
+- **Why an agentic router:** a question like "does this claim exceed the coverage cap?" needs the endorsement terms *and* the claim's receipt. The router plans both searches, retries with a reworded query if one comes back empty, and refuses if it still finds nothing.
+- **Retrieved documents are untrusted.** Instruction-like sentences in them are neutralised before generation (`PROMPT_DEFENSE`). Answers asserting an unsupported claim outcome, or containing an unexpected link or contact, are held for review (`ANSWER_GUARD_MODE`). Conflicting values are labelled (`CONFLICT_CHECK`). These reduce risk; they don't guarantee anything.
+- **Where it would break at scale:** vector search is brute-force and the embedding cache rebuilds on every write, which is fine for one adjuster's few hundred documents and is the first thing to change for millions. A Postgres + pgvector store (tenant row-level security, HNSW index) and S3 document storage already sit behind the same interfaces. Roadmap: [docs/enterprise-migration.md](docs/enterprise-migration.md).
+
+More detail: [docs/architecture.md](docs/architecture.md) (components and design decisions) and [docs/portfolio-hardening.md](docs/portfolio-hardening.md) (the September hardening and what it verified).
+
+### ICM workflow
+
+The repo uses an **Interpretable Context Methodology (ICM)** layer so engineering context and evidence are easy to find: `IDENTITY.md` maps the repository, `CONTEXT.md` routes work, and `stages/{sense,propose,act,verify,learn}/` define the workflow steps. It points to the specs, tests and CI; it doesn't replace them.
+
+Claims answers follow the same separation:
+
+- **Evidence:** the exact authorized excerpts, document versions and chunk IDs.
+- **Interpretation:** the explanation, calculations, assumptions, conflicts and uncertainty.
+- **Decision boundary:** coverage, fraud, payment, denial and referral decisions stay with a human.
+
+## Security posture
+
+Synthetic data only. Read [`SECURITY.md`](SECURITY.md) before handling uploaded content or changing routes, storage, providers or authentication. Every `/api/*` route requires authentication: a Bearer JWT checked against your OIDC issuer, an `X-API-Key` for service accounts, or a clearly labelled development identity for local use. Permissions are enforced per role and per claim. Uploads and queries are size-capped and rate-limited per user, paths and URLs are sanitised, synthesis requires evidence, the audit log takes concurrent writes and never stores chat text, and errors don't leak internals.
 
 ## Known limitations
 
-- **Faithfulness measures groundedness, not correctness** — an answer can be fully faithful to partial context and still be wrong. Factual Correctness closes this by scoring against a verified reference instead.
-- Context Precision/Recall reflect single-shot retrieval via a debug endpoint, not the full pipeline's guaranteed claim-document inclusion; Factual Correctness *is* scored against the real `/api/chat` pipeline.
-- **Prompt injection is reduced, not solved.** The default sanitizer removes none of the held-out payloads, which were written after reading its code. With no prompt defense they succeeded in 42% of cases; the default configuration was not run live on that set. The answer guard stops forged claim decisions and exfiltration links, not every injected phrase. See [docs/adversarial-evaluation.md](docs/adversarial-evaluation.md).
-- Both LLM-judged metrics are bounded by a local 14B judge's own reasoning quality (a deliberate local-only tradeoff) and show real run-to-run variance — treat single-run scores as noisy, trust trends across reruns.
+- **It is a proof of concept, not a product.** One machine, a small synthetic corpus, one tenant per app instance. Live sign-in against a real identity provider is not wired up yet.
+- **The claims tools run only in simulation mode today.** With a live model, labor and settlement answers come from retrieval and the model, not from the tools.
+- **Scores come from one local judge model** and move between runs. Treat single runs as noisy and trust trends across reruns. Changing the judge or generator means a new baseline.
+- **Faithfulness measures groundedness, not correctness:** an answer can stick to partial context and still be wrong. Reference-fact coverage is the check against the verified answer.
+- **Context precision and recall score single-shot search,** not the full pipeline's guaranteed inclusion of the claim's own documents. Coverage *is* scored through the full pipeline.
+- **Prompt injection is reduced, not solved.** The default sanitizer stopped none of the held-out attacks, which were written after reading its code. The answer guard stops forged decisions and exfiltration links, not every injected phrase.
+- **Test coverage has gaps.** The golden set has no subrogation, supplement review, salvage, diminished value, betterment, liability or storage/towing questions yet. Closing that is next on the [roadmap](docs/roadmap-focus.md).
 
 ## Tech stack
 
-FastAPI (JSON + SSE streaming) · SQLite (custom hybrid vector + FTS5 store, default) with a Postgres + pgvector backend behind the same `VectorStore` interface · filesystem storage (default) with an S3-compatible `DocumentBlobStore` behind the same interface · OIDC/JWT + service-account authentication (`PyJWT`) · role-based access control with claim-level ACLs · sentence-transformers (`all-MiniLM-L6-v2`) · cross-encoder reranking (`ms-marco-MiniLM-L-6-v2`) · provider-neutral OpenAI-compatible LLM client with streaming completions (Lemonade locally; a private vLLM/TGI/SGLang gateway at enterprise scale) · Ragas (local evaluation) · vanilla JS frontend
+Python · FastAPI (JSON + server-sent events) · SQLite with a custom hybrid vector + FTS5 store, or Postgres + pgvector behind the same interface · filesystem or S3-compatible document storage · OIDC/JWT and service-account auth with role and claim-level permissions · sentence-transformers (`all-MiniLM-L6-v2`) · cross-encoder reranking (`ms-marco-MiniLM-L-6-v2`) · any OpenAI-compatible model server (Lemonade locally) · Ragas for evaluation · vanilla JavaScript frontend · Docker · GitHub Actions
 
 ## About
 
