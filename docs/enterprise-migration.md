@@ -26,6 +26,24 @@ S3, SQS, Fargate/Lambda workers, KMS).
   upsert). Kills the full-cache-rebuild O(n) bottleneck and request-thread blocking.
 - **Serving:** stateless FastAPI, autoscaled; `/api/chat` async/streamed; planner,
   reranker, and LLM as dedicated services (vLLM/TGI or hosted OpenAI-compatible).
+- **Target hardware (owner, 2026-10-16):** a carrier or claims business would most
+  likely run this on-premises on several NVIDIA DGX Spark units or high-memory Apple
+  Silicon Macs (large unified memory), not a single consumer GPU. That makes much
+  larger models practical for generation and as the eval judge. Implications:
+  - Every model call stays behind an OpenAI-compatible endpoint, so the serving
+    stack can differ by node (vLLM/SGLang on DGX Spark, MLX or llama.cpp servers on
+    Macs) with no change above the client.
+  - Endpoints should be configurable **per role** (planner, generator, judge,
+    conflict extractor) so roles can be spread across nodes. Today the app has one
+    `LLM_BASE_URL`, and `eval/run_eval.py` hard-codes the judge at
+    `127.0.0.1:13305`.
+  - A larger, separate judge is the direct fix for the "one local 30B judge,
+    run-to-run variance" limitation. Every model or quantization change needs a new
+    baseline: the 2026-09-22 and 2026-10-16 numbers already differ for that reason.
+  - Defense trade-offs were measured on a 30B model (the sandwich reminder cost
+    ~0.12 correctness). Re-measure them on the deployed model; don't assume they carry over.
+  - Keep the single-GPU local profile working. It is the demo and the CI-adjacent
+    dev path.
 - **Tenancy/security:** SSO/RBAC, claim-level ACLs, immutable audit log, rate
   limits, encryption at rest/in transit, retention/deletion policy.
 

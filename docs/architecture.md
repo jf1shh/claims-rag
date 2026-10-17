@@ -79,6 +79,7 @@ claims-rag/
 | Chunking scheme? | Parent/child (small embedded children → larger parent context) | Embed small chunks for precise matching, but return the larger parent so the LLM sees enough surrounding context. |
 | Query orchestration? | Stateful agentic router (plan → retrieve → self-correct → synthesize) | Decomposes multi-part claims questions, scopes retrieval per claim, and recovers from empty results instead of failing. |
 | Embedding search performance? | In-memory pre-normalized matrix cache, invalidated on write | Avoids re-reading BLOBs and recomputing corpus norms every query; keeps the "no per-row loops" constraint intact at scale. |
+| Enterprise deployment hardware? (2026-10-16) | Assume several on-prem DGX Spark units or high-memory Apple Silicon Macs running large models; keep the single-GPU local profile working | Owner's expectation for how a carrier would run it. Keeps every model call behind OpenAI-compatible endpoints, configurable per role, with a larger judge and a new eval baseline per model. Detail: `docs/enterprise-migration.md` target architecture. |
 
 ## Claims tools contract (2026-10-16)
 
