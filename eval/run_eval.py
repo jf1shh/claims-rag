@@ -37,6 +37,7 @@ Usage:
 """
 import asyncio
 import json
+import os
 import statistics
 import sys
 import time
@@ -50,7 +51,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from golden_queries import GOLDEN_QUERIES
 from ragas_lm_studio import get_lm_studio_judge
 
-APP_URL = "http://127.0.0.1:8000"
+APP_URL = os.environ.get("EVAL_APP_URL", "http://127.0.0.1:8000")
 LM_STUDIO_URL = "http://127.0.0.1:13305"
 TOP_K = 4
 JUDGE_CONCURRENCY = 2
