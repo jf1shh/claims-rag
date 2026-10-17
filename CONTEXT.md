@@ -18,6 +18,8 @@
 | Run unit tests | `tests/` | `README.md` |
 | Run retrieval parity | `eval/parity_runner.py` | `docs/enterprise-migration.md` |
 | Run foundation gates | `scripts/run_foundation_gates.py` | `stages/verify/CONTEXT.md` |
+| Check tests + gate, eval numbers, domain coverage, status (one screen each) | `.venv/bin/python scripts/crag.py check\|evals\|coverage\|status` | `docs/roadmap-focus.md` |
+| Pick the next feature | `docs/roadmap-focus.md` (P1 → P6) | `scripts/crag.py coverage` |
 | Run / check CI | `.github/workflows/tests.yml` | `docs/operations/local-and-production.md` |
 | Build or run the Docker image | `Dockerfile`, `docker-compose.yml` | `docs/operations/local-and-production.md` (Docker section) |
 | Run or extend the retrieval load test | `scripts/run_retrieval_load_test.py`, `scripts/seed_retrieval_load_corpus.py`, `scripts/locustfile_retrieval.py` | `docs/superpowers/specs/2026-09-02-phase6-load-test-design.md`, `docs/enterprise-migration.md` Phase 6.1 status (batching implemented, authoritative Postgres/HTTP A/B still open) |
