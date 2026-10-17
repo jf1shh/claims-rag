@@ -57,6 +57,8 @@ from drift, which is the open item in `current-state.md`.
 
 ### P3. Prompt-injection hardening
 
+**Done 2026-10-16** (PR #16): after the rerun the baseline was 0.25 known / 0.58 held-out, and the provenance check brought it to 0.06 / 0.25. Conflicts stayed at 11/11 and honest controls at 4/4. See `docs/adversarial-evaluation.md` fix 4.
+
 Bring the injection attack-success rate (0.562) down on the existing adversarial suite without
 lowering the conflict pass rate (0.9). Record before/after with dates. Insurers' security reviews ask about this first.
 
