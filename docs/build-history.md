@@ -756,3 +756,8 @@ existing California and Texas regulation docs.
 - Gate: ruff B008 on a call in a fixture's default argument; moved to a module constant.
 - `eval/golden_guard_check.py` now records `provenance` per answer and `provenance_redacted`/`provenance_judged` in the summary.
 
+
+## License change — 2026-10-17 (branch `chore/agpl-license`)
+
+- Owner asked whether companies could reuse the code freely under MIT (yes: MIT only requires keeping the notice), compared the permissive, copyleft and source-available options, and chose AGPL-3.0.
+- `LICENSE` replaced with the official AGPL-3.0 text (GitHub licenses API); README badge updated and a License section added. History entries that say MIT (Phase 15) are left as written: they were true then.

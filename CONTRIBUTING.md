@@ -29,4 +29,8 @@ Report the commands actually run and their output; do not claim CI is green base
 - Include test and evaluation evidence.
 - Call out any changed model, embedding, prompt, migration, or tenant behavior.
 - Do not include secrets, proprietary claim documents, generated databases, or uploaded files.
-- This is a solo-maintained repository where the maintainer directs an AI coding agent for most implementation work (see CLAUDE.md's Session Log for the honest split of what's agent-driven vs. maintainer-directed). Once a change is implemented, verified (tests/lint/foundation-gate green), and documented, the agent opens the PR, watches CI on the self-hosted runner, and merges it as a standing, maintainer-authorized workflow step — there is no separate second human reviewer, and none is claimed. Any external contributor's PR is reviewed and merged by the maintainer.
+- This is a solo-maintained repository where the maintainer directs an AI coding agent for most implementation work (see CLAUDE.md's Session Log for the honest split of what's agent-driven vs. maintainer-directed). Once a change is implemented, verified (tests/lint/foundation-gate green), and documented, the agent opens the PR, watches CI (GitHub-hosted `ubuntu-latest` while the repo is public), and merges it as a standing, maintainer-authorized workflow step — there is no separate second human reviewer, and none is claimed. Any external contributor's PR is reviewed and merged by the maintainer.
+
+## License
+
+ClaimsRAG is licensed under the [GNU AGPL-3.0](LICENSE) (MIT before 2026-10-17). By submitting a contribution you agree it is licensed under the same terms.
