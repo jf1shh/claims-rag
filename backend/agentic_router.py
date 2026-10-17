@@ -1,7 +1,10 @@
 import json
+import re
+from decimal import Decimal
 import time
 from typing import Optional, List, Dict, Any
 
+from backend import claims_tools as ct
 from backend.llm_client import ChatClientError
 
 CLAIMS_DATA = [
@@ -74,6 +77,28 @@ CLAIMS_DATA = [
         ]
     }
 ]
+
+
+# Facts the claims tools need that are findings, not math: which estimate lines are custom
+# equipment (from the receipts), and which are excluded by an SIU or coverage finding.
+# All four claims are 2026 losses (claim IDs and police/telematics dates).
+CLAIM_EVIDENCE: Dict[str, Dict[str, Any]] = {
+    "#2026-99382": {"loss_year": 2026},
+    "#2026-10492": {"loss_year": 2026},
+    "#2026-30291": {
+        "loss_year": 2026,
+        "custom_ops": ["Replace 4x Sport Wheels & Tires", "Replace Stolen Infotainment Console"],
+        "custom_source": "custom_equipment_receipts_Chen.xlsx",
+        "excluded": {
+            "Repair Passenger Side Key Scratches":
+                "pre-existing rust oxidation (SOP_Claims_Fraud_Red_Flags.pdf)",
+        },
+    },
+    "#2026-55912": {
+        "loss_year": 2026,
+        "exclude_all": "driver-induced consequential damage from restart attempts (Case_Study_Engine_Hydro_Lock.pdf)",
+    },
+}
 
 
 def claim_record_status(claim_id: Optional[str]) -> Optional[str]:
@@ -772,6 +797,108 @@ class AgenticRAGRouter:
 
         return fallback_plan
 
+    def _computed_claim_answer(self, claim: Dict[str, Any], audit_type: str, query_text: str,
+                               logs: List[str]) -> List[str]:
+        """Labor, OEM, total-loss and payout answers whose numbers all come from claims_tools."""
+        evidence = CLAIM_EVIDENCE.get(claim["id"], {})
+        name, cid = claim["insured"], claim["id"]
+        labor = ct.labor_rate_check(claim["estimate"])
+        logs.append(f"🧮 [Tool] labor_rate_check: {labor['status']}, {ct.fmt(labor['over_cap_total'])} over the SOP caps")
+        itemized = sum((line["total"] for line in labor["lines"]), ct.ZERO)
+        shop_total = ct.money(claim["totalEst"])
+        reconcile = []
+        if itemized != shop_total:
+            reconcile = [f"* Shop total {ct.fmt(shop_total)} does not match the itemized lines "
+                         f"({ct.fmt(itemized)}); {ct.fmt(shop_total - itemized)} is not itemized and is not paid "
+                         "until the shop supports it."]
+        out: List[str] = []
+
+        if audit_type == "labor":
+            out += [f"### ⚡ Labor Rate Audit: {name} ({cid})",
+                    f"**Result: {'OVER CAP' if labor['status'] == 'over_cap' else 'WITHIN CAP'}** "
+                    f"({ct.fmt(labor['over_cap_total'])} billed above the SOP caps)", "",
+                    "| # | Operation | Billed | SOP cap | Hours | Over cap |", "| --- | --- | --- | --- | --- | --- |"]
+            for line in labor["lines"]:
+                if line["status"] == "not_checked":
+                    out.append(f"| {line['line']} | {line['op']} | flat {ct.fmt(line['total'])} | n/a | n/a | not checked |")
+                    continue
+                label = ct.LABOR_CAP_LABELS[line["labor_class"]] + (" (electrical)" if line["mapped_from_electrical"] else "")
+                out.append(f"| {line['line']} | {line['op']} | {ct.fmt(line['rate'])}/hr | {ct.fmt(line['cap'])}/hr "
+                           f"{label} | {line['hours']} | {ct.fmt(line['excess'])} |")
+            if any(line.get("parts") for line in labor["lines"]):
+                out.append("")
+                out += [f"* Line {line['line']} total includes {ct.fmt(line['parts'])} parts beyond "
+                        f"{ct.fmt(line['labor'])} labor; only labor is compared to the cap."
+                        for line in labor["lines"] if line.get("parts")]
+            out += [""] + reconcile
+            out += [""]
+            out.append("**Recommendation**: " + (
+                "Request a revised estimate at the SOP capped rates." if labor["status"] == "over_cap"
+                else "Labor rates are within the SOP caps."))
+            return out + ct.render_inputs([labor])
+
+        if audit_type == "oem":
+            oem = ct.oem_rider_check(vehicle=claim["vehicle"], loss_year=evidence.get("loss_year", 2026),
+                                     endorsements=claim["endorsements"])
+            logs.append(f"🧮 [Tool] oem_rider_check: {oem['status']} (vehicle age {oem['age']})")
+            out += [f"### 🔧 OEM Parts Check: {name} ({cid})",
+                    f"**Parts standard: {oem['standard']}**", "",
+                    f"* Vehicle: {claim['vehicle']}, {oem['age']} years old at the {evidence.get('loss_year', 2026)} loss.",
+                    f"* OEM Parts Guarantee rider on policy: {'yes' if oem['has_rider'] else 'no'}."]
+            out += [f"* {note}" for note in oem["notes"]]
+            return out + ct.render_inputs([oem])
+
+        if audit_type == "total_loss":
+            acv = self._amount_after(query_text, "acv")
+            salvage = self._amount_after(query_text, "salvage")
+            state = ct.facility_state(claim["facility"])
+            tl = ct.total_loss_check(state=state, repair_cost=itemized, acv=acv, salvage=salvage)
+            logs.append(f"🧮 [Tool] total_loss_check: {tl['status']}")
+            out.append(f"### 🚗 Total Loss Check: {name} ({cid})")
+            if tl["status"] == "needs_input":
+                out += [f"**Result: NEEDS INPUT** — provide the {' and '.join(tl['missing'])} "
+                        "(e.g. \"ACV $14,000, salvage $2,500\")."]
+            elif tl["status"] == "no_rule":
+                out += [f"**Result: NO RULE** — {tl['reason']}."]
+            else:
+                out += [f"**Result: {'TOTAL LOSS' if tl['status'] == 'total_loss' else 'REPAIRABLE'}**",
+                        "", f"* {tl['basis']}."]
+            out += [f"* Loss state taken from the repair facility: {state or 'unknown'}."] + reconcile
+            return out + ct.render_inputs([tl])
+
+        # Settlement letter / general: labor at the caps, then exclusions, limits and deductible.
+        excluded = dict(evidence.get("excluded", {}))
+        if evidence.get("exclude_all"):
+            excluded.update({line["op"]: evidence["exclude_all"] for line in labor["lines"]})
+        lines = [{**line, "approved": line.get("approved", line["total"])} for line in labor["lines"]]
+        pay = ct.deductible_apply(lines=lines, plan=claim["plan"], deductible=claim["deductible"],
+                                  endorsements=claim["endorsements"], custom_ops=evidence.get("custom_ops", ()),
+                                  custom_source=evidence.get("custom_source"), excluded=excluded)
+        logs.append(f"🧮 [Tool] deductible_apply: gross {ct.fmt(pay['gross'])} - deductible "
+                    f"{ct.fmt(pay['deductible_applied'])} = {ct.fmt(pay['payout'])}")
+        out += [f"### 📝 Settlement Calculation: {name} ({cid})",
+                f"**Vehicle**: {claim['vehicle']} · **Facility**: {claim['facility']}", "",
+                "| Operation | Approved | Note |", "| --- | --- | --- |"]
+        for row in pay["rows"]:
+            out.append(f"| {row['op']} | {ct.fmt(row['amount'])} | {row['note']} |")
+        out += ["",
+                f"* Labor billed over the SOP caps removed: -{ct.fmt(labor['over_cap_total'])}"]
+        if pay["custom"]:
+            out.append(f"* Custom equipment: {ct.fmt(pay['custom'])} claimed, {ct.fmt(pay['custom_paid'])} paid")
+        out.append(f"* Gross covered amount: {ct.fmt(pay['gross'])}")
+        waiver = " (glass portion waived)" if pay["glass_waiver"] else ""
+        out.append(f"* Deductible applied: -{ct.fmt(pay['deductible_applied'])}{waiver}")
+        out.append(f"* **Net settlement: {ct.fmt(pay['payout'])}**")
+        out += [""] + reconcile + [f"* {note}" for note in pay["notes"]]
+        out.append("*Calculated figures for adjuster review; not a coverage decision.*")
+        return out + ct.render_inputs([labor, pay])
+
+    @staticmethod
+    def _amount_after(text: str, word: str):
+        """'ACV of $14,000' -> Decimal('14000'); None when the query does not state it."""
+        match = re.search(rf"{word}\b[^$\d]{{0,20}}\$?([\d,]+(?:\.\d+)?)", text, re.IGNORECASE)
+        return Decimal(match.group(1).replace(",", "")) if match else None
+
     def _run_simulated_agent(
         self,
         query_text: str,
@@ -802,7 +929,9 @@ class AgenticRAGRouter:
         # Detect audit parameter type
         q_lower = query_text.lower()
         audit_type = "general"
-        if "labor" in q_lower or "rate" in q_lower or "cap" in q_lower:
+        if "total loss" in q_lower or "totaled" in q_lower or "acv" in q_lower or "salvage" in q_lower:
+            audit_type = "total_loss"
+        elif "labor" in q_lower or "rate" in q_lower or "cap" in q_lower:
             audit_type = "labor"
         elif "oem" in q_lower or "aftermarket" in q_lower or "lkq" in q_lower:
             audit_type = "oem"
@@ -815,48 +944,13 @@ class AgenticRAGRouter:
 
         answer_parts = []
 
-        if claim_id == "#2026-99382": # Matthew Sterling
-            if audit_type == "labor":
-                logs.append("⚙️ [Tool Exec] policy_search: Found Regional_Labor_Rates_2026.xlsx and SOP_Auto_Repair_Labor_Rates.pdf")
-                logs.append("⚙️ [Tool Exec] dossier_search: Found shop_email_thread_Sterling.pdf (5.0 hours frame time)")
-                logs.append("🧮 [Calculator Tool] Checking ADAS recalibration requirement: rear bumper replacement mandates recalibration per Adjuster_Guide_Rear_Impact.docx ($250-$450 fee).")
-                logs.append("🧮 [Calculator Tool] Checking California Sheet Metal rate: $75/hr (complies with cap of $75/hr).")
-                logs.append("🧮 [Calculator Tool] Checking California Mechanical rate: $120/hr (complies with cap of $120/hr).")
-                answer_parts.extend([
-                    "### ⚡ Regional Labor Rate & Estimate Audit: Matthew Sterling (#2026-99382)",
-                    "**Status: COMPLIANT (estimate approved)**",
-                    "",
-                    "1. **Labor Rate Auditing**:",
-                    "   * **Body & Paint Rates**: The shop charges **$75.00/hr** for Bumper Cover Replacement and Painting. This complies with the **$75.00/hr Southern California Regional Cap** listed in *Regional_Labor_Rates_2026.xlsx*.",
-                    "   * **Frame rate**: The shop charges **$85.00/hr** for panel pulling, which matches the maximum allowable California frame rate (PASSED).",
-                    "   * **Mechanical rate**: The shop charges **$120.00/hr** for motor shield replacement, matching the California mechanical cap of **$120.00/hr** (PASSED).",
-                    "2. **ADAS Recalibration Requirement**:",
-                    "   * *Adjuster_Guide_Rear_Impact.docx* mandates electronic ADAS recalibration ($250-$450 fee) on any rear bumper replacement or structural alignment, since blind-spot sensors and backup cameras are housed in the rear bumper assembly.",
-                    "   * The estimate includes **$450.00** for ADAS Backup Sensor Calibration — within the mandated fee range (PASSED).",
-                    "",
-                    "**Summary Recommendation**: Approve the repair labor rates and hours. Proceed to parts evaluation."
-                ])
-            elif audit_type == "oem":
-                logs.append("⚙️ [Tool Exec] policy_search: Found Rider_OEM_Parts_Guarantee.pdf")
-                logs.append("⚙️ [Tool Exec] dossier_search: Found vehicle dossier details")
-                logs.append("🧮 [Calculator Tool] Checking vehicle age: 2023 Tesla Y in 2026 is 3 years old. Eligible under OEM parts rider terms.")
-                answer_parts.extend([
-                    "### 🔧 OEM Parts Rider Audit: Matthew Sterling (#2026-99382)",
-                    "**Status: APPROVED (OEM components authorized)**",
-                    "",
-                    "1. **Endorsement Checklist**:",
-                    "   * Active Endorsements: **OEM Parts Guarantee** (verified active).",
-                    "   * Rider Terms (*Rider_OEM_Parts_Guarantee.pdf*): Mandates the usage of brand-new, factory-original OEM parts for all collision replacements on vehicles **under 5 years of age**, purchased at policy inception.",
-                    "2. **Vehicle Age Verification**:",
-                    "   * Vehicle: 2023 Tesla Model Y.",
-                    "   * Date of Loss Audit: 2026.",
-                    "   * Age Calculation: 2026 - 2023 = **3 years old**. The vehicle qualifies under the 5-year OEM mandate threshold.",
-                    "3. **Parts Authorization**:",
-                    "   * Bumper Cover ($450) and Motor Shield ($480) are approved at factory OEM retail list prices. LKQ or aftermarket alternatives are prohibited.",
-                    "",
-                    "**Summary Recommendation**: Authorize factory OEM parts for all replacement operations on the estimate."
-                ])
-            elif audit_type == "fraud":
+        claim = next((c for c in CLAIMS_DATA if c["id"] == claim_id), None) if claim_id else None
+        if claim and audit_type != "fraud":
+            # Labor, parts, total-loss and payout numbers are computed by backend/claims_tools.py.
+            answer_parts.extend(self._computed_claim_answer(claim, audit_type, query_text, logs))
+
+        elif claim_id == "#2026-99382": # Matthew Sterling
+            if audit_type == "fraud":
                 logs.append("⚙️ [Tool Exec] policy_search: Found SOP_Claims_Fraud_Red_Flags.pdf")
                 logs.append("⚙️ [Tool Exec] dossier_search: Found telematics_log_Sterling.pdf (Rear collision force of 4.2G at 14 mph)")
                 logs.append("🔍 [Reflection] Checking sensor timelines against statement: Deceleration footprint matches.")
@@ -874,72 +968,9 @@ class AgenticRAGRouter:
                     "",
                     "**Summary Recommendation**: No SIU flags active. Approve claim liability as 100% third-party fault."
                 ])
-            else: # letter / general
-                logs.append("⚙️ [Tool Exec] policy_search: Found Auto_Policy_Contract_California.docx")
-                logs.append("🧮 [Calculator Tool] Deductible Math: Apply $500 collision deductible; Payout = $4,850 - $500 = $4,350.")
-                answer_parts.extend([
-                    "### 📝 Claim Decision & Payout Settlement Letter: Matthew Sterling",
-                    "**Date**: July 16, 2026",
-                    "**Claim ID**: #2026-99382",
-                    "**Insured**: Matthew Sterling",
-                    "**Vehicle**: 2023 Tesla Model Y",
-                    "",
-                    "Dear Matthew Sterling,",
-                    "",
-                    "We have completed the audit of your vehicle damage estimate submitted by Larkspur Collision for the rear impact collision on January 10, 2026.",
-                    "",
-                    "**Settlement Calculations**:",
-                    "*   **Total Approved Repairs**: $4,850.00",
-                    "    *   *Body & Paint labor*: $1,050.00",
-                    "    *   *ADAS Calibration (sensor replacement)*: $450.00",
-                    "    *   *Rear Bumper pulling (5.0 hours)*: $425.00",
-                    "    *   *OEM Motor Shield replacement & alignment*: $2,925.00",
-                    "*   **Collision Deductible Applied**: -$500.00",
-                    "*   **Net Settlement Payout**: **$4,350.00**",
-                    "",
-                    "Under the *Rider_OEM_Parts_Guarantee.pdf*, factory-original OEM parts have been fully approved.",
-                    "",
-                    "Since you were rear-ended while stationary, our recovery unit is actively pursuing subrogation against the third-party carrier to recover the repair costs and refund your $500.00 deductible.",
-                    "",
-                    "Sincerely,",
-                    "**Claims Adjuster Copilot**",
-                    "*Citations: Auto_Policy_Contract_California.docx, Adjuster_Guide_Rear_Impact.docx, Rider_OEM_Parts_Guarantee.pdf*"
-                ])
 
         elif claim_id == "#2026-10492": # Sarah Jenkins
-            if audit_type == "labor":
-                logs.append("⚙️ [Tool Exec] policy_search: Found Regional_Labor_Rates_2026.xlsx")
-                logs.append("🧮 [Calculator Tool] Checking Apex Auto Body paint rate: $75/hr <= Northern California cap of $80/hr.")
-                answer_parts.extend([
-                    "### ⚡ Regional Labor Rate & Estimate Audit: Sarah Jenkins (#2026-10492)",
-                    "**Status: COMPLIANT (estimate approved)**",
-                    "",
-                    "1. **Labor Rate Auditing**:",
-                    "   * **Paint labor rate**: Apex Auto Body (San Francisco, CA) charges **$75.00/hr** for door painting. This is compliant with the **$80.00/hr Northern California Regional Cap** in *Regional_Labor_Rates_2026.xlsx*.",
-                    "2. **Operation Hour Limits**:",
-                    "   * The request for **12.0 hours** to refinish passenger doors and blend paint is within the standard doors panel refinishing guidelines (PASSED).",
-                    "",
-                    "**Summary Recommendation**: Labor rates are compliant. Proceed to parts and operations audit."
-                ])
-            elif audit_type == "oem":
-                logs.append("⚙️ [Tool Exec] policy_search: Found Endorsement_Windshield_Zero_Deductible.docx")
-                logs.append("⚙️ [Tool Exec] dossier_search: Found OEM_vs_Aftermarket_Price_Index.xlsx (windshield backorder status)")
-                logs.append("🧮 [Calculator Tool] Windshield Replacement: Aftermarket backordered 6 weeks. Approve OEM windshield as emergency fallback.")
-                answer_parts.extend([
-                    "### 🔧 OEM Parts Rider Audit: Sarah Jenkins (#2026-10492)",
-                    "**Status: APPROVED (Standard policy override)**",
-                    "",
-                    "1. **Endorsement Checklist**:",
-                    "   * Active Endorsements: **Zero-Deductible Glass**, **Premium Towing Plus**.",
-                    "   * The policy **does not** contain the *Rider_OEM_Parts_Guarantee.pdf*.",
-                    "2. **Windshield Parts Selection**:",
-                    "   * The shop wrote for an **OEM spec windshield replacement** at **$1,200.00**.",
-                    "   * Under standard policy rules, adjusters write for aftermarket glass. However, *OEM_vs_Aftermarket_Price_Index.xlsx* indicates aftermarket glass for the 2024 Ford F-150 is currently backordered for 6 weeks.",
-                    "   * To avoid extensive rental car costs, the OEM windshield is authorized as a warehouse emergency fallback.",
-                    "",
-                    "**Summary Recommendation**: Approve the $1,200.00 OEM windshield under the Zero-Deductible Glass endorsement ($0.00 deductible applied)."
-                ])
-            elif audit_type == "fraud":
+            if audit_type == "fraud":
                 logs.append("⚙️ [Tool Exec] policy_search: Found Case_Study_Hail_Damage_PlanA.pdf")
                 logs.append("⚙️ [Tool Exec] dossier_search: Found dent_photos_description_Jenkins.pdf (18 hood dents, 24 roof dents, paint unbroken)")
                 logs.append("🔍 [Reflection] Checking PDR and repainting scope against the case study precedent: distinct damage, not overlapping.")
@@ -956,73 +987,9 @@ class AgenticRAGRouter:
                     "",
                     "**Summary Recommendation**: Approve the estimate as-is; flag the deductible allocation against the Zero-Deductible Glass rider for adjuster review."
                 ])
-            else: # letter / general
-                logs.append("⚙️ [Tool Exec] policy_search: Found Case_Study_Hail_Damage_PlanA.pdf, Endorsement_Windshield_Zero_Deductible.docx")
-                logs.append("🧮 [Calculator Tool] Payout Math: $3,200 PDR + $2,400 Repainting + $1,200 Windshield - $500 Comprehensive deductible = $6,300.")
-                answer_parts.extend([
-                    "### 📝 Claim Decision & Payout Settlement Letter: Sarah Jenkins",
-                    "**Date**: July 16, 2026",
-                    "**Claim ID**: #2026-10492",
-                    "**Insured**: Sarah Jenkins",
-                    "**Vehicle**: 2024 Ford F-150 SuperCrew",
-                    "",
-                    "Dear Sarah Jenkins,",
-                    "",
-                    "We have completed our audit of the hail and windshield damage repair estimate submitted by Apex Auto Body for your 2024 Ford F-150.",
-                    "",
-                    "**Settlement Calculations**:",
-                    "*   **Total Approved Repairs**: $6,800.00",
-                    "    *   *Paintless Dent Repair (PDR - 42 dents)*: $3,200.00 (Approved)",
-                    "    *   *Bodywork & Repainting (passenger doors)*: $2,400.00 (Approved — distinct from PDR, not duplicative)",
-                    "    *   *Windshield Replacement*: $1,200.00 (Approved)",
-                    "*   **Deductible Applied**: -$500.00 (Standard Comprehensive deductible)",
-                    "*   **Net Settlement Payout**: **$6,300.00** (Paid directly to Apex Auto Body)",
-                    "",
-                    "Note: Your policy includes a Zero-Deductible Glass rider, which waives the Comprehensive deductible for windshield replacement specifically. We are reviewing whether the $500.00 deductible above should instead be allocated only to the non-glass repairs; you may see a supplemental adjustment.",
-                    "",
-                    "Sincerely,",
-                    "**Claims Adjuster Copilot**",
-                    "*Citations: Case_Study_Hail_Damage_PlanA.pdf, Endorsement_Windshield_Zero_Deductible.docx*"
-                ])
 
         elif claim_id == "#2026-30291": # David Chen
-            if audit_type == "labor":
-                logs.append("⚙️ [Tool Exec] policy_search: Found SOP_Auto_Repair_Labor_Rates.pdf")
-                logs.append("🧮 [Calculator Tool] Checking Elite Fleet Repair mechanical rate: $120/hr > Nevada cap of $110/hr.")
-                logs.append("🧮 [Calculator Tool] Labor Over-billing Math: 8 hrs * $10 difference = $80.00 total over-billing.")
-                answer_parts.extend([
-                    "### ⚡ Regional Labor Rate & Estimate Audit: David Chen (#2026-30291)",
-                    "**Status: VIOLATION (rates exceed limits)**",
-                    "",
-                    "1. **Labor Rate Auditing**:",
-                    "   * **Mechanical rate**: Elite Fleet Repair (Las Vegas, NV) charges **$120.00/hr** for catalytic converter and infotainment console labor.",
-                    "   * Under *Regional_Labor_Rates_2026.xlsx*, the maximum allowed mechanical rate for Nevada is **$110.00/hr**.",
-                    "   * The estimate charges 2.0 hrs (catalytic) and 6.0 hrs (infotainment) at $120/hr, resulting in a **$80.00 labor rate over-billing**.",
-                    "2. **Operation Hour Limits**:",
-                    "   * Converter replacement (2.0 hrs) and console replacement (6.0 hrs) comply with standard repair labor time guides.",
-                    "",
-                    "**Summary Recommendation**: Reject estimate. Demand labor rates be reduced from $120/hr to $110/hr."
-                ])
-            elif audit_type == "oem":
-                logs.append("⚙️ [Tool Exec] policy_search: Found Endorsement_Custom_Audio_Visual.docx")
-                logs.append("🧮 [Calculator Tool] Custom Equipment Value: Wheels ($2,400) + Infotainment ($3,500) = $5,900.")
-                logs.append("🧮 [Calculator Tool] Custom Cap Check: $5,900 exceeds endorsement policy limit of $3,500.00 per occurrence. Excluded value: $2,400.")
-                answer_parts.extend([
-                    "### 🔧 OEM Parts Rider Audit: David Chen (#2026-30291)",
-                    "**Status: PARTIALLY APPROVED (Limit applied)**",
-                    "",
-                    "1. **Endorsement Checklist**:",
-                    "   * Active Endorsements: **OEM Parts Guarantee**, **Custom Equipment ($3.5k limit)**.",
-                    "2. **Custom Parts Audit**:",
-                    "   * Stolen equipment: **Enkei Wheels ($2,400.00)** and **Alpine Infotainment Console ($3,500.00)**.",
-                    "   * Under *Endorsement_Custom_Audio_Visual.docx*, custom equipment (aftermarket stereos, amplifiers, and screens not factory-installed) is capped at **$3,500.00 per occurrence**, subject to 10% annual depreciation from install date and proof of purchase.",
-                    "   * The actual parts value of **$5,900.00** exceeds the per-occurrence limit by **$2,400.00**, which must be paid out-of-pocket by the claimant.",
-                    "3. **Exhaust OEM Audit**:",
-                    "   * The catalytic converter is written as OEM ($1,500). Although the vehicle is a 2022 (4 years old), NV emissions laws mandate EPA-compliant OEM converters. Approved.",
-                    "",
-                    "**Summary Recommendation**: Limit custom equipment settlement to $3,500.00 per occurrence."
-                ])
-            elif audit_type == "fraud":
+            if audit_type == "fraud":
                 logs.append("⚙️ [Tool Exec] policy_search: Found SOP_Claims_Fraud_Red_Flags.pdf")
                 logs.append("⚙️ [Tool Exec] dossier_search: Found custom_equipment_receipts_Chen.xlsx and recovery photos")
                 logs.append("🔍 [Reflection] Checking oxidation on passenger side key scratches: Rust present (pre-existing damage).")
@@ -1039,70 +1006,9 @@ class AgenticRAGRouter:
                     "",
                     "**Summary Recommendation**: Deny the $600.00 key scratch repair. Proceed with theft-recovery billing."
                 ])
-            else: # letter / general
-                logs.append("⚙️ [Tool Exec] policy_search: Found Endorsement_Custom_Audio_Visual.docx")
-                logs.append("🧮 [Calculator Tool] Payout Math: $1,500 catalytic + $3,500 custom cap - $250 deductible = $4,750.")
-                answer_parts.extend([
-                    "### 📝 Claim Decision & Payout Settlement Letter: David Chen",
-                    "**Date**: July 16, 2026",
-                    "**Claim ID**: #2026-30291",
-                    "**Insured**: David Chen",
-                    "**Vehicle**: 2022 Honda Civic Sport",
-                    "",
-                    "Dear David Chen,",
-                    "",
-                    "We have audited the theft damage repair estimate submitted by Elite Fleet Repair for your 2022 Honda Civic Sport.",
-                    "",
-                    "**Settlement Calculations**:",
-                    "*   **Total Approved Repairs**: $5,000.00",
-                    "    *   *Catalytic Converter replacement*: $1,500.00 (Approved)",
-                    "    *   *Custom Equipment (Alpine console & Enkei wheels)*: Capped at **$3,500.00 per occurrence** (actual value $5,900.00 exceeded the limit by $2,400.00, payable out-of-pocket by claimant)",
-                    "    *   *Passenger side key scratch repairs*: **Denied ($0.00)**. Excluded under *SOP_Claims_Fraud_Red_Flags.pdf* as pre-existing rust oxidation.",
-                    "*   **Policy Deductibles**:",
-                    "    *   *Comprehensive Deductible*: -$250.00",
-                    "*   **Net Settlement Payout**: **$4,750.00**",
-                    "",
-                    "Please note that Elite Fleet Repair's labor rate was reduced to the Nevada mechanical cap of $110/hr.",
-                    "",
-                    "Sincerely,",
-                    "**Claims Adjuster Copilot**",
-                    "*Citations: Endorsement_Custom_Audio_Visual.docx, SOP_Claims_Fraud_Red_Flags.pdf, Regional_Labor_Rates_2026.xlsx*"
-                ])
 
         elif claim_id == "#2026-55912": # Elena Rostova
-            if audit_type == "labor":
-                logs.append("⚙️ [Tool Exec] policy_search: Found Regional_Labor_Rates_2026.xlsx")
-                logs.append("🧮 [Calculator Tool] Checking Classic Auto Restoration mechanical rate: $110/hr == Florida cap of $110/hr.")
-                logs.append("🧮 [Calculator Tool] Checking block replacement labor hours: 20.0 hours (complies with standard N20 motor swap guidelines).")
-                answer_parts.extend([
-                    "### ⚡ Regional Labor Rate & Estimate Audit: Elena Rostova (#2026-55912)",
-                    "**Status: COMPLIANT (estimate approved)**",
-                    "",
-                    "1. **Labor Rate Auditing**:",
-                    "   * **Mechanical rate**: Classic Auto Restoration charges **$110.00/hr**, which matches the **$110.00/hr Florida Mechanical Cap** in *Regional_Labor_Rates_2026.xlsx*.",
-                    "2. **Operation Hour Limits**:",
-                    "   * The request for **20.0 hours** to pull and replace the engine block complies with standard labor times for BMW N20 long block swaps (PASSED).",
-                    "",
-                    "**Summary Recommendation**: Labor rates are compliant. Proceed to coverage and exclusions audit."
-                ])
-            elif audit_type == "oem":
-                logs.append("⚙️ [Tool Exec] policy_search: Found Rider_OEM_Parts_Guarantee.pdf")
-                logs.append("🧮 [Calculator Tool] Checking vehicle age: 2020 BMW is 6 years old (exceeds the 5-year OEM Parts Guarantee threshold).")
-                logs.append("🧮 [Calculator Tool] Parts replacement limit: Deny OEM block ($9,500); Cap block parts costs at LKQ salvage rate of $5,200.")
-                answer_parts.extend([
-                    "### 🔧 OEM Parts Rider Audit: Elena Rostova (#2026-55912)",
-                    "**Status: DENIED (Standard policy limits apply)**",
-                    "",
-                    "1. **Endorsement Checklist**:",
-                    "   * The policy contains **no** OEM Parts Guarantee rider (Plan A).",
-                    "   * Vehicle is a 2020 BMW (6 years old).",
-                    "   * Under standard policy guidelines, adjusters must write for LKQ (Like Kind and Quality) salvage engines. The shop wrote for a brand new BMW factory block ($9,500.00). Under policy rules, this is denied; LKQ engine parts are capped at **$5,200.00**.",
-                    "2. **Exclusion Conflict**:",
-                    "   * Note that primary block damage is excluded entirely under SIU findings, making parts choice moot.",
-                    "",
-                    "**Summary Recommendation**: Block replacement is denied due to exclusions; parts check is moot."
-                ])
-            elif audit_type == "fraud":
+            if audit_type == "fraud":
                 logs.append("⚙️ [Tool Exec] policy_search: Found Case_Study_Engine_Hydro_Lock.pdf")
                 logs.append("⚙️ [Tool Exec] dossier_search: Found telematics_log_Rostova.pdf (Speed 45 mph in standing water, followed by 3 starter crank attempts) and engine_diagnostic_report_Rostova.pdf")
                 logs.append("🔍 [Reflection] Checking starter logs: 3 cranking attempts post-stall confirmed.")
@@ -1118,29 +1024,6 @@ class AgenticRAGRouter:
                     "   * No police report or citation record exists in this claim's file. The DUI exclusion (*DUI_Exclusion_Directive.txt*) is not applicable here — there is no evidence to invoke it, and this should not be asserted without a supporting record.",
                     "",
                     "**Summary Recommendation**: Deny claims liability in full on consequential-damage grounds; DUI exclusion not applicable absent supporting evidence."
-                ])
-            else: # letter / general
-                logs.append("⚙️ [Tool Exec] policy_search: Found Case_Study_Engine_Hydro_Lock.pdf")
-                logs.append("🧮 [Calculator Tool] Payout Math: Consequential damage exclusion applies in full. Net Payout = $0.00.")
-                answer_parts.extend([
-                    "### 📝 Claim Decision & Payout Settlement Letter: Elena Rostova",
-                    "**Date**: July 16, 2026",
-                    "**Claim ID**: #2026-55912",
-                    "**Insured**: Elena Rostova",
-                    "**Vehicle**: 2020 BMW 330i xDrive",
-                    "",
-                    "Dear Elena Rostova,",
-                    "",
-                    "We regret to inform you that your insurance claim for the engine damage on your 2020 BMW 330i has been **Denied** in full.",
-                    "",
-                    "**Reason for Denial**:",
-                    "Mechanical reports and telematics records show that after the vehicle stalled in standing water, the ignition was activated three times attempting to restart it, drawing water further into the engine and fracturing the block. Under *Case_Study_Engine_Hydro_Lock.pdf*, engine damage caused by restart attempts on a water-stalled engine is driver-induced consequential damage and is excluded from coverage.",
-                    "",
-                    "*   **Total Settlement Payout**: **$0.00**",
-                    "",
-                    "Sincerely,",
-                    "**Claims Adjuster Copilot**",
-                    "*Citations: Case_Study_Engine_Hydro_Lock.pdf, telematics_log_Rostova.pdf, engine_diagnostic_report_Rostova.pdf*"
                 ])
 
         else: # Generic reference lookup

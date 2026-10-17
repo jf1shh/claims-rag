@@ -56,6 +56,10 @@ class _DefaultHTTP:
         return requests.get(url, timeout=timeout, **kw)
 
 
+# Placeholder model name used when LLM_MODEL is unset and no server model is known.
+UNRESOLVED_MODEL = "local-model"
+
+
 class OpenAICompatibleClient(ChatClient):
     STAGES = ("planning", "synthesis", "eval")
 
@@ -78,11 +82,16 @@ class OpenAICompatibleClient(ChatClient):
         self._models_at = -float("inf")
 
     def model_for_stage(self, stage: str) -> str:
-        return {
+        name = {
             "planning": self.planning_model,
             "synthesis": self.synthesis_model,
             "eval": self.eval_model,
         }.get(stage) or self.default_model
+        if name and name != UNRESOLVED_MODEL:
+            return name
+        # No LLM_MODEL configured: send the model the server actually has loaded.
+        # Sending the "local-model" placeholder made Lemonade answer 404.
+        return self.models()[0]
 
     def _headers(self):
         h = {"Content-Type": "application/json"}
@@ -159,13 +168,33 @@ class OpenAICompatibleClient(ChatClient):
         now = self._clock()
         if self._models_cache is not None and (now - self._models_at) < self.models_ttl_seconds:
             return self._models_cache
+        # Lemonade's /v1/models lists every *downloaded* model, so data[0] can name one
+        # that is not resident and requesting it forces a model swap. Its health
+        # endpoint names the loaded ones; other servers fall through to /v1/models.
+        loaded = self._loaded_llms()
+        if loaded:
+            self._models_cache, self._models_at = loaded, now
+            return loaded
         try:
             resp = self._http.get(f"{self.base_url}/v1/models", timeout=2.0)
-            if resp.status_code == 200 and resp.json().get("data"):
-                self._models_cache = [resp.json()["data"][0]["id"]]
+            ids = [m["id"] for m in resp.json().get("data") or []] if resp.status_code == 200 else []
+            ids = [i for i in ids if "embed" not in i.lower()] or ids
+            if ids:
+                self._models_cache = [ids[0]]
                 self._models_at = now
                 return self._models_cache
         except Exception:
             pass
         # Do not cache a failure: a transient outage self-heals next call.
-        return ["local-model"]
+        return [UNRESOLVED_MODEL]
+
+    def _loaded_llms(self) -> list[str]:
+        try:
+            resp = self._http.get(f"{self.base_url}/api/v1/health", timeout=2.0)
+            if resp.status_code != 200:
+                return []
+            loaded = resp.json().get("all_models_loaded") or []
+            return [m["model_name"] for m in loaded
+                    if m.get("model_name") and m.get("type", "llm") == "llm"]
+        except Exception:
+            return []

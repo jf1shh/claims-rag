@@ -11,7 +11,7 @@
 * **EmbeddingEngine** ([backend/rag_engine.py](backend/rag_engine.py)): Instantiates `sentence-transformers/all-MiniLM-L6-v2` locally to generate 384-dimensional vectors. Imported lazily so the vector store can be used without loading torch.
 * **Reranker** ([backend/reranker.py](backend/reranker.py)): Provider-neutral cross-encoder seam. `LocalReranker` preserves the lazy CPU implementation; `RemoteReranker` sends a bounded candidate pool to a dedicated GPU HTTP service; `FallbackReranker` fails open to local.
 * **SQLiteVectorStore** ([backend/rag_engine.py](backend/rag_engine.py)): Stores documents, parent/child chunks, embedding BLOBs, and an FTS5 index. `search_similarity` runs **hybrid retrieval**: vectorized cosine over child chunks (mapped up to best parent) + FTS5 keyword search, fused via RRF, then cross-encoder reranked. Embeddings are held in an **in-memory, pre-normalized matrix cache** (built lazily, invalidated on add/delete) so queries avoid re-reading BLOBs and recomputing corpus norms.
-* **AgenticRAGRouter** ([backend/agentic_router.py](backend/agentic_router.py)): Orchestrates each query. Online mode asks the LLM for a JSON plan (which stores to search + sub-queries), retrieves per sub-query, self-corrects on empty results, and synthesizes a grounded answer. Simulated mode runs local retrieval plus a Python rule engine keyed to demo claims/audit types. Emits step-by-step `pipeline_logs`.
+* **AgenticRAGRouter** ([backend/agentic_router.py](backend/agentic_router.py)): Orchestrates each query. Online mode asks the LLM for a JSON plan (which stores to search + sub-queries), retrieves per sub-query, self-corrects on empty results, and synthesizes a grounded answer. Simulated mode runs local retrieval, then computes labor, OEM, total-loss and payout answers with `backend/claims_tools.py` (fraud/SIU narratives remain canned). Emits step-by-step `pipeline_logs`.
 * **FastAPI Server** ([backend/app.py](backend/app.py)): Exposes REST endpoints for global + per-claim upload, listing, deletion, document content/download, agentic chat, and LLM connection status.
 * **Frontend Web Dashboard** ([frontend/index.html](frontend/index.html)): HTML/CSS/JS UI with a claims queue, per-claim document folders, claims chat, clickable/viewable document citations, and real-time RAG pipeline logs.
 
@@ -39,6 +39,7 @@ claims-rag/
 │   ├── app.py                  ← FastAPI REST API + per-claim endpoints
 │   ├── rag_engine.py           ← Parsing, chunking, embedding, reranking, hybrid store
 │   ├── agentic_router.py       ← Agentic planner/retriever/synthesizer + simulation engine
+│   ├── claims_tools.py         ← Deterministic claims tools (labor caps, OEM, total loss, deductible) with cited inputs
 │   ├── reranker.py             ← Local/remote provider-neutral cross-encoder reranking seam
 │   ├── postgres_store.py       ← Postgres + pgvector backend behind the VectorStore interface (Phase 1)
 │   ├── blob_store.py           ← DocumentBlobStore ABC: local + S3 adapters (Phase 2)
@@ -78,6 +79,18 @@ claims-rag/
 | Chunking scheme? | Parent/child (small embedded children → larger parent context) | Embed small chunks for precise matching, but return the larger parent so the LLM sees enough surrounding context. |
 | Query orchestration? | Stateful agentic router (plan → retrieve → self-correct → synthesize) | Decomposes multi-part claims questions, scopes retrieval per claim, and recovers from empty results instead of failing. |
 | Embedding search performance? | In-memory pre-normalized matrix cache, invalidated on write | Avoids re-reading BLOBs and recomputing corpus norms every query; keeps the "no per-row loops" constraint intact at scale. |
+
+## Claims tools contract (2026-10-16)
+
+`backend/claims_tools.py` is pure Python with no I/O. `labor_rate_check(estimate)`,
+`oem_rider_check(vehicle=, loss_year=, endorsements=, mileage=)`,
+`total_loss_check(state=, repair_cost=, acv=, salvage=)` and
+`deductible_apply(lines=, plan=, deductible=, endorsements=, custom_ops=, excluded=)` each return
+a dict with `tool`, a status or result, and `inputs`: a list of `{name, value, source, section}`.
+`render_inputs()` turns those into the citation table shown in chat. Rule values mirror the
+generator text; `tests/test_claims_tools.py` fails on drift. Missing inputs (ACV, salvage,
+mileage) are reported, never assumed. Findings that are not math (custom-equipment lines, SIU
+exclusions) live in `CLAIM_EVIDENCE` in `agentic_router.py`.
 
 ## Component / Service Status
 
