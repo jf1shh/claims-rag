@@ -121,3 +121,7 @@ README career context and About links align with Jared's confirmed October 10 Li
 ## Agent tooling — 2026-10-16
 
 Trail-code graft map wired for Claude Code (developer tooling only; no runtime change). Contributors run `npm install -g @trailhq/trail-code && trail build` for their local graph; see `.trail/README.md`.
+
+## Recruiter README — 2026-10-16
+
+README.md rewritten for a claims-AI hiring manager (PR #12, branch `docs/recruiter-readme`): pitch and author first, a computed `labor_rate_check` answer, dated golden/adversarial results, what testing found, then quickstart and details. No new metrics. It now states that the claims tools run only in the simulation path. Proposed About description/homepage/topics are in the PR; apply them after merge (the homepage anchor changes to `#results`). Verification: `crag check` 710 passed, gate 0 blocking; README link targets checked.

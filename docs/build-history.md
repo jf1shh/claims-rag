@@ -713,3 +713,14 @@ for them when absent.
 * **Verification**: `crag check` 706 passed / 17 skipped / 1 xfailed, gate 0 blocking (56
   advisory, unchanged); ruff clean; the answer guard raised no findings on 20 claim x query
   combinations. Fraud/SIU narratives unchanged.
+
+## Recruiter README — 2026-10-16 (branch `docs/recruiter-readme`, PR #12)
+
+Rewrote README.md for hiring managers in claims AI (253 → 224 lines). The labor-audit example is
+real output of `_run_simulated_agent("Audit the labor rates on this estimate", "#2026-99382")`.
+* **Found**: the claims tools are called only from `_run_simulated_agent`; `_run_online_agent`
+  never calls them. The README's limitations section now says so.
+* **Found**: `trail check` raises keyword false positives on README prose (README.md:99 vs the
+  P1 and crag learnings); documented in the PR rather than rewording.
+* **Verification**: `crag check` 710 passed / 17 skipped / 1 xfailed, gate 0 blocking; all README
+  relative links resolve; documentation contract strings kept.
