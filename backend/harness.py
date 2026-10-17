@@ -25,7 +25,7 @@ _SECRET_PATTERNS = (
 
 def scan_secrets(root: Path) -> list[Finding]:
     findings: list[Finding] = []
-    ignored = {".git", ".venv", "__pycache__", "stored_documents", "tests", "docs/superpowers"}
+    ignored = {".git", ".venv", "__pycache__", "stored_documents", "tests", "docs/superpowers", ".trail"}
     for path in root.rglob("*"):
         relative = path.relative_to(root).as_posix()
         if relative.startswith("tests/") or relative.startswith("docs/superpowers/"):
