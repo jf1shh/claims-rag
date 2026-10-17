@@ -4,14 +4,68 @@
     {
       "name": "claimsrag-backend",
       "runtimeExecutable": ".venv/bin/python",
-      "runtimeArgs": ["-m", "uvicorn", "backend.app:app", "--reload", "--port", "8000"],
+      "runtimeArgs": [
+        "-m",
+        "uvicorn",
+        "backend.app:app",
+        "--reload",
+        "--port",
+        "8000"
+      ],
       "port": 8000
     },
     {
       "name": "claimsrag-eval",
       "runtimeExecutable": "env",
-      "runtimeArgs": ["SIMULATION_MODE=false", "HF_HUB_OFFLINE=1", ".venv/bin/python", "-m", "uvicorn", "backend.app:app", "--port", "8000"],
+      "runtimeArgs": [
+        "SIMULATION_MODE=false",
+        "HF_HUB_OFFLINE=1",
+        ".venv/bin/python",
+        "-m",
+        "uvicorn",
+        "backend.app:app",
+        "--port",
+        "8000"
+      ],
       "port": 8000
+    },
+    {
+      "name": "claimsrag-adversarial",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "RAG_DB_PATH=eval/adversarial/.work/adv_store.db",
+        "STORED_DOCUMENTS_DIR=eval/adversarial/.work/stored_documents",
+        "AUDIT_LOG_PATH=eval/adversarial/.work/audit.log.jsonl",
+        "JOBS_DB_PATH=eval/adversarial/.work/jobs.db",
+        "SIMULATION_MODE=false",
+        "HF_HUB_OFFLINE=1",
+        ".venv/bin/python",
+        "-m",
+        "uvicorn",
+        "backend.app:app",
+        "--port",
+        "8002"
+      ],
+      "port": 8002
+    },
+    {
+      "name": "claimsrag-adversarial-holdout",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "RAG_DB_PATH=eval/adversarial/.work-holdout/adv_store.db",
+        "STORED_DOCUMENTS_DIR=eval/adversarial/.work-holdout/stored_documents",
+        "AUDIT_LOG_PATH=eval/adversarial/.work-holdout/audit.log.jsonl",
+        "JOBS_DB_PATH=eval/adversarial/.work-holdout/jobs.db",
+        "SIMULATION_MODE=false",
+        "HF_HUB_OFFLINE=1",
+        ".venv/bin/python",
+        "-m",
+        "uvicorn",
+        "backend.app:app",
+        "--port",
+        "8003"
+      ],
+      "port": 8003
     }
   ]
 }

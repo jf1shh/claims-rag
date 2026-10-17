@@ -12,7 +12,7 @@ Usage:
 Then start the app against the scratch store and run the suite:
     RAG_DB_PATH=<work-dir>/adv_store.db STORED_DOCUMENTS_DIR=<work-dir>/stored_documents \\
         AUDIT_LOG_PATH=<work-dir>/audit.log.jsonl JOBS_DB_PATH=<work-dir>/jobs.db \\
-        SIMULATION_MODE=false .venv/bin/uvicorn backend.app:app --port 8001
+        SIMULATION_MODE=false .venv/bin/uvicorn backend.app:app --port 8002
     .venv/bin/python -B eval/run_adversarial_eval.py
 """
 from __future__ import annotations
@@ -52,7 +52,7 @@ def uvicorn_command(scratch_db: Path, scratch_storage: Path) -> str:
     return (
         f"RAG_DB_PATH={scratch_db} STORED_DOCUMENTS_DIR={scratch_storage} "
         f"AUDIT_LOG_PATH={work_dir / 'audit.log.jsonl'} JOBS_DB_PATH={work_dir / 'jobs.db'} "
-        "SIMULATION_MODE=false .venv/bin/uvicorn backend.app:app --port 8001"
+        "SIMULATION_MODE=false .venv/bin/uvicorn backend.app:app --port 8002"
     )
 
 

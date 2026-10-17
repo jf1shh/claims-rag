@@ -163,6 +163,32 @@ def register_routes(app, runtime):
         assessment = assess_conflict(runtime._llm_client, query, result.get("sources") or [])
         return {**result, "conflict": assessment.to_dict()} if assessment is not None else result
 
+    def provenance_result(result):
+        """Answer provenance check (backend/provenance_check.py). Runs on a live, non-withheld
+        answer: redacts answer lines that repeat an unretrieved filename or an identifier a
+        source directed the assistant to reproduce, and withholds the answer when nothing
+        substantive survives. Any failure leaves the answer unchanged."""
+        mode = runtime.settings.provenance_check
+        if (mode == "off" or result.get("status") == "error"
+                or (result.get("guard") or {}).get("action") == "withheld"
+                or "simulated" in str(result.get("engine", ""))):
+            return result
+        from backend.provenance_check import MIN_KEPT_CHARS, check_provenance, substantive_chars
+        checked = check_provenance(runtime._llm_client, str(result.get("answer") or ""),
+                                   result.get("sources") or [], mode=mode)
+        if not (checked.redacted or checked.errors or checked.judged):
+            return result
+        report = {"action": "none", "findings": [f.to_dict() for f in checked.findings],
+                  "judged": checked.judged, "errors": list(checked.errors)}
+        if not checked.redacted:
+            return {**result, "provenance": report}
+        if substantive_chars(checked.answer) < MIN_KEPT_CHARS:
+            from backend.provenance_check import WITHHELD_TEXT
+            report["action"] = "withheld"
+            return {**result, "provenance": report, "answer": WITHHELD_TEXT}
+        report["action"] = "redacted"
+        return {**result, "provenance": report, "answer": checked.answer}
+
     def guard_audit_fields(result):
         """Metadata-only guard summary for the audit sink: action and finding categories,
         never the excerpts, which are answer text."""
@@ -173,6 +199,10 @@ def register_routes(app, runtime):
         if guard:
             fields.update({"guard_action": guard["action"],
                            "guard_findings": sorted({f"{f['kind']}:{f['category']}" for f in guard["findings"]})})
+        provenance = result.get("provenance")
+        if provenance and provenance["action"] != "none":
+            fields.update({"provenance_action": provenance["action"],
+                           "provenance_findings": sorted({f["kind"] for f in provenance["findings"]})})
         return fields
 
     def validate_chat(req):
@@ -582,7 +612,7 @@ def register_routes(app, runtime):
             llm_client=runtime._llm_client,
             caps=runtime.settings,
         )
-        result = conflict_result(guard_result(result, req.claim_id), req.query)
+        result = conflict_result(provenance_result(guard_result(result, req.claim_id)), req.query)
         _audit(
             request,
             principal,
@@ -622,7 +652,7 @@ def register_routes(app, runtime):
                     # Chunks already streamed cannot be recalled; the final event's answer
                     # replaces the streamed bubble (frontend finalizeStreamingBubble), so a
                     # withheld answer is withdrawn from view once generation completes.
-                    event = project_result(request, conflict_result(guard_result(event, req.claim_id), req.query))
+                    event = project_result(request, conflict_result(provenance_result(guard_result(event, req.claim_id)), req.query))
                     _audit(request, principal, "chat",
                            query=req.query, claim_id=req.claim_id, engine=event.get("engine"),
                            answer=event.get("answer"),

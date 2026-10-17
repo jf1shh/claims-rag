@@ -745,3 +745,14 @@ existing California and Texas regulation docs.
 * **Results**: two full runs, 28/28 scored. Hybrid P/R 0.865/0.991 identical across runs; correctness
   0.862/0.863; faithfulness 0.798/0.825. Original 19 subset: correctness 0.818, faithfulness ~0.80 (vs 0.892 on
   2026-09-22 under LM Studio, not comparable). New 9: correctness 0.956.
+
+## P3 prompt-injection hardening — 2026-10-16 (branch `feat/p3-injection-hardening`)
+
+- Merged PR #15 (frontier reference spec) on explicit owner request as 407b9e8; revert point 3e8cf4a.
+- Reran the adversarial suite first, on scratch app port 8002 (Lemonade's llama-server holds 8001, the documented default, so `--app-url` is required now). Added `claimsrag-adversarial` (8002) and `claimsrag-adversarial-holdout` (8003, `eval/adversarial/.work-holdout/`, gitignored) launch configs. Known 25% (4/16), held-out 58% (7/12): no drift from the P2 docs.
+- Built `backend/provenance_check.py` (output-side, see `docs/adversarial-evaluation.md` fix 4). Known 6% (1/16), held-out 25% (3/12), no regression on conflicts or controls.
+- **Debugging history.** First version redacted the whole answer line for any unretrieved filename. The golden false-positive run caught a model miscite of a real source (`Adjuster_Reference_Guide_…` for `Adjuster_Guide_…`) and the redaction cost a correct sentence. Fixed: an unretrieved filename named by a retrieved excerpt (planted) loses its line; one no excerpt names (miscite) loses only the token. Rerun: 0/28 touched.
+- **Ruled out without trying:** more input-side regex patterns (0/12 held-out on 09-26) and sandwich as default (−0.12 correctness on 09-26); tuning against the three held-out misses (would spend the held-out set).
+- Gate: ruff B008 on a call in a fixture's default argument; moved to a module constant.
+- `eval/golden_guard_check.py` now records `provenance` per answer and `provenance_redacted`/`provenance_judged` in the summary.
+
