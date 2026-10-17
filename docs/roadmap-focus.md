@@ -26,6 +26,12 @@
 
 ### P1. Real claims tools in place of canned simulation
 
+**Done 2026-10-16** (`backend/claims_tools.py`, 28 unit tests + 10 router tests). Labor, OEM,
+total-loss and settlement answers are computed for all four demo claims and end with a
+tool-inputs table citing document and section. Fraud/SIU narratives are still canned (not P1).
+Computing exposed what the strings hid: the canned answers cited a nonexistent
+`Regional_Labor_Rates_2026.xlsx` and called estimates compliant that exceed the SOP caps.
+
 Deterministic, tested functions that the router calls and that compute from the ingested
 synthetic documents, with every input cited:
 

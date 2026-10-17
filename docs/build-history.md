@@ -692,3 +692,24 @@ Aligned README authorship and career wording with Jared's confirmed LinkedIn upd
 ## Trail-code graft map — 2026-10-16
 
 Added Trail-code v0.23.0 (`trail init --agents claude --no-global`) to cut code-discovery tokens in Claude Code sessions. Committed: a `SessionStart` hook in `.claude/settings.json` plus `.trail/hook.cjs`, `.trail/README.md` and `.trail/.gitignore`. The graph cache (`.trail/cache/`) and statusline shim are git-ignored; per-user prompt/edit/stop hooks live in the ignored `settings.local.json`. Telemetry disabled (`trail telemetry disable`). Global `~/.claude/settings.json` untouched. Hygiene and documentation-contract tests passed (5). No runtime, model, test or evaluation configuration changed.
+
+## P1 claims tools — 2026-10-16 (branch `feat/p1-claims-tools`)
+
+Replaced the canned labor/OEM/letter branches of `_run_simulated_agent` with
+`backend/claims_tools.py`: `labor_rate_check`, `oem_rider_check`, `total_loss_check`,
+`deductible_apply`, each returning its inputs with document/section citations, rendered as a
+table in the answer. New `total_loss` audit type reads ACV and salvage from the query and asks
+for them when absent.
+
+* **Found (debugging history)**: the canned answers cited `Regional_Labor_Rates_2026.xlsx`,
+  which no generator produces, and per-state caps ($75/$80/$120) that contradict the only labor
+  source in the corpus (`SOP_Auto_Repair_Labor_Rates.pdf`: flat $62/$75/$62/$110/$120). Computed
+  against the SOP, Sterling, Jenkins and Chen are over cap; only Rostova is within.
+* **Found**: every claim's `totalEst` differs from its line-item sum (e.g. Sterling $4,850 vs
+  $2,405). The tools use the itemized lines and the answer states the gap.
+* **Found**: the SOP OEM rule is silent at exactly 3 years ("under 3" / "older than 3");
+  reported as `sop_gap`. Chen's declared $3.5k custom-equipment limit conflicts with Form 402's
+  $5,000 standard; reported as a note.
+* **Verification**: `crag check` 706 passed / 17 skipped / 1 xfailed, gate 0 blocking (56
+  advisory, unchanged); ruff clean; the answer guard raised no findings on 20 claim x query
+  combinations. Fraud/SIU narratives unchanged.

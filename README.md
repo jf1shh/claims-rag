@@ -200,7 +200,7 @@ python3.12 -m venv .venv
 .venv/bin/python eval/run_eval.py
 ```
 
-Development enables an explicitly labeled rule-based simulation for exploring the demo. `SIMULATION_MODE=false` disables both explicit simulation and provider-failure fallback. Precache is required even for simulated retrieval. Missing optional demo photos are represented as text descriptions, not placeholder image binaries.
+Development enables an explicitly labeled rule-based simulation for exploring the demo. Its labor-rate, OEM-parts, total-loss and settlement answers are computed by deterministic, unit-tested tools (`backend/claims_tools.py`) and list every input with its source document. `SIMULATION_MODE=false` disables both explicit simulation and provider-failure fallback. Precache is required even for simulated retrieval. Missing optional demo photos are represented as text descriptions, not placeholder image binaries.
 
 ### Or run it in Docker
 
