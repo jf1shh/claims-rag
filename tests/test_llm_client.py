@@ -20,6 +20,7 @@ class FakeHTTP:
         self.gets = []
         self._post_resp = None
         self._models_resp = None
+        self._health_resp = None  # Lemonade /api/v1/health; None -> 404 like a plain server
 
     def post(self, url, json=None, headers=None, timeout=None, **kw):
         self.posts.append({"url": url, "json": json, "headers": headers, "timeout": timeout})
@@ -29,6 +30,8 @@ class FakeHTTP:
 
     def get(self, url, timeout=None, **kw):
         self.gets.append({"url": url, "timeout": timeout})
+        if url.endswith("/api/v1/health"):
+            return _FakeResponse(self._health_resp, status=200 if self._health_resp else 404)
         return _FakeResponse(self._models_resp)
 
 
@@ -144,7 +147,7 @@ def test_models_returns_first_and_ttl_caches():
                                     models_ttl_seconds=600, http=http)
     assert client.models() == ["served-model"]
     assert client.models() == ["served-model"]
-    assert len(http.gets) == 1  # cached, no second round-trip
+    assert len([g for g in http.gets if g["url"].endswith("/v1/models")]) == 1  # cached
 
 
 def test_models_failure_returns_local_model_without_caching():
@@ -155,3 +158,40 @@ def test_models_failure_returns_local_model_without_caching():
     assert client.models() == ["local-model"]
     http._models_resp = {"data": [{"id": "now-up"}]}
     assert client.models() == ["now-up"]  # failure wasn't cached
+
+
+def test_models_prefers_lemonade_loaded_llm_over_download_list():
+    """Lemonade's /v1/models lists every downloaded model; data[0] was a non-resident
+    model, which forces a swap. The health endpoint names the loaded one."""
+    http = FakeHTTP()
+    http._models_resp = {"data": [{"id": "downloaded-not-loaded"}, {"id": "resident"}]}
+    http._health_resp = {"all_models_loaded": [
+        {"model_name": "nomic-embed", "type": "embedding"},
+        {"model_name": "resident", "type": "llm"},
+    ]}
+    client = OpenAICompatibleClient(base_url="http://x", default_model="local-model", http=http)
+    assert client.models() == ["resident"]
+
+
+def test_models_skips_embedding_models_on_plain_servers():
+    http = FakeHTTP()
+    http._models_resp = {"data": [{"id": "nomic-embed-text"}, {"id": "chat-model"}]}
+    client = OpenAICompatibleClient(base_url="http://x", default_model="M", http=http)
+    assert client.models() == ["chat-model"]
+
+
+def test_unset_model_resolves_placeholder_to_served_model():
+    """With LLM_MODEL unset, requests sent the literal "local-model" and Lemonade 404'd."""
+    http = FakeHTTP()
+    http._health_resp = {"all_models_loaded": [{"model_name": "resident", "type": "llm"}]}
+    client = OpenAICompatibleClient(base_url="http://x", default_model="local-model", http=http)
+    assert client.model_for_stage("synthesis") == "resident"
+    assert client.model_for_stage("planning") == "resident"
+
+
+def test_configured_model_is_never_replaced():
+    http = FakeHTTP()
+    http._health_resp = {"all_models_loaded": [{"model_name": "resident", "type": "llm"}]}
+    client = OpenAICompatibleClient(base_url="http://x", default_model="pinned", http=http)
+    assert client.model_for_stage("synthesis") == "pinned"
+    assert http.gets == []
