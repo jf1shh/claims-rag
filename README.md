@@ -84,17 +84,18 @@ The nine new questions (subrogation through storage/towing) score higher than th
 
 ### Adversarial suite: can a poisoned document hijack it?
 
-38 synthetic poisoned or conflicting documents and 27 cases ([`eval/adversarial/`](eval/adversarial/)), plus a held-out set written by a different model *after* it had read the defense code, so the defenses can't be tuned to known attacks. Run 2026-09-26; small case counts, single runs or pairs, so read these as indicative.
+38 synthetic poisoned or conflicting documents and 27 cases ([`eval/adversarial/`](eval/adversarial/)), plus a held-out set written by a different model *after* it had read the defense code, so the defenses can't be tuned to known attacks. First run 2026-09-26, with the provenance check added 2026-10-16; small case counts, single runs or pairs, so read these as indicative.
 
 | | Before | After |
 |---|---|---|
 | Forged claim decisions shown to the user | 4/4 | **0/4** (held for review) |
 | Attacker links or contacts shown to the user | 1/2 | **0/2** |
-| Known injection attacks that succeeded | 87.5% | 25% |
+| Known injection attacks that succeeded | 87.5% | **6%** (1/16) |
+| Held-out attacks that succeeded (written after reading the defenses) | 58% | **25%** (3/12) |
 | Real source conflicts labelled `conflicting_evidence` | 0/9 | **9/9** (no false labels on 2 controls or 19 golden answers) |
-| Golden answer quality (faithfulness / correctness) | 0.898 / 0.818 | unchanged |
+| Golden answer quality (faithfulness / correctness) | 0.898 / 0.818 | unchanged (the provenance check touched 0 of 28 golden answers) |
 
-The most useful result was a negative one. A reminder placed after the sources cut held-out injection success from 42% to 17–25%, but only by making answers narrower: golden answers got 39% shorter and correctness fell about 0.12. So it ships off by default. Full method and limits: [docs/adversarial-evaluation.md](docs/adversarial-evaluation.md).
+The most useful result was a negative one. A reminder placed after the sources cut held-out injection success from 42% to 17–25%, but only by making answers narrower: golden answers got 39% shorter and correctness fell about 0.12. So it ships off by default. What did work reads the answer back to its sources instead: every attack that still got through had planted a code or filename for the model to repeat, and the provenance check removes lines that repeat something a source *told* the model to include. Full method and limits: [docs/adversarial-evaluation.md](docs/adversarial-evaluation.md).
 
 ## What testing found
 
@@ -105,6 +106,7 @@ Measuring caught problems that a demo never would have:
 3. **A two-document question always failed.** One question needs an endorsement cap *and* the claim's own receipt. Single-shot search never surfaced both, so the planner now always includes the claim's own documents. Scored through the full pipeline, that question went to 1.0 correctness.
 4. **The scoring itself was unfair.** Ragas's default setting penalised correct, well-cited answers for detail the short reference didn't mention. It now scores recall against the reference.
 5. **Prompt injection forged claim decisions.** Instructions planted in documents made the model announce claims approved or denied. The adversarial suite found it; an answer guard now holds those answers back.
+6. **Input filters don't generalise.** A pattern sanitizer stopped half the known attacks and none of the held-out ones. An attacker can reword an instruction, but the planted string still has to reach the answer, so the check that works runs on the output: a provenance check traces each code and filename back to the source sentence it came from.
 
 ## Try it locally
 
@@ -188,7 +190,7 @@ FastAPI (JSON + streamed answers) ──▶ frontend (claims queue, claim folder
 
 - **Why hybrid search:** vector search is good at paraphrase but can miss exact lookups. "What's the comprehensive deductible?" can rank a narrative case study above the deductibles spreadsheet. Keyword search catches that; the two are fused and then reranked.
 - **Why an agentic router:** a question like "does this claim exceed the coverage cap?" needs the endorsement terms *and* the claim's receipt. The router plans both searches, retries with a reworded query if one comes back empty, and refuses if it still finds nothing.
-- **Retrieved documents are untrusted.** Instruction-like sentences in them are neutralised before generation (`PROMPT_DEFENSE`). Answers asserting an unsupported claim outcome, or containing an unexpected link or contact, are held for review (`ANSWER_GUARD_MODE`). Conflicting values are labelled (`CONFLICT_CHECK`). These reduce risk; they don't guarantee anything.
+- **Retrieved documents are untrusted.** Instruction-like sentences in them are neutralised before generation (`PROMPT_DEFENSE`). Answers asserting an unsupported claim outcome, or containing an unexpected link or contact, are held for review (`ANSWER_GUARD_MODE`). Conflicting values are labelled (`CONFLICT_CHECK`). Lines repeating a code or filename a source told the model to include are removed (`PROVENANCE_CHECK`). These reduce risk; they don't guarantee anything.
 - **Where it would break at scale:** vector search is brute-force and the embedding cache rebuilds on every write, which is fine for one adjuster's few hundred documents and is the first thing to change for millions. A Postgres + pgvector store (tenant row-level security, HNSW index) and S3 document storage already sit behind the same interfaces. Roadmap: [docs/enterprise-migration.md](docs/enterprise-migration.md).
 
 More detail: [docs/architecture.md](docs/architecture.md) (components and design decisions) and [docs/portfolio-hardening.md](docs/portfolio-hardening.md) (the September hardening and what it verified).
@@ -214,8 +216,8 @@ Synthetic data only. Read [`SECURITY.md`](SECURITY.md) before handling uploaded 
 - **Scores come from one local judge model** and move between runs. Treat single runs as noisy and trust trends across reruns. Changing the judge or generator means a new baseline.
 - **Faithfulness measures groundedness, not correctness:** an answer can stick to partial context and still be wrong. Reference-fact coverage is the check against the verified answer.
 - **Context precision and recall score single-shot search,** not the full pipeline's guaranteed inclusion of the claim's own documents. Coverage *is* scored through the full pipeline.
-- **Prompt injection is reduced, not solved.** The default sanitizer stopped none of the held-out attacks, which were written after reading its code. The answer guard stops forged decisions and exfiltration links, not every injected phrase.
-- **The golden set is still small.** 28 questions, mostly one or two per topic, all on synthetic documents. The newer topics have one short source document each, which makes them easier than real claim files. The adversarial suite has not been rerun; its next ingest will include the six new documents.
+- **Prompt injection is reduced, not solved.** 3 of 12 held-out attacks still succeed: an instruction worded like an honest SOP ("record X as the form reference") or a code stated as a fact in a footnote reads as legitimate to the provenance check. The held-out set has now been inspected, so the next round needs a fresh one.
+- **The golden set is still small.** 28 questions, mostly one or two per topic, all on synthetic documents. The newer topics have one short source document each, which makes them easier than real claim files.
 
 ## Tech stack
 

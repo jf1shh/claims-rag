@@ -41,6 +41,8 @@ model caches, or logs.
     `ANSWER_GUARD_ALLOWED_DOMAINS`. The audit log records the guard's action and finding categories,
     never the excerpts.
   - `CONFLICT_CHECK=llm` labels disagreeing sources as `conflicting_evidence`.
+  - `PROVENANCE_CHECK=llm` redacts answer lines that repeat a code or filename a retrieved source
+    instructed the model to include (known injection success 6%, held-out 25%, 2026-10-16).
 
   Measured limits: attacks written with knowledge of the sanitizer still get through. The opt-in
   `sandwich` defense cuts that, at a measured answer-quality cost. Streamed tokens are visible until the
