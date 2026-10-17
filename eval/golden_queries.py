@@ -196,4 +196,91 @@ GOLDEN_QUERIES = [
                  "with no backing document in the corpus. A well-grounded system should say the evidence "
                  "isn't there, not confirm the claim.",
     },
+
+    # ---- P2 (2026-10-16): domains the set did not cover (crag coverage GAP rows). ----
+    # Sources are synthetic docs added to scripts/rebuild_golden_source_docs.py, except
+    # salvage-owner-retention and towing-after-accident, which use existing generated docs.
+    {
+        "id": "subrogation-referral-trigger",
+        "claim_id": None,
+        "query": "When must a claim be referred to the Subrogation Unit?",
+        "reference": "A claim must be referred to subrogation when a third party is assessed at 25% or more fault, "
+                      "or when the loss was caused by a defective part, a road hazard maintained by a public entity, "
+                      "or a commercial vehicle. The referral must be made within 30 days of the first physical damage "
+                      "payment.",
+        "source": "SOP_Subrogation_Recovery.pdf",
+    },
+    {
+        "id": "subrogation-partial-deductible",
+        "claim_id": None,
+        "query": "If subrogation only recovers part of the damages, how much of the insured's deductible is reimbursed?",
+        "reference": "Recovered funds go to the insured's deductible first. On a partial recovery the insured gets the "
+                      "same percentage of the deductible as the percentage of total damages recovered (pro rata), and "
+                      "is notified in writing within 10 business days.",
+        "source": "SOP_Subrogation_Recovery.pdf",
+    },
+    {
+        "id": "supplement-reinspection-threshold",
+        "claim_id": None,
+        "query": "When does a repair supplement require a field reinspection before approval?",
+        "reference": "A field reinspection is required when a single supplement exceeds $1,500 or when all supplements "
+                      "combined exceed 25% of the original approved estimate. Supplements below both thresholds can be "
+                      "approved on photos alone, and supplement labor is held to the same Labor Rates SOP caps.",
+        "source": "SOP_Supplement_Review.pdf",
+    },
+    {
+        "id": "salvage-owner-retention",
+        "claim_id": None,
+        "query": "What happens to the settlement if the policyholder keeps the salvage vehicle after a total loss?",
+        "reference": "If the policyholder elects to retain the salvage vehicle, the salvage value estimate is deducted "
+                      "from their final settlement payout. The title must still be surrendered to the DMV and is branded "
+                      "'Salvage' if repairable or 'Junk / Destruction' if it cannot be safely rebuilt.",
+        "source": "SOP_Total_Loss_Valuation.pdf",
+    },
+    {
+        "id": "diminished-value-third-party",
+        "claim_id": None,
+        "query": "Does the policy cover first-party diminished value, and how is a third-party diminished value claim calculated?",
+        "reference": "First-party (inherent) diminished value after a completed repair is not covered. Third-party "
+                      "diminished value starts from a base of 10% of pre-loss ACV, multiplied by a damage modifier "
+                      "(1.00 severe structural down to 0.00 no structural or panel damage) and a mileage modifier "
+                      "(1.00 under 20,000 miles down to 0.00 at 100,000 miles or more).",
+        "source": "Guideline_Diminished_Value.docx",
+    },
+    {
+        "id": "betterment-tires",
+        "claim_id": None,
+        "query": "How is betterment calculated on a replaced tire, and which parts are never subject to betterment?",
+        "reference": "Tire betterment is the replacement tire price multiplied by the share of usable tread already "
+                      "worn, with usable tread measured from 10/32 inch new to the 2/32 inch legal minimum (8/32 inch). "
+                      "Betterment is never taken on body panels, glass, or structural collision parts.",
+        "source": "Guideline_Betterment_Adjustments.docx",
+    },
+    {
+        "id": "liability-comparative-fault-texas",
+        "claim_id": None,
+        "query": "Under the liability SOP, can a Texas claimant who is 60% at fault recover damages, and how does California differ?",
+        "reference": "No. Texas applies modified comparative fault with a 51% bar, so a claimant more than 50% at fault "
+                      "recovers nothing. California applies pure comparative fault, so a claimant recovers damages "
+                      "reduced by their own percentage of fault, even at 99%.",
+        "source": "SOP_Liability_Determination.pdf",
+    },
+    {
+        "id": "towing-after-accident",
+        "claim_id": None,
+        "query": "Does the Roadside Assistance Plus rider pay for towing after a collision?",
+        "reference": "No. Roadside assistance towing does not apply to vehicles damaged in collisions. Accident towing "
+                      "is covered under the Collision coverage section of the primary policy, subject to the collision "
+                      "deductible.",
+        "source": "Rider_Roadside_Assistance_Plus.pdf",
+    },
+    {
+        "id": "storage-fee-cutoff",
+        "claim_id": None,
+        "query": "How much storage is covered for a vehicle at a tow yard, and when does the policyholder become responsible for storage charges?",
+        "reference": "Reasonable storage is covered up to $45 per day. Storage accruing more than 3 calendar days after "
+                      "the adjuster's written notice that the vehicle is ready to be moved is the policyholder's "
+                      "responsibility.",
+        "source": "SOP_Vehicle_Storage_Fees.txt",
+    },
 ]

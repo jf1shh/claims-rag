@@ -14,6 +14,10 @@ the repo's own generation patterns) and adds them to the SQLite store with
 the real embedding engine. It never drops or rewrites existing rows, so it is
 safe to re-run (add_document overwrites in place).
 
+Since 2026-10-16 (roadmap P2) it also adds six synthetic sources for domains the
+golden set had not covered: subrogation, supplement review, diminished value,
+betterment, liability and storage fees.
+
 Run:  .venv/bin/python scripts/rebuild_golden_source_docs.py
 """
 from __future__ import annotations
@@ -207,6 +211,158 @@ def _documents() -> list[tuple[str, str, callable]]:
                         "flood-related stall itself would have been a Comprehensive-peril event.",
                     ),
                 ],
+            ),
+        ),
+        # ---- P2 (2026-10-16): synthetic sources for the claims domains the golden set did not cover.
+        # Rules here are invented for the demo corpus; they do not describe any real carrier's guidelines.
+        (
+            "SOP_Subrogation_Recovery.pdf",
+            "pdf",
+            lambda path: _build_pdf(
+                path,
+                "SOP: Subrogation Referral & Recovery",
+                [
+                    (
+                        "1. Referral Criteria",
+                        "A claim must be referred to the Subrogation Unit when a third party is assessed at 25% or more "
+                        "fault for the loss, or when the loss was caused by a defective part, a road hazard maintained by "
+                        "a public entity, or a commercial vehicle. Referral must be made within 30 days of the first "
+                        "physical damage payment.",
+                    ),
+                    (
+                        "2. Deductible Reimbursement",
+                        "Recovered funds are applied to the insured's deductible first. If the recovery is partial, the "
+                        "insured receives the same percentage of the deductible as the percentage of total damages "
+                        "recovered (pro rata). The insured is notified in writing within 10 business days of any recovery.",
+                    ),
+                    (
+                        "3. Inter-Company Arbitration",
+                        "Disputed recoveries of $100,000 or less against another signatory carrier are filed in "
+                        "inter-company arbitration rather than litigation. Recoveries above $100,000 are reviewed by "
+                        "Subrogation Counsel.",
+                    ),
+                ],
+            ),
+        ),
+        (
+            "SOP_Supplement_Review.pdf",
+            "pdf",
+            lambda path: _build_pdf(
+                path,
+                "SOP: Repair Supplement Review",
+                [
+                    (
+                        "1. Supplement Submission",
+                        "A supplement is a request to add hidden damage found after teardown to an approved estimate. The "
+                        "shop must submit itemized supplement lines and teardown photos before the added work is "
+                        "performed. Supplement labor is subject to the same caps as the original estimate under the "
+                        "Labor Rates SOP.",
+                    ),
+                    (
+                        "2. Reinspection Threshold",
+                        "A field reinspection is required before approval when a single supplement exceeds $1,500 or when "
+                        "all supplements combined exceed 25% of the original approved estimate. Supplements below both "
+                        "thresholds may be approved on photos alone.",
+                    ),
+                    (
+                        "3. Response Time",
+                        "The adjuster must respond to a supplement request within 2 business days of receiving complete "
+                        "documentation.",
+                    ),
+                ],
+            ),
+        ),
+        (
+            "Guideline_Diminished_Value.docx",
+            "docx",
+            lambda path: _build_docx(
+                path,
+                "Claims Guideline: Diminished Value",
+                [
+                    (
+                        "1. First-Party Diminished Value",
+                        "The standard auto policy pays to repair or replace damaged property. It does not cover a "
+                        "first-party claim for loss of market value after a completed repair (inherent diminished value).",
+                    ),
+                    (
+                        "2. Third-Party Diminished Value Formula",
+                        "Third-party diminished value claims against an insured are evaluated by starting from a base "
+                        "loss of 10% of the vehicle's pre-loss Actual Cash Value. The base is multiplied by a damage "
+                        "modifier (1.00 severe structural damage, 0.75 major structural and panel damage, 0.50 moderate "
+                        "panel damage, 0.25 minor panel damage, 0.00 no structural or panel damage) and by a mileage "
+                        "modifier (1.00 under 20,000 miles, 0.80 for 20,000-39,999, 0.60 for 40,000-59,999, 0.40 for "
+                        "60,000-79,999, 0.20 for 80,000-99,999, 0.00 at 100,000 miles or more).",
+                    ),
+                ],
+            ),
+        ),
+        (
+            "Guideline_Betterment_Adjustments.docx",
+            "docx",
+            lambda path: _build_docx(
+                path,
+                "Claims Guideline: Betterment on Wear Items",
+                [
+                    (
+                        "1. When Betterment Applies",
+                        "Betterment is taken only on wear items replaced with new parts as part of a covered repair: "
+                        "tires, batteries, shock absorbers and exhaust components. Betterment is never taken on body "
+                        "panels, glass, or structural collision parts. Every betterment line must be itemized on the "
+                        "estimate with its calculation.",
+                    ),
+                    (
+                        "2. Tire Betterment",
+                        "Tire betterment equals the replacement tire price multiplied by the share of usable tread already "
+                        "worn. Usable tread is measured from 10/32 inch new to the 2/32 inch legal minimum (8/32 inch of "
+                        "usable tread).",
+                    ),
+                    (
+                        "3. Battery Betterment",
+                        "Battery betterment is prorated over a 60-month service life: the replacement price multiplied by "
+                        "the battery's age in months divided by 60.",
+                    ),
+                ],
+            ),
+        ),
+        (
+            "SOP_Liability_Determination.pdf",
+            "pdf",
+            lambda path: _build_pdf(
+                path,
+                "SOP: Liability Determination & Comparative Fault",
+                [
+                    (
+                        "1. Evidence Required",
+                        "A liability decision must cite at least two of: the police report, statements from both drivers, "
+                        "an independent witness statement, scene or damage photos, and telematics or dash-camera data. "
+                        "A rear-end collision creates a presumption that the following driver is at fault, which can be "
+                        "rebutted by evidence of a sudden unsafe lane change or non-functioning brake lights.",
+                    ),
+                    (
+                        "2. Comparative Fault by State (demo table)",
+                        "California applies pure comparative fault: a claimant recovers damages reduced by their own "
+                        "percentage of fault, even at 99%. Texas applies modified comparative fault with a 51% bar: a "
+                        "claimant more than 50% at fault recovers nothing. Florida applies modified comparative fault with "
+                        "a 51% bar for accidents on or after March 24, 2023.",
+                    ),
+                ],
+            ),
+        ),
+        (
+            "SOP_Vehicle_Storage_Fees.txt",
+            "txt",
+            lambda path: open(path, "w", encoding="utf-8").write(
+                "STANDARD OPERATING PROCEDURE: VEHICLE STORAGE FEES\n\n"
+                "1. Covered Storage\n"
+                "Reasonable storage charges at a tow yard or repair facility are covered as part of a covered collision "
+                "or comprehensive loss, up to $45 per day.\n\n"
+                "2. Notice and Cut-Off\n"
+                "The adjuster must notify the policyholder and the facility in writing when the vehicle is ready to be "
+                "moved (inspection complete or total loss declared). Storage accruing more than 3 calendar days after "
+                "that notice is the policyholder's responsibility.\n\n"
+                "3. Moving the Vehicle\n"
+                "To stop accruing charges, the adjuster should arrange transfer of a total-loss vehicle to the salvage "
+                "vendor's yard within 3 business days of the total loss declaration.\n"
             ),
         ),
     ]

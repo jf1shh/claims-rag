@@ -37,6 +37,7 @@ Usage:
 """
 import asyncio
 import json
+import os
 import statistics
 import sys
 import time
@@ -50,7 +51,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from golden_queries import GOLDEN_QUERIES
 from ragas_lm_studio import get_lm_studio_judge
 
-APP_URL = "http://127.0.0.1:8000"
+APP_URL = os.environ.get("EVAL_APP_URL", "http://127.0.0.1:8000")
 LM_STUDIO_URL = "http://127.0.0.1:13305"
 TOP_K = 4
 JUDGE_CONCURRENCY = 2
@@ -64,7 +65,21 @@ def get_loaded_model() -> str:
     always passes and the first completion then fails with
     `400 - No models loaded`. `/api/v0/models` carries a real `state` field
     (`loaded` / `not-loaded`), so gate on that instead.
+
+    Current Lemonade builds return `state: null` for every `/api/v0/models`
+    entry (seen 2026-10-16), so its `/api/v1/health` `all_models_loaded` list
+    is checked first: it names what is actually resident.
     """
+    try:
+        r = requests.get(f"{LM_STUDIO_URL}/api/v1/health", timeout=5)
+        r.raise_for_status()
+        resident = r.json().get("all_models_loaded")
+    except Exception:
+        resident = None
+    if resident:
+        chat = [m for m in resident if m.get("type") not in ("embedding", "embeddings")]
+        return (chat or resident)[0]["model_name"]
+
     try:
         r = requests.get(f"{LM_STUDIO_URL}/api/v0/models", timeout=5)
         r.raise_for_status()
