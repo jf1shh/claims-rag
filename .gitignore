@@ -75,6 +75,7 @@ implementation_plan.md
 
 .venv
 eval/adversarial/.work/
+eval/adversarial/.work-holdout/
 
 # uv lockfile: CI installs from requirements.txt; a local uv.lock is not maintained
 uv.lock

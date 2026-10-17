@@ -1,4 +1,4 @@
-"""False-positive check for the answer guard and conflict check: run the golden queries through /api/chat.
+"""False-positive check for the answer guard, conflict and provenance checks: run the golden queries through /api/chat.
 
 The golden queries are honest questions over the real (unpoisoned) corpus, so any answer the
 guard withholds or flags, or labels conflicting_evidence, is a candidate false positive -- the cost side of the guard's trade-off.
@@ -57,6 +57,7 @@ def main(argv: list[str] | None = None) -> int:
             "sources": [src.get("filename") for src in body.get("sources") or [] if isinstance(src, dict)],
             "answer": body.get("answer") or "",
             "conflict": ((body.get("structured") or {}).get("answer") or {}).get("conflict"),
+            "provenance": body.get("provenance"),
         })
         print(f"{query['id']:<40} guard={records[-1]['guard_action']} status={records[-1]['status']}"
               + (f" ERROR {error}" if error else ""))
@@ -65,7 +66,9 @@ def main(argv: list[str] | None = None) -> int:
     summary = {"n": len(records), "errors": sum(1 for r in records if r["error"]),
                "withheld": sum(1 for r in touched if r["guard_action"] == "withheld"),
                "flagged": sum(1 for r in touched if r["guard_action"] == "flagged"),
-               "conflicting_evidence": sum(1 for r in records if r["status"] == "conflicting_evidence")}
+               "conflicting_evidence": sum(1 for r in records if r["status"] == "conflicting_evidence"),
+               "provenance_redacted": sum(1 for r in records if (r["provenance"] or {}).get("action") in {"redacted", "withheld"}),
+               "provenance_judged": sum((r["provenance"] or {}).get("judged", 0) for r in records)}
     Path(args.out).write_text(json.dumps(
         {"run_at": datetime.now(timezone.utc).isoformat(), "app_url": args.app_url,
          "summary": summary, "records": records}, indent=2) + "\n", encoding="utf-8")
@@ -73,6 +76,9 @@ def main(argv: list[str] | None = None) -> int:
     for record in touched:
         for finding in record["findings"]:
             print(f"  FP? {record['id']}: {finding['kind']}:{finding['category']} :: {finding['excerpt'][:160]}")
+    for record in records:
+        for finding in (record["provenance"] or {}).get("findings") or []:
+            print(f"  FP? {record['id']}: provenance {finding['kind']} :: {finding['value']}")
     return 0
 
 

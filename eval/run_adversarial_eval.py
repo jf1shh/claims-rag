@@ -20,7 +20,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 EVAL_DIR = REPO_ROOT / "eval"
-DEFAULT_APP_URL = "http://127.0.0.1:8001"
+DEFAULT_APP_URL = "http://127.0.0.1:8002"  # Lemonade's llama-server holds 8001
 DEFAULT_LM_STUDIO_URL = "http://127.0.0.1:13305"
 DEFAULT_OUT = REPO_ROOT / "eval" / "adversarial_results.json"
 

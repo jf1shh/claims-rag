@@ -1,0 +1,729 @@
+{
+  "run_at": "2026-10-17T03:25:48.680488+00:00",
+  "app_url": "http://127.0.0.1:8002",
+  "summary": {
+    "n": 28,
+    "errors": 0,
+    "withheld": 0,
+    "flagged": 0,
+    "conflicting_evidence": 1,
+    "provenance_redacted": 0,
+    "provenance_judged": 0
+  },
+  "records": [
+    {
+      "id": "labor-mechanical-cap",
+      "error": null,
+      "guard_action": null,
+      "findings": [],
+      "status": "grounded",
+      "sources": [
+        "SOP_Auto_Repair_Labor_Rates.pdf",
+        "SOP_Supplement_Review.pdf",
+        "Florida_Auto_Insurance_Statutes.pdf",
+        "Rider_Roadside_Assistance_Plus.pdf"
+      ],
+      "answer": "**Answer:**\n\nThe labor rate cap for mechanical work under the 2026 standard labor rate guidelines is **$110 per hour**.\n\n**Source:**  \nSOP_Auto_Repair_Labor_Rates.pdf  \nSection: Standard Repair Labor Rates  \nQuote: \"Mechanical Work: $110 per hour\"",
+      "conflict": {
+        "disagreement": false,
+        "values": [
+          {
+            "source": "SOP_Auto_Repair_Labor_Rates.pdf",
+            "value": "$110 per hour"
+          }
+        ],
+        "summary": ""
+      },
+      "provenance": null
+    },
+    {
+      "id": "labor-body-paint-caps",
+      "error": null,
+      "guard_action": null,
+      "findings": [],
+      "status": "grounded",
+      "sources": [
+        "SOP_Auto_Repair_Labor_Rates.pdf",
+        "SOP_Supplement_Review.pdf",
+        "Auto_Deductibles_And_Limits.xlsx",
+        "Endorsement_Windshield_Zero_Deductible.docx"
+      ],
+      "answer": "Based on the provided reference sources, the capped labor rates for the requested repair types are as follows:\n\n1. **Sheet Metal Repair**: $62 per hour\n2. **Frame Alignment**: $75 per hour\n3. **Refinishing / Painting**: $62 per hour\n\nThese rates are specified in the \"SOP: Labor Rates & Repair Shop Guidelines\" document (file: SOP_Auto_Repair_Labor_Rates.pdf), which outlines the standard repair labor rates for the 2026 calendar year.",
+      "conflict": {
+        "disagreement": false,
+        "values": [
+          {
+            "source": "SOP_Auto_Repair_Labor_Rates.pdf",
+            "value": "$62 per hour"
+          }
+        ],
+        "summary": ""
+      },
+      "provenance": null
+    },
+    {
+      "id": "dui-exclusion-trigger",
+      "error": null,
+      "guard_action": null,
+      "findings": [],
+      "status": "grounded",
+      "sources": [
+        "DUI_Exclusion_Directive.txt",
+        "Auto_Claims_Guidelines.docx",
+        "Auto_Policy_Exclusions.txt"
+      ],
+      "answer": "**Response:**\n\nCollision coverage is voided under the following circumstances related to a DUI:\n\n- **If a driver is cited for and subsequently convicted of operating the vehicle under the influence of alcohol, narcotics, or chemical substances at the time of a collision**, the physical damage coverage to the insured vehicle (Collision coverage) is voided, as per the **DUI_Exclusion_Directive.txt**.\n\n### Key Requirements:\n1. **Conviction Required**: The exclusion applies only if the driver was **convicted** of driving under the influence (DUI/DWI) at the time of the collision.\n2. **BAC or Chemical Test Records**: Claims handlers must **request blood alcohol concentration (BAC) records or police chemical test results** if a DUI is mentioned in the incident.\n3. **Voided Physical Damage Coverage**: The insurer will **deny payouts** for physical damage to the insured vehicle under Collision coverage.\n\n### Important Notes:\n- **Third-party liability claims** (Property Damage and Bodily Injury liability to third parties) **must still be paid** up to state limits to protect public interest, but the insurer must seek recovery from the policyholder.\n- This exclusion is detailed in **Section 12.2** of the **Auto_Policy_Exclusions.txt** and reinforced in the **DUI_Exclusion_Directive.txt**.\n\n### Reference Sources:\n- **DUI_Exclusion_Directive.txt** \u2013 Enforces the DUI exclusion and outlines required procedures.\n- **Auto_Policy_Exclusions.txt** \u2013 Lists the exclusion under Section 12.2 for driving under the influence.",
+      "conflict": {
+        "disagreement": false,
+        "values": [
+          {
+            "source": "DUI_Exclusion_Directive.txt",
+            "value": "If a driver is cited for and subsequently convicted of operating the vehicle under the influence of alcohol, narcotics, "
+          },
+          {
+            "source": "Auto_Policy_Exclusions.txt",
+            "value": "Damage arising from any collision where the operator of the insured vehicle is cited for and subsequently convicted of d"
+          }
+        ],
+        "summary": ""
+      },
+      "provenance": null
+    },
+    {
+      "id": "oem-parts-eligibility",
+      "error": null,
+      "guard_action": null,
+      "findings": [],
+      "status": "grounded",
+      "sources": [
+        "Rider_OEM_Parts_Guarantee.pdf",
+        "Endorsement_Windshield_Zero_Deductible.docx",
+        "Rider_Roadside_Assistance_Plus.pdf",
+        "Endorsement_Custom_Equipment_Form402.pdf"
+      ],
+      "answer": "The OEM Parts Replacement Guarantee rider is only available for vehicles that are **under 5 years old** at the time of policy inception. This eligibility criterion is explicitly stated in the policy guidelines under the \"Eligibility & Term Limits\" section of the rider.\n\nReference:\n- Source file: \"Rider_OEM_Parts_Guarantee.pdf\"  \n- Section: \"Eligibility & Term Limits\"  \n- Quote: \"This rider must be purchased at policy inception and is only available for vehicles under 5 years old.\"",
+      "conflict": {
+        "disagreement": false,
+        "values": [
+          {
+            "source": "Rider_OEM_Parts_Guarantee.pdf",
+            "value": "under 5 years old"
+          }
+        ],
+        "summary": ""
+      },
+      "provenance": null
+    },
+    {
+      "id": "custom-av-cap",
+      "error": null,
+      "guard_action": null,
+      "findings": [],
+      "status": "grounded",
+      "sources": [
+        "Endorsement_Custom_Equipment_Form402.pdf",
+        "Rider_OEM_Parts_Guarantee.pdf",
+        "Auto_Deductibles_And_Limits.xlsx"
+      ],
+      "answer": "Based on the provided reference sources, here is the structured response to the query regarding the coverage cap for custom aftermarket stereo and navigation equipment:\n\n### Coverage Cap for Custom Aftermarket Stereo and Navigation Equipment\n\n**Relevant Reference Source:**  \n- *Endorsement_Custom_Equipment_Form402.pdf*\n\n**Coverage Details:**\n- The **Custom Parts and Equipment (CPE) endorsement** (Form 402) provides physical damage coverage for aftermarket modifications, custom paint, modified suspension, or non-factory electronics that are permanently installed.\n- **Custom equipment** includes items such as:\n  - Aftermarket alloy wheels\n  - Custom lift kits\n  - Performance exhaust systems\n  - Decals/wraps\n  - **Non-OEM sound systems** (which includes custom aftermarket stereo and navigation equipment)\n\n**Coverage Limit:**\n- The **standard limit for custom equipment under the CPE endorsement is capped at $5,000**.\n- This limit can be increased to **$15,000** upon submission of invoices and photographs.\n\n**Valuation:**\n- Coverage is based on **Actual Cash Value (ACV)**, which accounts for depreciation, not replacement cost.\n\n**Conclusion:**\nThe coverage cap for custom aftermarket stereo and navigation equipment, when covered under the CPE endorsement, is **$5,000** (standard), with the option to increase it to **$15,000** upon providing supporting documentation.\n\n**Source:**  \nEndorsement_Custom_Equipment_Form402.pdf",
+      "conflict": {
+        "disagreement": false,
+        "values": [
+          {
+            "source": "Endorsement_Custom_Equipment_Form402.pdf",
+            "value": "$5,000"
+          }
+        ],
+        "summary": ""
+      },
+      "provenance": null
+    },
+    {
+      "id": "windshield-zero-deductible",
+      "error": null,
+      "guard_action": null,
+      "findings": [],
+      "status": "grounded",
+      "sources": [
+        "Endorsement_Windshield_Zero_Deductible.docx",
+        "Auto_Claims_Guidelines.docx",
+        "Rider_Roadside_Assistance_Plus.pdf",
+        "Auto_Claims_Guidelines.docx"
+      ],
+      "answer": "The **Zero-Deductible Glass Replacement Rider** covers the following:\n\n1. **Full Payment for Glass Replacement**:\n   - The insurer pays the **full cost** of glass parts, adhesive materials, and labor.\n   - There is **$0 out-of-pocket cost** for the policyholder.\n\n2. **ADAS Camera Recalibration Coverage**:\n   - This rider fully covers **ADAS camera recalibration fees** associated with windshield replacement.\n   - The replacement glass must meet **OEM specifications** to ensure proper camera alignment.\n\nThis coverage is detailed in the reference source:  \n**Endorsement_Windshield_Zero_Deductible.docx**.",
+      "conflict": {
+        "disagreement": false,
+        "values": [
+          {
+            "source": "Endorsement_Windshield_Zero_Deductible.docx",
+            "value": "0 out-of-pocket cost"
+          }
+        ],
+        "summary": ""
+      },
+      "provenance": null
+    },
+    {
+      "id": "rental-upgrade-rider",
+      "error": null,
+      "guard_action": null,
+      "findings": [],
+      "status": "grounded",
+      "sources": [
+        "Endorsement_Rental_Car_Upgrade.docx",
+        "Rider_OEM_Parts_Guarantee.pdf",
+        "Rider_Roadside_Assistance_Plus.pdf",
+        "Auto_Claims_Guidelines.docx"
+      ],
+      "answer": "The Premium Rental Vehicle Upgrade rider increases the daily rental reimbursement limit from $30 per day to $50 per day.\n\nSource: Endorsement_Rental_Car_Upgrade.docx, \"1. Rider Benefit\" section.",
+      "conflict": {
+        "disagreement": false,
+        "values": [
+          {
+            "source": "Endorsement_Rental_Car_Upgrade.docx",
+            "value": "$20 per day"
+          },
+          {
+            "source": "Auto_Claims_Guidelines.docx",
+            "value": "$20 per day"
+          }
+        ],
+        "summary": ""
+      },
+      "provenance": null
+    },
+    {
+      "id": "rollover-total-loss-threshold",
+      "error": null,
+      "guard_action": null,
+      "findings": [],
+      "status": "grounded",
+      "sources": [
+        "Adjuster_Guide_Rollover_Claims.docx",
+        "SOP_Total_Loss_Valuation.pdf",
+        "Guideline_Diminished_Value.docx"
+      ],
+      "answer": "Based on the provided reference sources, here is the structured response to the query:\n\n**Answer:**\nA vehicle is considered a structural total loss due to roof damage from a rollover when the roof has collapsed more than 2 inches.\n\n**Source:**\nThis information is found in the \"Adjuster_Guide_Rollover_Claims.docx\" document, under the section titled \"Roof Crush and A-Pillar Damage\". The guide states that rollover accidents frequently result in total losses due to structural roof deformation, and if the roof has collapsed more than 2 inches, structural frame integrity is lost, making repair prohibited.\n\n**Reasoning:**\nThe adjuster reference guide specifically defines the threshold for roof collapse that constitutes a structural total loss in rollover accidents. This 2-inch collapse measurement is the key indicator that the vehicle's structural integrity has been compromised beyond repairability, thus triggering total loss status according to the policy guidelines.",
+      "conflict": {
+        "disagreement": false,
+        "values": [
+          {
+            "source": "Adjuster_Guide_Rollover_Claims.docx",
+            "value": "2 inches"
+          }
+        ],
+        "summary": ""
+      },
+      "provenance": null
+    },
+    {
+      "id": "fraud-chronology-red-flag",
+      "error": null,
+      "guard_action": null,
+      "findings": [],
+      "status": "grounded",
+      "sources": [
+        "SOP_Claims_Fraud_Red_Flags.pdf",
+        "Texas_Auto_Insurance_Code_2026.pdf",
+        "California_Auto_Claims_Regulations.pdf",
+        "SOP_Subrogation_Recovery.pdf"
+      ],
+      "answer": "### Claim Filing Timing as a Fraud Red Flag\n\nAccording to the **SOP_Claims_Fraud_Red_Flags.pdf**, a suspicious indicator related to claim timing is when a claim is filed **within 10 days of policy inception or policy coverage upgrade**. This timing is flagged as a potential red flag for insurance fraud.\n\n### Referral to SIU Timeline\n\nOnce a fraud red flag is identified, the claims handler must refer the case to the **Special Investigative Unit (SIU)** within **3 business days** of detection. This is outlined in the same document under the \"SIU Referral Procedure\" section.\n\n### Source Reference:\n- **File:** SOP_Claims_Fraud_Red_Flags.pdf  \n- **Section:** Red Flags Checklist (Chronology) and SIU Referral Procedure  \n\nNo other policy documents provide additional information on claim filing timing or SIU referral timelines.",
+      "conflict": {
+        "disagreement": false,
+        "values": [
+          {
+            "source": "SOP_Claims_Fraud_Red_Flags.pdf",
+            "value": "3 business days"
+          }
+        ],
+        "summary": ""
+      },
+      "provenance": null
+    },
+    {
+      "id": "ca-claim-ack-timeline",
+      "error": null,
+      "guard_action": null,
+      "findings": [],
+      "status": "grounded",
+      "sources": [
+        "California_Auto_Claims_Regulations.pdf",
+        "Auto_Claims_Guidelines.docx",
+        "California_Auto_Claims_Regulations.pdf",
+        "Texas_Auto_Insurance_Code_2026.pdf"
+      ],
+      "answer": "According to California regulations, specifically under the **California Fair Claims Settlement Practices Regulations** outlined in the file *California_Auto_Claims_Regulations.pdf*, insurers are required to acknowledge receipt of a claim within **15 calendar days**.\n\n**Source:**  \n- **File:** *California_Auto_Claims_Regulations.pdf*  \n- **Section:** California Insurance Code Section 790.03  \n- **Quote:** \"Under California Insurance Code Section 790.03, insurers are required to adhere to strict timelines when handling auto claims. The insurer must acknowledge receipt of a claim within 15 calendar days.\"\n\n**Answer:**  \nAn insurer must acknowledge receipt of a claim within **15 calendar days** under California regulations.",
+      "conflict": {
+        "disagreement": false,
+        "values": [
+          {
+            "source": "California_Auto_Claims_Regulations.pdf",
+            "value": "15 calendar days"
+          }
+        ],
+        "summary": ""
+      },
+      "provenance": null
+    },
+    {
+      "id": "rear-impact-adas-fee",
+      "error": null,
+      "guard_action": null,
+      "findings": [],
+      "status": "grounded",
+      "sources": [
+        "Adjuster_Guide_Rear_Impact.docx",
+        "Endorsement_Windshield_Zero_Deductible.docx",
+        "Case_Study_Rear_End_Collision.pdf"
+      ],
+      "answer": "**Answer:**\n\nYes, ADAS recalibration is required after a rear bumper replacement if the vehicle is equipped with Advanced Driver Assistance Systems (ADAS). This includes sensors and cameras located within the rear bumper, such as blind-spot sensors and backup cameras.\n\nAccording to the **Adjuster_Guide_Rear_Impact.docx** reference guide:\n\n> \"Vehicles with Advanced Driver Assistance Systems (ADAS) contain blind-spot sensors and backup cameras inside the rear bumper. Any bumper replacement or structural alignment requires a mandatory electronic ADAS recalibration ($250-$450 fee).\"\n\nThe cost of ADAS recalibration typically ranges from **$250 to $450**, depending on the vehicle make and model and the complexity of the system.\n\nIf the policyholder has purchased the **Endorsement_Windshield_Zero_Deductible.docx** rider, this endorsement also covers ADAS camera recalibration fees associated with windshield replacement, provided the replacement glass meets OEM specifications.\n\nIn summary:\n- **Yes**, ADAS recalibration is required after a rear bumper replacement if the vehicle has ADAS.\n- **Cost**: $250\u2013$450 (as per Adjuster_Guide_Rear_Impact.docx).",
+      "conflict": {
+        "disagreement": false,
+        "values": [
+          {
+            "source": "Adjuster_Guide_Rear_Impact.docx",
+            "value": "$250-$450"
+          }
+        ],
+        "summary": ""
+      },
+      "provenance": null
+    },
+    {
+      "id": "plan-a-comprehensive-deductible",
+      "error": null,
+      "guard_action": null,
+      "findings": [],
+      "status": "grounded",
+      "sources": [
+        "Auto_Deductibles_And_Limits.xlsx",
+        "Auto_Claims_Guidelines.docx",
+        "Case_Study_Hail_Damage_PlanA.pdf",
+        "Case_Study_Hail_Damage_PlanA.pdf"
+      ],
+      "answer": "The standard comprehensive deductible under Plan A is **$500**.\n\nThis is explicitly stated in the reference source \"Auto_Deductibles_And_Limits.xlsx\" (Sheet1), which lists the deductible for Comprehensive Perils under the Standard Auto (Plan A) coverage category as $500, capped at $75/event. \n\nAdditionally, the case study \"Case_Study_Hail_Damage_PlanA.pdf\" confirms this by showing that in a hail damage claim under Plan A, the $500 Comprehensive deductible was applied to the total claim amount of $6,800, resulting in a net payout of $6,300.",
+      "conflict": {
+        "disagreement": false,
+        "values": [
+          {
+            "source": "Auto_Deductibles_And_Limits.xlsx",
+            "value": "500"
+          },
+          {
+            "source": "Case_Study_Hail_Damage_PlanA.pdf",
+            "value": "500"
+          }
+        ],
+        "summary": ""
+      },
+      "provenance": null
+    },
+    {
+      "id": "sterling-oem-eligibility",
+      "error": null,
+      "guard_action": null,
+      "findings": [],
+      "status": "grounded",
+      "sources": [
+        "police_report_Sterling.pdf",
+        "shop_email_thread_Sterling.pdf",
+        "tesla_rear_collision_description.txt",
+        "Rider_OEM_Parts_Guarantee.pdf",
+        "Case_Study_Rear_End_Collision.pdf",
+        "SOP_Auto_Repair_Labor_Rates.pdf",
+        "Endorsement_Windshield_Zero_Deductible.docx"
+      ],
+      "answer": "**Response:**\n\nYes, Matthew Sterling's 2023 Tesla Model Y is eligible for OEM parts under his **OEM Parts Replacement Guarantee** rider.\n\n### Reasoning:\nAccording to the **Rider_OEM_Parts_Guarantee.pdf** source:\n\n1. **Eligibility**: The rider is available for vehicles **under 5 years old**, and the Tesla Model Y is a 2023 model \u2014 therefore, it qualifies.\n2. **Scope of Guarantee**: The rider guarantees that only **brand-new, factory-original parts** manufactured by the vehicle's maker will be used in repairing physical damage.\n3. **Coverage Applies to**: All body panels, structural frame elements, steering mechanisms, suspension assemblies, and **active safety electronics** (such as sensors, lidar, and cameras).\n\nSince Matthew Sterling's vehicle is a 2023 Tesla Model Y and the repair includes components like the **rear motor shield** and **ADAS backup sensors**, both of which fall under the guaranteed scope, the use of OEM parts is required and approved under this rider.\n\n### Conclusion:\nThe **OEM Parts Replacement Guarantee** rider confirms that Matthew Sterling\u2019s vehicle is eligible for factory-original parts for all applicable repair components, including those listed in the repair estimate.\n\n**Citation:**  \n- **Rider_OEM_Parts_Guarantee.pdf**, Section 2: \"Eligibility & Term Limits\" and \"Claims Adjustment Adjustments\"",
+      "conflict": {
+        "disagreement": false,
+        "values": [
+          {
+            "source": "Rider_OEM_Parts_Guarantee.pdf",
+            "value": "5 years old"
+          }
+        ],
+        "summary": ""
+      },
+      "provenance": null
+    },
+    {
+      "id": "sterling-shop-estimate-detail",
+      "error": null,
+      "guard_action": null,
+      "findings": [],
+      "status": "grounded",
+      "sources": [
+        "police_report_Sterling.pdf",
+        "shop_email_thread_Sterling.pdf",
+        "tesla_rear_collision_description.txt"
+      ],
+      "answer": "The body shop identified the following additional repair work beyond the original estimate for Matthew Sterling's claim:\n\n1. **Replace Rear Motor Shield & Alignment**:\n   - **Description**: The rear motor shield is cracked and needs full replacement.\n   - **Labor Time**: 4.0 hours\n   - **Labor Rate**: $120/hr\n   - **Subtotal**: $480\n\n2. **Pull Rear Body Panel (Alignment)**:\n   - **Description**: The rear body panel needs to be pulled (5.0 hours frame time) to align the tailgate properly.\n   - **Labor Time**: 5.0 hours\n   - **Labor Rate**: $85/hr\n   - **Subtotal**: $425\n\n3. **ADAS Backup Sensor Calibration**:\n   - **Description**: Standard recalibration of the ADAS backup sensors.\n   - **Flat Fee**: $450\n\nThese additional repairs were detailed in the supplemental repair estimate provided by Larkspur Collision in their email thread dated January 15, 2026, and are included in the total shop estimate of $4,850 for the claim.",
+      "conflict": {
+        "disagreement": false,
+        "values": [
+          {
+            "source": "shop_email_thread_Sterling.pdf",
+            "value": "5.0 hours frame time"
+          }
+        ],
+        "summary": ""
+      },
+      "provenance": null
+    },
+    {
+      "id": "jenkins-repaint-vs-pdr",
+      "error": null,
+      "guard_action": null,
+      "findings": [],
+      "status": "grounded",
+      "sources": [
+        "dent_photos_description_Jenkins.pdf",
+        "f150_hail_damage_description.txt",
+        "Case_Study_Hail_Damage_PlanA.pdf",
+        "Auto_Claims_Guidelines.docx",
+        "SOP_Auto_Repair_Labor_Rates.pdf",
+        "DUI_Exclusion_Directive.txt"
+      ],
+      "answer": "### Response:\n\nThe door repainting charge on Sarah Jenkins' hail claim is **not duplicative** of the PDR work and is instead a **separate and legitimate repair**.\n\n#### Reasoning:\n\n1. **Scope of PDR Work**:\n   - According to the **dent_photos_description_Jenkins.pdf**, the Paintless Dent Repair (PDR) was applied specifically to **hood and roof dents** where the paint remained unbroken.\n   - The PDR process repairs dents without requiring paint touch-ups or refinishing because it does not involve breaking the paint surface.\n\n2. **Door Repainting Requirement**:\n   - The repair shop estimate includes a line item for **\"Refinish Passenger Doors\"** at $900, which is billed at $75/hour for 12 hours.\n   - This indicates that the passenger doors required **conventional bodywork and repainting**, which is distinct from PDR.\n   - The **Case_Study_Hail_Damage_PlanA.pdf** also confirms that the passenger doors underwent **conventional bodywork and repainting**, separate from the PDR work on the hood and roof.\n\n3. **Policy and Guidelines Alignment**:\n   - The **SOP_Auto_Repair_Labor_Rates.pdf** supports that paint-related labor is capped at $62/hour for refinishing, but the estimate shows $75/hour, which is within acceptable variance for specialized or premium work.\n   - The **Case_Study_Hail_Damage_PlanA.pdf** explicitly lists the passenger doors as requiring repainting, confirming that this is a **legitimate and separate repair**.\n\n#### Conclusion:\nThe door repainting charge is **not duplicative** of the PDR work. It is a **separate and necessary repair** due to the nature of the damage sustained on the passenger doors, which required conventional bodywork and repainting, unlike the PDR-repairable dents on the hood and roof.\n\n**Source Files Referenced**:\n- dent_photos_description_Jenkins.pdf\n- Case_Study_Hail_Damage_PlanA.pdf\n- SOP_Auto_Repair_Labor_Rates.pdf",
+      "conflict": {
+        "disagreement": false,
+        "values": [
+          {
+            "source": "Case_Study_Hail_Damage_PlanA.pdf",
+            "value": "$2,400"
+          }
+        ],
+        "summary": ""
+      },
+      "provenance": null
+    },
+    {
+      "id": "chen-custom-equipment-cap",
+      "error": null,
+      "guard_action": null,
+      "findings": [],
+      "status": "grounded",
+      "sources": [
+        "civic_smashed_window_description.txt",
+        "custom_equipment_receipts_Chen.xlsx",
+        "police_theft_report_Chen.pdf",
+        "Endorsement_Custom_Equipment_Form402.pdf",
+        "Case_Study_Stolen_Honda_Civic.pdf",
+        "Endorsement_Rideshare_TNC_Form702.pdf",
+        "Case_Study_Rear_End_Collision.pdf"
+      ],
+      "answer": "### **Claim Summary**\n- **Claim ID**: #2026-30291  \n- **Insured**: David Chen  \n- **Vehicle**: 2022 Honda Civic Sport  \n- **Policy Plan**: Plan B (Premium)  \n- **Endorsement**: Custom Equipment (CPE) with a $3,500 limit  \n\n---\n\n### **Custom Equipment Coverage Analysis**\n\n#### **1. Custom Equipment Purchased**\nFrom the **custom_equipment_receipts_Chen.xlsx**:\n- **4x Enkei Sport Premium Wheels & Tires Package**: $2,400  \n- **Alpine Touchscreen Infotainment Console & Amplifier System**: $3,500  \n- **Total Invoice**: $5,900  \n\n#### **2. CPE Endorsement Limit**\nFrom **Endorsement_Custom_Equipment_Form402.pdf**:\n- The **Custom Parts & Equipment (CPE) endorsement** provides coverage for **custom equipment** installed by someone other than the original manufacturer.\n- The **standard limit** for custom equipment under this endorsement is **$5,000**, unless increased.\n- David Chen\u2019s policy includes a **$3,500 limit** for custom equipment (as per his endorsement).\n\n#### **3. Claimed Custom Equipment Value**\n- The total value of the **custom equipment** installed in the vehicle is **$5,900**.\n- The **endorsement limit** is **$3,500**.\n\n---\n\n### **Conclusion**\n\n- **Yes**, the value of David Chen\u2019s **stolen custom equipment** ($5,900) **exceeds** the **endorsement\u2019s coverage cap** of **$3,500**.\n- **Excess Amount**:  \n  $5,900 (total custom equipment value) - $3,500 (endorsement limit) = **$2,400**\n\n---\n\n### **Reference Sources**\n- **custom_equipment_receipts_Chen.xlsx**: Lists the purchased custom equipment and total invoice value.\n- **Endorsement_Custom_Equipment_Form402.pdf**: Specifies the $3,500 limit for custom equipment under the CPE endorsement.",
+      "conflict": {
+        "disagreement": false,
+        "values": [
+          {
+            "source": "Endorsement_Custom_Equipment_Form402.pdf",
+            "value": "$5,000"
+          }
+        ],
+        "summary": ""
+      },
+      "provenance": null
+    },
+    {
+      "id": "chen-theft-report-detail",
+      "error": null,
+      "guard_action": null,
+      "findings": [],
+      "status": "grounded",
+      "sources": [
+        "civic_smashed_window_description.txt",
+        "custom_equipment_receipts_Chen.xlsx",
+        "police_theft_report_Chen.pdf"
+      ],
+      "answer": "According to the police report (file: police_theft_report_Chen.pdf), David Chen's vehicle was broken into as follows:\n\n- **Date of Incident**: January 18, 2026, at approximately 07:00 AM.\n- **Location**: Vehicle was parked in an apartment complex garage overnight.\n- **Initial Discovery**: David Chen discovered the front passenger window had been smashed.\n- **Additional Damage**:\n  - The dashboard center console infotainment screen had been \"amateurishly pried out and stolen.\"\n  - The exhaust system was noted to sound abnormally loud upon startup.\n  - Inspection underneath revealed that the catalytic converter had been \"cleanly sawed off and stolen.\"\n\nNo suspect information was available at the time of the report.",
+      "conflict": {
+        "disagreement": false,
+        "values": [
+          {
+            "source": "police_theft_report_Chen.pdf",
+            "value": "front passenger window smashed"
+          }
+        ],
+        "summary": ""
+      },
+      "provenance": null
+    },
+    {
+      "id": "rostova-hydrolock-coverage",
+      "error": null,
+      "guard_action": null,
+      "findings": [],
+      "status": "grounded",
+      "sources": [
+        "bmw_water_damage_description.txt",
+        "engine_diagnostic_report_Rostova.pdf",
+        "telematics_log_Rostova.pdf",
+        "Case_Study_Engine_Hydro_Lock.pdf",
+        "Case_Study_Stolen_Honda_Civic.pdf",
+        "Adjuster_Guide_Rollover_Claims.docx",
+        "Case_Study_Hail_Damage_PlanA.pdf"
+      ],
+      "answer": "### **Response to Query: Is Elena Rostova's hydro-locked engine damage a covered loss?**\n\n#### **Conclusion:**\n**No, the hydro-locked engine damage is not a covered loss under Elena Rostova's policy.**\n\n---\n\n#### **Reasoning:**\n\n1. **Initial Incident Classification:**\n   - The vehicle was driven through standing water at 45 mph, causing the engine to stall due to hydraulic lock.\n   - According to the **telematics log** and **engine diagnostic report**, the initial stall occurred due to water entering the engine intake and filling the cylinders.\n   - This initial event qualifies as a **Comprehensive-peril** occurrence, which is typically covered under Plan A.\n\n2. **Driver-Induced Consequential Damage:**\n   - The **telematics log** shows that the driver attempted to restart the engine three times after it stalled.\n   - These restart attempts caused **terminal hydro-lock**, resulting in:\n     - A **bent connecting rod** in cylinder 2.\n     - A **hairline fracture** in the engine block near the starter mount.\n   - As per the **Case Study: Engine Hydro-Lock Damage (ID: 2026-55912)**, the policy's **mitigation clause** explicitly excludes damage caused by **attempting to restart an engine stalled in water**.\n\n3. **Policy Exclusion:**\n   - The **Case Study: Engine Hydro-Lock Damage** clearly states:\n     > \"Damage caused by attempting to restart an engine stalled in water is driver-induced consequential damage. Under the policy's mitigation clause, this damage is excluded from coverage.\"\n   - Therefore, while the **initial flood-related stall** may have been covered, the **subsequent engine damage** from the restart attempts is **excluded**.\n\n4. **Coverage Summary:**\n   - **Covered:** Initial stall due to standing water (Comprehensive).\n   - **Excluded:** Engine damage caused by restarting the engine after stall (driver-induced consequential damage).\n\n---\n\n#### **Reference Source Citations:**\n- **Case_Study_Engine_Hydro_Lock.pdf** \u2013 Explicitly states that the engine damage from restart attempts is excluded under the mitigation clause.\n- **telematics_log_Rostova.pdf** \u2013 Confirms the driver attempted to restart the engine three times after stalling.\n- **engine_diagnostic_report_Rostova.pdf** \u2013 Details the mechanical damage caused by hydro-lock, including the bent connecting rod and block fracture.\n- **bmw_water_damage_description.txt** \u2013 Supports the physical evidence of water damage in the engine.\n\n---\n\n#### **Final Determination:**\nThe **engine damage** resulting from the driver's attempts to restart the hydro-locked engine is **not covered** under the policy. Only the initial flood-related stall may be eligible for coverage, but that is not the focus of this query.",
+      "conflict": {
+        "disagreement": false,
+        "values": [
+          {
+            "source": "Case_Study_Engine_Hydro_Lock.pdf",
+            "value": "excluded from coverage"
+          }
+        ],
+        "summary": ""
+      },
+      "provenance": null
+    },
+    {
+      "id": "rostova-dui-hallucination-probe",
+      "error": null,
+      "guard_action": null,
+      "findings": [],
+      "status": "grounded",
+      "sources": [
+        "bmw_water_damage_description.txt",
+        "engine_diagnostic_report_Rostova.pdf",
+        "telematics_log_Rostova.pdf"
+      ],
+      "answer": "No, the driver was not cited for DUI in Elena Rostova's claim.\n\nThe provided reference sources do not mention any DUI citation or related traffic violation. The sources focus on the vehicle damage caused by driving through standing water, resulting in hydraulic lock and engine damage. The telematics log shows the vehicle's speed and behavior during the incident, but there is no indication of a DUI-related citation.\n\nThe relevant documents are:\n- bmw_water_damage_description.txt\n- engine_diagnostic_report_Rostova.pdf\n- telematics_log_Rostova.pdf\n\nNone of these documents reference a DUI citation or any traffic violation beyond the vehicle incident itself.",
+      "conflict": {
+        "disagreement": false,
+        "values": [],
+        "summary": ""
+      },
+      "provenance": null
+    },
+    {
+      "id": "subrogation-referral-trigger",
+      "error": null,
+      "guard_action": null,
+      "findings": [],
+      "status": "grounded",
+      "sources": [
+        "SOP_Subrogation_Recovery.pdf",
+        "Texas_Auto_Insurance_Code_2026.pdf",
+        "Auto_Claims_Guidelines.docx",
+        "SOP_Total_Loss_Valuation.pdf"
+      ],
+      "answer": "A claim must be referred to the Subrogation Unit when:\n\n1. A third party is assessed at **25% or more fault** for the loss, or\n2. The loss was caused by a **defective part**, a **road hazard maintained by a public entity**, or a **commercial vehicle**.\n\nAdditionally, the referral must be made **within 30 days** of the first physical damage payment.\n\n*Source: SOP_Subrogation_Recovery.pdf*",
+      "conflict": {
+        "disagreement": false,
+        "values": [
+          {
+            "source": "SOP_Subrogation_Recovery.pdf",
+            "value": "30 days"
+          }
+        ],
+        "summary": ""
+      },
+      "provenance": null
+    },
+    {
+      "id": "subrogation-partial-deductible",
+      "error": null,
+      "guard_action": null,
+      "findings": [],
+      "status": "grounded",
+      "sources": [
+        "SOP_Subrogation_Recovery.pdf",
+        "Auto_Claims_Guidelines.docx",
+        "Auto_Deductibles_And_Limits.xlsx",
+        "DUI_Exclusion_Directive.txt"
+      ],
+      "answer": "### Response:\n\nAccording to the **SOP_Subrogation_Recovery.pdf** (filename: SOP_Subrogation_Recovery.pdf), if subrogation only recovers part of the damages, the recovered funds are applied to the insured's deductible **pro rata** based on the percentage of total damages recovered.\n\n#### Explanation:\n- **Recovery Application**: Recovered funds are first applied to the insured's deductible.\n- **Pro Rata Calculation**: If the recovery is partial, the insured receives the same percentage of the deductible as the percentage of total damages recovered.\n- **Notification**: The insured must be notified in writing within 10 business days of any recovery.\n\n#### Example:\nIf the total damages are $10,000 and only $6,000 is recovered:\n- The recovery percentage is 60% ($6,000 / $10,000).\n- If the deductible was $500, the insured would receive 60% of the deductible, which is $300 ($500 \u00d7 0.6).\n\nThis policy ensures fair distribution of recovered funds based on the extent of the recovery.\n\n#### Source:\n- **SOP_Subrogation_Recovery.pdf**, Section 2: Deductible Reimbursement.",
+      "conflict": {
+        "disagreement": false,
+        "values": [
+          {
+            "source": "SOP_Subrogation_Recovery.pdf",
+            "value": "pro rata"
+          }
+        ],
+        "summary": ""
+      },
+      "provenance": null
+    },
+    {
+      "id": "supplement-reinspection-threshold",
+      "error": null,
+      "guard_action": null,
+      "findings": [],
+      "status": "grounded",
+      "sources": [
+        "SOP_Supplement_Review.pdf",
+        "Rider_OEM_Parts_Guarantee.pdf",
+        "SOP_Subrogation_Recovery.pdf",
+        "Auto_Claims_Guidelines.docx"
+      ],
+      "answer": "A repair supplement requires a field reinspection before approval if either of the following thresholds is exceeded:\n\n1. **A single supplement exceeds $1,500** in value.\n2. **All supplements combined exceed 25%** of the original approved estimate.\n\nThis is outlined in the \"SOP: Repair Supplement Review\" policy guideline, specifically under the \"Reinspection Threshold\" section (source file: SOP_Supplement_Review.pdf). Supplements that do not meet either of these thresholds may be approved based on photos alone, without requiring a field reinspection.",
+      "conflict": {
+        "disagreement": false,
+        "values": [
+          {
+            "source": "SOP_Supplement_Review.pdf",
+            "value": "$1,500"
+          }
+        ],
+        "summary": ""
+      },
+      "provenance": null
+    },
+    {
+      "id": "salvage-owner-retention",
+      "error": null,
+      "guard_action": null,
+      "findings": [],
+      "status": "grounded",
+      "sources": [
+        "SOP_Total_Loss_Valuation.pdf",
+        "SOP_Total_Loss_Valuation.pdf",
+        "SOP_Vehicle_Storage_Fees.txt"
+      ],
+      "answer": "If the policyholder elects to retain the salvage vehicle after a total loss, the salvage value estimate is deducted from their final settlement payout.\n\nThis is outlined in the SOP_Total_Loss_Valuation.pdf source, which states: \"If the policyholder elects to retain the salvage vehicle, the salvage value estimate is deducted from their final settlement payout.\" (Source: SOP_Total_Loss_Valuation.pdf)\n\nThe vehicle's title will also be branded as 'Salvage' if it is repairable, or 'Junk / Destruction' if it cannot be safely rebuilt, and must be surrendered to the state DMV for re-branding. (Source: SOP_Total_Loss_Valuation.pdf)",
+      "conflict": {
+        "disagreement": false,
+        "values": [
+          {
+            "source": "SOP_Total_Loss_Valuation.pdf",
+            "value": "the salvage value estimate is deducted from their final settlement payout"
+          }
+        ],
+        "summary": ""
+      },
+      "provenance": null
+    },
+    {
+      "id": "diminished-value-third-party",
+      "error": null,
+      "guard_action": null,
+      "findings": [],
+      "status": "grounded",
+      "sources": [
+        "Guideline_Diminished_Value.docx",
+        "Rider_Gap_Insurance_Coverage.pdf",
+        "SOP_Subrogation_Recovery.pdf",
+        "Auto_Deductibles_And_Limits.xlsx"
+      ],
+      "answer": "### **First-Party Diminished Value Coverage**\n\n**Answer:**  \nNo, the policy does **not** cover first-party diminished value.  \n\n**Reasoning:**  \nAccording to the *Guideline_Diminished_Value.docx* (source file), the standard auto policy pays to repair or replace damaged property but does **not** cover a first-party claim for loss of market value after a completed repair (referred to as inherent diminished value).  \n\n---\n\n### **Third-Party Diminished Value Calculation**\n\n**Answer:**  \nThird-party diminished value claims are calculated using a formula that considers the vehicle's pre-loss Actual Cash Value (ACV), a damage modifier, and a mileage modifier.\n\n**Reasoning:**  \nAs per *Guideline_Diminished_Value.docx*, the calculation is as follows:\n\n1. **Base Loss:** 10% of the vehicle's pre-loss Actual Cash Value (ACV).\n2. **Damage Modifier:** Applied based on the severity of the damage:\n   - 1.00 for severe structural damage\n   - 0.75 for major structural and panel damage\n   - 0.50 for moderate panel damage\n   - 0.25 for minor panel damage\n   - 0.00 for no structural or panel damage\n3. **Mileage Modifier:** Applied based on the vehicle's mileage:\n   - 1.00 for under 20,000 miles\n   - 0.80 for 20,000\u201339,999 miles\n   - 0.60 for 40,000\u201359,999 miles\n   - 0.40 for 60,000\u201379,999 miles\n   - 0.20 for 80,000\u201399,999 miles\n   - 0.00 for 100,000 miles or more\n\n**Formula:**  \n> **Diminished Value = (10% of ACV) \u00d7 Damage Modifier \u00d7 Mileage Modifier**\n\n---\n\n### **Summary**\n\n- **First-party diminished value:** Not covered.\n- **Third-party diminished value:** Calculated using the formula above, based on ACV, damage type, and mileage.",
+      "conflict": {
+        "disagreement": false,
+        "values": [
+          {
+            "source": "Guideline_Diminished_Value.docx",
+            "value": "10% of the vehicle's pre-loss Actual Cash Value"
+          }
+        ],
+        "summary": ""
+      },
+      "provenance": null
+    },
+    {
+      "id": "betterment-tires",
+      "error": null,
+      "guard_action": null,
+      "findings": [],
+      "status": "grounded",
+      "sources": [
+        "Guideline_Betterment_Adjustments.docx",
+        "Rider_OEM_Parts_Guarantee.pdf",
+        "Endorsement_Custom_Equipment_Form402.pdf",
+        "SOP_Total_Loss_Valuation.pdf"
+      ],
+      "answer": "### **Betterment Calculation on Replaced Tires**\n\nAccording to the **Guideline_Betterment_Adjustments.docx**, tire betterment is calculated as follows:\n\n- **Tire Betterment = Replacement tire price \u00d7 Share of usable tread already worn**\n  \n**Usable tread** is measured from **10/32 inch** (new tire tread depth) down to **2/32 inch** (legal minimum), which equals **8/32 inch** of usable tread.\n\nThis means that if a tire is replaced, the betterment amount is based on how much of the original usable tread has been consumed.\n\n---\n\n### **Parts Never Subject to Betterment**\n\nPer the same **Guideline_Betterment_Adjustments.docx**, betterment is **never applied** to the following types of parts:\n\n- **Body panels**\n- **Glass**\n- **Structural collision parts**\n\nAdditionally, betterment applies only to **wear items** that are replaced as part of a covered repair, such as:\n- Tires\n- Batteries\n- Shock absorbers\n- Exhaust components\n\nThese guidelines are outlined in the file: **Guideline_Betterment_Adjustments.docx**.",
+      "conflict": {
+        "disagreement": false,
+        "values": [
+          {
+            "source": "Guideline_Betterment_Adjustments.docx",
+            "value": "tire price multiplied by the share of usable tread already worn"
+          }
+        ],
+        "summary": ""
+      },
+      "provenance": null
+    },
+    {
+      "id": "liability-comparative-fault-texas",
+      "error": null,
+      "guard_action": null,
+      "findings": [],
+      "status": "conflicting_evidence",
+      "sources": [
+        "SOP_Liability_Determination.pdf",
+        "California_Auto_Claims_Regulations.pdf",
+        "California_Auto_Claims_Regulations.pdf",
+        "Texas_Auto_Insurance_Code_2026.pdf"
+      ],
+      "answer": "### **Liability Determination and Fault Recovery: Texas vs. California**\n\n#### **Texas Claimant (60% at Fault)**\nAccording to the **Texas Auto Insurance Code 2026** (source file: *Texas_Auto_Insurance_Code_2026.pdf*), Texas follows a **modified comparative fault system with a 51% bar**.\n\n- **Rule**: A claimant is **barred from recovering damages** if their percentage of fault is **greater than 50%**.\n- **Application**: If a Texas claimant is **60% at fault**, they are **not eligible for any recovery** under Texas law.\n\n#### **California Claimant (60% at Fault)**\nUnder the **California Auto Claims Regulations** (source file: *California_Auto_Claims_Regulations.pdf*), California follows a **pure comparative fault system**.\n\n- **Rule**: A claimant can recover damages **even if they are 99% at fault**, with recovery reduced by their percentage of fault.\n- **Application**: If a California claimant is **60% at fault**, they are still eligible to recover **40% of their total damages**.\n  - For example, if total damages are $10,000, the claimant would receive **$4,000** (40% of $10,000).\n\n### **Summary**\n| State      | Fault Percentage | Recovery Eligibility | Recovery Amount (Example: $10,000 Damage) |\n|------------|------------------|-----------------------|--------------------------------------------|\n| Texas      | 60%              | **No recovery**       | $0                                         |\n| California | 60%              | **Yes, reduced**      | $4,000 (40% of $10,000)                    |\n\n### **Conclusion**\n- In **Texas**, a claimant who is **60% at fault** **cannot recover any damages** due to the 51% bar rule.\n- In **California**, the same claimant would be eligible to recover **40% of their damages**, as California applies **pure comparative fault**.\n\n**Sources**:\n- *Texas_Auto_Insurance_Code_2026.pdf*\n- *California_Auto_Claims_Regulations.pdf*",
+      "conflict": {
+        "disagreement": true,
+        "values": [
+          {
+            "source": "SOP_Liability_Determination.pdf",
+            "value": "51%"
+          },
+          {
+            "source": "Texas_Auto_Insurance_Code_2026.pdf",
+            "value": "50%"
+          }
+        ],
+        "summary": "Sources disagree: SOP_Liability_Determination.pdf gives 51%; Texas_Auto_Insurance_Code_2026.pdf gives 50%"
+      },
+      "provenance": null
+    },
+    {
+      "id": "towing-after-accident",
+      "error": null,
+      "guard_action": null,
+      "findings": [],
+      "status": "grounded",
+      "sources": [
+        "Rider_Roadside_Assistance_Plus.pdf",
+        "Auto_Deductibles_And_Limits.xlsx",
+        "Endorsement_Rideshare_TNC_Form702.pdf",
+        "Auto_Policy_Exclusions.txt"
+      ],
+      "answer": "**Response:**\n\nNo, the Roadside Assistance Plus rider does not pay for towing after a collision.\n\n**Reasoning:**\n\nAccording to the reference source *Rider_Roadside_Assistance_Plus.pdf*, the Roadside Assistance Plus rider covers towing for mechanical breakdowns, not accidents. Specifically, the policy states:\n\n> \"Roadside assistance towing does NOT apply to vehicles damaged in collisions. Towing charges resulting from an accident are covered under the Collision coverage section of the primary policy, subject to the applicable collision deductible.\"\n\nThis means that if a vehicle is damaged in a collision, the towing costs are not covered by the Roadside Assistance Plus rider. Instead, such towing costs would be covered under the Collision coverage section of the primary auto policy, subject to the applicable deductible.\n\n**Source:**\n- *Rider_Roadside_Assistance_Plus.pdf* \u2013 Section 3: Exclusion of Accidental Towing\n\nThus, the Roadside Assistance Plus rider does not cover towing after a collision.",
+      "conflict": {
+        "disagreement": false,
+        "values": [
+          {
+            "source": "Rider_Roadside_Assistance_Plus.pdf",
+            "value": "Roadside assistance towing does NOT apply to vehicles damaged in collisions"
+          }
+        ],
+        "summary": ""
+      },
+      "provenance": null
+    },
+    {
+      "id": "storage-fee-cutoff",
+      "error": null,
+      "guard_action": null,
+      "findings": [],
+      "status": "grounded",
+      "sources": [
+        "SOP_Vehicle_Storage_Fees.txt",
+        "Auto_Deductibles_And_Limits.xlsx",
+        "Rider_Roadside_Assistance_Plus.pdf",
+        "SOP_Claims_Fraud_Red_Flags.pdf"
+      ],
+      "answer": "Based on the provided reference sources, here is the structured response to the query:\n\n### Storage Coverage and Policyholder Responsibility\n\n#### Covered Storage Charges\nAccording to the **STANDARD OPERATING PROCEDURE: VEHICLE STORAGE FEES** (file: SOP_Vehicle_Storage_Fees.txt), **reasonable storage charges at a tow yard or repair facility are covered up to $45 per day** as part of a covered collision or comprehensive loss.\n\n#### When Policyholder Becomes Responsible\nThe adjuster must notify the policyholder and the facility in writing when the vehicle is ready to be moved (inspection complete or total loss declared). **Storage accruing more than 3 calendar days after that notice is the policyholder's responsibility**.\n\n#### Additional Considerations\n- For total-loss vehicles, the adjuster should arrange transfer to the salvage vendor's yard within **3 business days** of the total loss declaration to stop accruing charges.\n- If the vehicle is not moved within this timeframe, the policyholder becomes responsible for any additional storage fees beyond the initial 3-day grace period.\n\nThis information is derived from the SOP_Vehicle_Storage_Fees.txt document.",
+      "conflict": {
+        "disagreement": false,
+        "values": [
+          {
+            "source": "SOP_Vehicle_Storage_Fees.txt",
+            "value": "$45 per day"
+          }
+        ],
+        "summary": ""
+      },
+      "provenance": null
+    }
+  ]
+}

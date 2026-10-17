@@ -155,6 +155,11 @@ class Settings:
     # Evidence conflict check (backend/conflict_check.py): "llm" asks the model to extract each
     # source's value and code decides disagreement -> status conflicting_evidence; "off" skips it.
     conflict_check: str = "llm"
+    # Answer provenance check (backend/provenance_check.py): "llm" redacts answer lines that repeat
+    # an unretrieved filename or an identifier a source directed the assistant to reproduce (one
+    # short model call, only when the answer holds such an identifier); "static" runs only the
+    # deterministic filename check; "off" skips it. See docs/adversarial-evaluation.md, P3.
+    provenance_check: str = "llm"
     # Prompt-injection defenses (backend/prompt_defense.py): comma list of sandwich, datamark,
     # sanitize, or "none". Default "sanitize": removed 0 honest sentences (no measured answer-quality
     # cost) -- sandwich/datamark cost ~0.12 correctness; see docs/adversarial-evaluation.md fix 3.
@@ -245,6 +250,7 @@ class Settings:
             context_max_prompt_chars=_int(env.get("CONTEXT_MAX_PROMPT_CHARS"), 60_000, "CONTEXT_MAX_PROMPT_CHARS"),
             answer_guard_mode=env.get("ANSWER_GUARD_MODE", "withhold").strip().lower(),
             conflict_check=env.get("CONFLICT_CHECK", "llm").strip().lower(),
+            provenance_check=env.get("PROVENANCE_CHECK", "llm").strip().lower(),
             prompt_defense=env.get("PROMPT_DEFENSE", "sanitize").strip().lower(),
             answer_guard_allowed_domains=frozenset(
                 domain.strip().lower()
@@ -266,6 +272,8 @@ class Settings:
         parse_defenses(self.prompt_defense)  # raises ValueError on an unknown defense name
         if self.conflict_check not in {"llm", "off"}:
             raise ValueError("CONFLICT_CHECK must be llm or off")
+        if self.provenance_check not in {"llm", "static", "off"}:
+            raise ValueError("PROVENANCE_CHECK must be llm, static, or off")
         if self.answer_guard_mode not in {"withhold", "flag", "off"}:
             raise ValueError("ANSWER_GUARD_MODE must be withhold, flag, or off")
         if self.vector_store not in {"sqlite", "postgres"}:
