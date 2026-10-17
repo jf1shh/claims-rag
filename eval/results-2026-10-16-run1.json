@@ -1,0 +1,686 @@
+{
+  "summary": {
+    "model": "Qwen3-Coder-30B-A3B-Instruct-GGUF",
+    "n_queries": 28,
+    "naive_precision_avg": 0.8,
+    "naive_recall_avg": 0.943,
+    "hybrid_precision_avg": 0.865,
+    "hybrid_recall_avg": 0.991,
+    "faithfulness_avg": 0.798,
+    "correctness_avg": 0.863,
+    "elapsed_seconds": 1877.4,
+    "metric_samples": {
+      "naive_precision": {
+        "scored": 28,
+        "failed": 0
+      },
+      "naive_recall": {
+        "scored": 28,
+        "failed": 0
+      },
+      "hybrid_precision": {
+        "scored": 28,
+        "failed": 0
+      },
+      "hybrid_recall": {
+        "scored": 28,
+        "failed": 0
+      },
+      "faithfulness": {
+        "scored": 28,
+        "failed": 0
+      },
+      "correctness": {
+        "scored": 28,
+        "failed": 0
+      }
+    },
+    "correctness_mode": "recall (reference-fact coverage)"
+  },
+  "results": [
+    {
+      "id": "labor-mechanical-cap",
+      "claim_id": null,
+      "query": "What is the labor rate cap for mechanical work under the 2026 standard labor rate guidelines?",
+      "naive_precision": 0.9999999999,
+      "naive_recall": 1.0,
+      "hybrid_precision": 0.9999999999,
+      "hybrid_recall": 1.0,
+      "faithfulness": 0.625,
+      "correctness": 0.67,
+      "naive_top_filenames": [
+        "SOP_Auto_Repair_Labor_Rates.pdf",
+        "SOP_Supplement_Review.pdf",
+        "Auto_Policy_Exclusions.txt",
+        "Endorsement_Custom_Equipment_Form402.pdf"
+      ],
+      "hybrid_top_filenames": [
+        "SOP_Auto_Repair_Labor_Rates.pdf",
+        "SOP_Supplement_Review.pdf",
+        "Auto_Claims_Guidelines.docx",
+        "Case_Study_Rear_End_Collision.pdf"
+      ]
+    },
+    {
+      "id": "labor-body-paint-caps",
+      "claim_id": null,
+      "query": "What are the capped labor rates for sheet metal repair, frame alignment, and refinishing/painting?",
+      "naive_precision": 0.9999999999,
+      "naive_recall": 1.0,
+      "hybrid_precision": 0.9999999999,
+      "hybrid_recall": 1.0,
+      "faithfulness": 0.8333333333333334,
+      "correctness": 0.75,
+      "naive_top_filenames": [
+        "SOP_Auto_Repair_Labor_Rates.pdf",
+        "SOP_Supplement_Review.pdf",
+        "Auto_Claims_Guidelines.docx",
+        "Case_Study_Hail_Damage_PlanA.pdf"
+      ],
+      "hybrid_top_filenames": [
+        "SOP_Auto_Repair_Labor_Rates.pdf",
+        "SOP_Supplement_Review.pdf",
+        "Endorsement_Custom_Equipment_Form402.pdf",
+        "Auto_Deductibles_And_Limits.xlsx"
+      ]
+    },
+    {
+      "id": "dui-exclusion-trigger",
+      "claim_id": null,
+      "query": "Under what circumstances is collision coverage voided due to a DUI?",
+      "naive_precision": 0.7499999999625,
+      "naive_recall": 1.0,
+      "hybrid_precision": 0.8333333332916666,
+      "hybrid_recall": 1.0,
+      "faithfulness": 0.8,
+      "correctness": 0.5,
+      "naive_top_filenames": [
+        "DUI_Exclusion_Directive.txt",
+        "Rider_Roadside_Assistance_Plus.pdf",
+        "Auto_Claims_Guidelines.docx",
+        "Auto_Policy_Exclusions.txt"
+      ],
+      "hybrid_top_filenames": [
+        "DUI_Exclusion_Directive.txt",
+        "Auto_Claims_Guidelines.docx",
+        "Auto_Policy_Exclusions.txt",
+        "Rider_Roadside_Assistance_Plus.pdf"
+      ]
+    },
+    {
+      "id": "oem-parts-eligibility",
+      "claim_id": null,
+      "query": "What vehicles are eligible for the OEM Parts Replacement Guarantee rider?",
+      "naive_precision": 0.9999999999,
+      "naive_recall": 1.0,
+      "hybrid_precision": 0.9999999999,
+      "hybrid_recall": 1.0,
+      "faithfulness": 0.9333333333333333,
+      "correctness": 0.33,
+      "naive_top_filenames": [
+        "Rider_OEM_Parts_Guarantee.pdf",
+        "SOP_Auto_Repair_Labor_Rates.pdf",
+        "Endorsement_Custom_Equipment_Form402.pdf",
+        "Rider_Roadside_Assistance_Plus.pdf"
+      ],
+      "hybrid_top_filenames": [
+        "Rider_OEM_Parts_Guarantee.pdf",
+        "Endorsement_Windshield_Zero_Deductible.docx",
+        "Endorsement_Custom_Equipment_Form402.pdf",
+        "Case_Study_Stolen_Honda_Civic.pdf"
+      ]
+    },
+    {
+      "id": "custom-av-cap",
+      "claim_id": null,
+      "query": "What is the coverage cap for custom aftermarket stereo and navigation equipment?",
+      "naive_precision": 0.9999999999,
+      "naive_recall": 1.0,
+      "hybrid_precision": 0.9999999999,
+      "hybrid_recall": 1.0,
+      "faithfulness": 0.75,
+      "correctness": 1.0,
+      "naive_top_filenames": [
+        "Endorsement_Custom_Equipment_Form402.pdf",
+        "Endorsement_Rideshare_TNC_Form702.pdf",
+        "Auto_Deductibles_And_Limits.xlsx",
+        "Rider_Roadside_Assistance_Plus.pdf"
+      ],
+      "hybrid_top_filenames": [
+        "Endorsement_Custom_Equipment_Form402.pdf",
+        "Rider_OEM_Parts_Guarantee.pdf",
+        "Auto_Deductibles_And_Limits.xlsx",
+        "Auto_Claims_Guidelines.docx"
+      ]
+    },
+    {
+      "id": "windshield-zero-deductible",
+      "claim_id": null,
+      "query": "What does the Zero-Deductible Glass Replacement rider cover?",
+      "naive_precision": 0.9999999999,
+      "naive_recall": 1.0,
+      "hybrid_precision": 0.9999999999,
+      "hybrid_recall": 1.0,
+      "faithfulness": 0.9,
+      "correctness": 0.78,
+      "naive_top_filenames": [
+        "Endorsement_Windshield_Zero_Deductible.docx",
+        "Case_Study_Hail_Damage_PlanA.pdf",
+        "Auto_Claims_Guidelines.docx",
+        "Endorsement_Rideshare_TNC_Form702.pdf"
+      ],
+      "hybrid_top_filenames": [
+        "Endorsement_Windshield_Zero_Deductible.docx",
+        "Auto_Claims_Guidelines.docx",
+        "Rider_Roadside_Assistance_Plus.pdf",
+        "Rider_OEM_Parts_Guarantee.pdf"
+      ]
+    },
+    {
+      "id": "rental-upgrade-rider",
+      "claim_id": null,
+      "query": "How much does the Premium Rental Vehicle Upgrade rider increase the daily rental reimbursement?",
+      "naive_precision": 0.8333333332916666,
+      "naive_recall": 1.0,
+      "hybrid_precision": 0.99999999995,
+      "hybrid_recall": 1.0,
+      "faithfulness": 0.6,
+      "correctness": 0.75,
+      "naive_top_filenames": [
+        "Endorsement_Rental_Car_Upgrade.docx",
+        "Rider_OEM_Parts_Guarantee.pdf",
+        "Auto_Claims_Guidelines.docx",
+        "Auto_Deductibles_And_Limits.xlsx"
+      ],
+      "hybrid_top_filenames": [
+        "Endorsement_Rental_Car_Upgrade.docx",
+        "Auto_Claims_Guidelines.docx",
+        "Auto_Deductibles_And_Limits.xlsx",
+        "Rider_Roadside_Assistance_Plus.pdf"
+      ]
+    },
+    {
+      "id": "rollover-total-loss-threshold",
+      "claim_id": null,
+      "query": "At what point does roof damage from a rollover make a vehicle a structural total loss?",
+      "naive_precision": 0.9999999999,
+      "naive_recall": 1.0,
+      "hybrid_precision": 0.9999999999,
+      "hybrid_recall": 1.0,
+      "faithfulness": 0.5,
+      "correctness": 0.67,
+      "naive_top_filenames": [
+        "Adjuster_Guide_Rollover_Claims.docx",
+        "Guideline_Diminished_Value.docx",
+        "SOP_Total_Loss_Valuation.pdf",
+        "Endorsement_Classic_Car_Agreed_Value.pdf"
+      ],
+      "hybrid_top_filenames": [
+        "Adjuster_Guide_Rollover_Claims.docx",
+        "SOP_Total_Loss_Valuation.pdf",
+        "Guideline_Diminished_Value.docx",
+        "Case_Study_Hail_Damage_PlanA.pdf"
+      ]
+    },
+    {
+      "id": "fraud-chronology-red-flag",
+      "claim_id": null,
+      "query": "What claim filing timing is considered a fraud red flag, and how fast must it be referred to SIU?",
+      "naive_precision": 0.9999999999,
+      "naive_recall": 1.0,
+      "hybrid_precision": 0.9999999999,
+      "hybrid_recall": 1.0,
+      "faithfulness": 0.5714285714285714,
+      "correctness": 1.0,
+      "naive_top_filenames": [
+        "SOP_Claims_Fraud_Red_Flags.pdf",
+        "SOP_Claims_Fraud_Red_Flags.pdf",
+        "Texas_Auto_Insurance_Code_2026.pdf",
+        "California_Auto_Claims_Regulations.pdf"
+      ],
+      "hybrid_top_filenames": [
+        "SOP_Claims_Fraud_Red_Flags.pdf",
+        "SOP_Subrogation_Recovery.pdf",
+        "SOP_Claims_Fraud_Red_Flags.pdf",
+        "Texas_Auto_Insurance_Code_2026.pdf"
+      ]
+    },
+    {
+      "id": "ca-claim-ack-timeline",
+      "claim_id": null,
+      "query": "Under California regulations, how quickly must an insurer acknowledge receipt of a claim?",
+      "naive_precision": 0.8333333332916666,
+      "naive_recall": 1.0,
+      "hybrid_precision": 0.8333333332916666,
+      "hybrid_recall": 1.0,
+      "faithfulness": 0.8571428571428571,
+      "correctness": 1.0,
+      "naive_top_filenames": [
+        "California_Auto_Claims_Regulations.pdf",
+        "Texas_Auto_Insurance_Code_2026.pdf",
+        "California_Auto_Claims_Regulations.pdf",
+        "Rider_OEM_Parts_Guarantee.pdf"
+      ],
+      "hybrid_top_filenames": [
+        "California_Auto_Claims_Regulations.pdf",
+        "Texas_Auto_Insurance_Code_2026.pdf",
+        "California_Auto_Claims_Regulations.pdf",
+        "SOP_Subrogation_Recovery.pdf"
+      ]
+    },
+    {
+      "id": "rear-impact-adas-fee",
+      "claim_id": null,
+      "query": "Is ADAS recalibration required after a rear bumper replacement, and what does it cost?",
+      "naive_precision": 0.7499999999625,
+      "naive_recall": 1.0,
+      "hybrid_precision": 0.8333333332916666,
+      "hybrid_recall": 1.0,
+      "faithfulness": 1.0,
+      "correctness": 1.0,
+      "naive_top_filenames": [
+        "Adjuster_Guide_Rear_Impact.docx",
+        "Endorsement_Windshield_Zero_Deductible.docx",
+        "Case_Study_Hail_Damage_PlanA.pdf",
+        "Case_Study_Rear_End_Collision.pdf"
+      ],
+      "hybrid_top_filenames": [
+        "Adjuster_Guide_Rear_Impact.docx",
+        "Endorsement_Windshield_Zero_Deductible.docx",
+        "Case_Study_Rear_End_Collision.pdf",
+        "Auto_Claims_Guidelines.docx"
+      ]
+    },
+    {
+      "id": "plan-a-comprehensive-deductible",
+      "claim_id": null,
+      "query": "What is the standard comprehensive deductible under Plan A?",
+      "naive_precision": 0.99999999995,
+      "naive_recall": 1.0,
+      "hybrid_precision": 0.6388888888675925,
+      "hybrid_recall": 1.0,
+      "faithfulness": 0.25,
+      "correctness": 0.67,
+      "naive_top_filenames": [
+        "Case_Study_Hail_Damage_PlanA.pdf",
+        "Auto_Deductibles_And_Limits.xlsx",
+        "Rider_Roadside_Assistance_Plus.pdf",
+        "Case_Study_Stolen_Honda_Civic.pdf"
+      ],
+      "hybrid_top_filenames": [
+        "Auto_Claims_Guidelines.docx",
+        "Auto_Deductibles_And_Limits.xlsx",
+        "Case_Study_Hail_Damage_PlanA.pdf",
+        "Case_Study_Hail_Damage_PlanA.pdf"
+      ]
+    },
+    {
+      "id": "sterling-oem-eligibility",
+      "claim_id": "#2026-99382",
+      "query": "Is Matthew Sterling's 2023 Tesla Model Y eligible for OEM parts under his rider?",
+      "naive_precision": 0.4166666666458333,
+      "naive_recall": 1.0,
+      "hybrid_precision": 0.499999999975,
+      "hybrid_recall": 1.0,
+      "faithfulness": 0.8846153846153846,
+      "correctness": 1.0,
+      "naive_top_filenames": [
+        "shop_email_thread_Sterling.pdf",
+        "SOP_Auto_Repair_Labor_Rates.pdf",
+        "Rider_OEM_Parts_Guarantee.pdf",
+        "tesla_rear_collision_description.txt"
+      ],
+      "hybrid_top_filenames": [
+        "shop_email_thread_Sterling.pdf",
+        "tesla_rear_collision_description.txt",
+        "police_report_Sterling.pdf",
+        "Rider_OEM_Parts_Guarantee.pdf"
+      ]
+    },
+    {
+      "id": "sterling-shop-estimate-detail",
+      "claim_id": "#2026-99382",
+      "query": "What additional repair work did the body shop identify beyond the original estimate for Matthew Sterling's claim?",
+      "naive_precision": 0.0,
+      "naive_recall": 0.0,
+      "hybrid_precision": 0.9999999999,
+      "hybrid_recall": 1.0,
+      "faithfulness": 1.0,
+      "correctness": 0.8,
+      "naive_top_filenames": [
+        "Case_Study_Stolen_Honda_Civic.pdf",
+        "SOP_Auto_Repair_Labor_Rates.pdf",
+        "Case_Study_Rear_End_Collision.pdf",
+        "Guideline_Betterment_Adjustments.docx"
+      ],
+      "hybrid_top_filenames": [
+        "shop_email_thread_Sterling.pdf",
+        "SOP_Auto_Repair_Labor_Rates.pdf",
+        "SOP_Supplement_Review.pdf",
+        "Case_Study_Stolen_Honda_Civic.pdf"
+      ]
+    },
+    {
+      "id": "jenkins-repaint-vs-pdr",
+      "claim_id": "#2026-10492",
+      "query": "Is the door repainting charge on Sarah Jenkins' hail claim duplicative of the PDR work, or a separate legitimate repair?",
+      "naive_precision": 0.99999999995,
+      "naive_recall": 1.0,
+      "hybrid_precision": 0.99999999995,
+      "hybrid_recall": 1.0,
+      "faithfulness": 0.896551724137931,
+      "correctness": 0.77,
+      "naive_top_filenames": [
+        "Case_Study_Hail_Damage_PlanA.pdf",
+        "dent_photos_description_Jenkins.pdf",
+        "SOP_Auto_Repair_Labor_Rates.pdf",
+        "Case_Study_Rear_End_Collision.pdf"
+      ],
+      "hybrid_top_filenames": [
+        "dent_photos_description_Jenkins.pdf",
+        "Case_Study_Hail_Damage_PlanA.pdf",
+        "f150_hail_damage_description.txt",
+        "Case_Study_Hail_Damage_PlanA.pdf"
+      ]
+    },
+    {
+      "id": "chen-custom-equipment-cap",
+      "claim_id": "#2026-30291",
+      "query": "Does David Chen's stolen custom equipment exceed his endorsement's coverage cap, and by how much?",
+      "naive_precision": 0.0,
+      "naive_recall": 1.0,
+      "hybrid_precision": 0.0,
+      "hybrid_recall": 1.0,
+      "faithfulness": 0.8333333333333334,
+      "correctness": 1.0,
+      "naive_top_filenames": [
+        "Endorsement_Custom_Equipment_Form402.pdf",
+        "Rider_Roadside_Assistance_Plus.pdf",
+        "Texas_Auto_Insurance_Code_2026.pdf",
+        "Auto_Deductibles_And_Limits.xlsx"
+      ],
+      "hybrid_top_filenames": [
+        "Endorsement_Custom_Equipment_Form402.pdf",
+        "Endorsement_Rental_Car_Upgrade.docx",
+        "Auto_Claims_Guidelines.docx",
+        "Endorsement_Rideshare_TNC_Form702.pdf"
+      ]
+    },
+    {
+      "id": "chen-theft-report-detail",
+      "claim_id": "#2026-30291",
+      "query": "What did the police report describe about how David Chen's vehicle was broken into?",
+      "naive_precision": 0.49999999995,
+      "naive_recall": 0.75,
+      "hybrid_precision": 0.9999999999,
+      "hybrid_recall": 0.75,
+      "faithfulness": 0.875,
+      "correctness": 1.0,
+      "naive_top_filenames": [
+        "civic_smashed_window_description.txt",
+        "police_theft_report_Chen.pdf",
+        "Case_Study_Stolen_Honda_Civic.pdf",
+        "Auto_Claims_Guidelines.docx"
+      ],
+      "hybrid_top_filenames": [
+        "police_theft_report_Chen.pdf",
+        "civic_smashed_window_description.txt",
+        "Case_Study_Stolen_Honda_Civic.pdf",
+        "Auto_Claims_Guidelines.docx"
+      ]
+    },
+    {
+      "id": "rostova-hydrolock-coverage",
+      "claim_id": "#2026-55912",
+      "query": "Is Elena Rostova's hydro-locked engine damage a covered loss?",
+      "naive_precision": 0.8055555555287036,
+      "naive_recall": 1.0,
+      "hybrid_precision": 0.9999999999,
+      "hybrid_recall": 1.0,
+      "faithfulness": 0.9259259259259259,
+      "correctness": 1.0,
+      "naive_top_filenames": [
+        "Case_Study_Engine_Hydro_Lock.pdf",
+        "Adjuster_Guide_Rollover_Claims.docx",
+        "engine_diagnostic_report_Rostova.pdf",
+        "telematics_log_Rostova.pdf"
+      ],
+      "hybrid_top_filenames": [
+        "Case_Study_Engine_Hydro_Lock.pdf",
+        "Adjuster_Guide_Rollover_Claims.docx",
+        "Guideline_Diminished_Value.docx",
+        "Rider_Roadside_Assistance_Plus.pdf"
+      ]
+    },
+    {
+      "id": "rostova-dui-hallucination-probe",
+      "claim_id": "#2026-55912",
+      "query": "Was the driver cited for DUI in Elena Rostova's claim?",
+      "naive_precision": 0.0,
+      "naive_recall": 1.0,
+      "hybrid_precision": 0.0,
+      "hybrid_recall": 1.0,
+      "faithfulness": 0.8666666666666667,
+      "correctness": 0.86,
+      "naive_top_filenames": [
+        "DUI_Exclusion_Directive.txt",
+        "Auto_Policy_Exclusions.txt",
+        "SOP_Liability_Determination.pdf",
+        "Auto_Claims_Guidelines.docx"
+      ],
+      "hybrid_top_filenames": [
+        "DUI_Exclusion_Directive.txt",
+        "SOP_Liability_Determination.pdf",
+        "Case_Study_Rear_End_Collision.pdf",
+        "Case_Study_Engine_Hydro_Lock.pdf"
+      ]
+    },
+    {
+      "id": "subrogation-referral-trigger",
+      "claim_id": null,
+      "query": "When must a claim be referred to the Subrogation Unit?",
+      "naive_precision": 0.9999999999,
+      "naive_recall": 1.0,
+      "hybrid_precision": 0.9999999999,
+      "hybrid_recall": 1.0,
+      "faithfulness": 1.0,
+      "correctness": 1.0,
+      "naive_top_filenames": [
+        "SOP_Subrogation_Recovery.pdf",
+        "SOP_Claims_Fraud_Red_Flags.pdf",
+        "SOP_Claims_Fraud_Red_Flags.pdf",
+        "Auto_Claims_Guidelines.docx"
+      ],
+      "hybrid_top_filenames": [
+        "SOP_Subrogation_Recovery.pdf",
+        "SOP_Claims_Fraud_Red_Flags.pdf",
+        "California_Auto_Claims_Regulations.pdf",
+        "Texas_Auto_Insurance_Code_2026.pdf"
+      ]
+    },
+    {
+      "id": "subrogation-partial-deductible",
+      "claim_id": null,
+      "query": "If subrogation only recovers part of the damages, how much of the insured's deductible is reimbursed?",
+      "naive_precision": 0.9999999999,
+      "naive_recall": 0.6666666666666666,
+      "hybrid_precision": 0.9999999999,
+      "hybrid_recall": 1.0,
+      "faithfulness": 0.6,
+      "correctness": 1.0,
+      "naive_top_filenames": [
+        "Case_Study_Stolen_Honda_Civic.pdf",
+        "Case_Study_Rear_End_Collision.pdf",
+        "Case_Study_Hail_Damage_PlanA.pdf",
+        "Rider_Roadside_Assistance_Plus.pdf"
+      ],
+      "hybrid_top_filenames": [
+        "SOP_Subrogation_Recovery.pdf",
+        "Texas_Auto_Insurance_Code_2026.pdf",
+        "Case_Study_Hail_Damage_PlanA.pdf",
+        "Auto_Claims_Guidelines.docx"
+      ]
+    },
+    {
+      "id": "supplement-reinspection-threshold",
+      "claim_id": null,
+      "query": "When does a repair supplement require a field reinspection before approval?",
+      "naive_precision": 0.9999999999,
+      "naive_recall": 1.0,
+      "hybrid_precision": 0.9999999999,
+      "hybrid_recall": 1.0,
+      "faithfulness": 0.875,
+      "correctness": 0.8,
+      "naive_top_filenames": [
+        "SOP_Supplement_Review.pdf",
+        "Rider_OEM_Parts_Guarantee.pdf",
+        "SOP_Auto_Repair_Labor_Rates.pdf",
+        "SOP_Subrogation_Recovery.pdf"
+      ],
+      "hybrid_top_filenames": [
+        "SOP_Supplement_Review.pdf",
+        "SOP_Subrogation_Recovery.pdf",
+        "Rider_OEM_Parts_Guarantee.pdf",
+        "Auto_Claims_Guidelines.docx"
+      ]
+    },
+    {
+      "id": "salvage-owner-retention",
+      "claim_id": null,
+      "query": "What happens to the settlement if the policyholder keeps the salvage vehicle after a total loss?",
+      "naive_precision": 0.7499999999625,
+      "naive_recall": 1.0,
+      "hybrid_precision": 0.7499999999625,
+      "hybrid_recall": 1.0,
+      "faithfulness": 0.6666666666666666,
+      "correctness": 0.8,
+      "naive_top_filenames": [
+        "SOP_Total_Loss_Valuation.pdf",
+        "SOP_Vehicle_Storage_Fees.txt",
+        "Guideline_Diminished_Value.docx",
+        "SOP_Total_Loss_Valuation.pdf"
+      ],
+      "hybrid_top_filenames": [
+        "SOP_Total_Loss_Valuation.pdf",
+        "Rider_Gap_Insurance_Coverage.pdf",
+        "SOP_Vehicle_Storage_Fees.txt",
+        "SOP_Total_Loss_Valuation.pdf"
+      ]
+    },
+    {
+      "id": "diminished-value-third-party",
+      "claim_id": null,
+      "query": "Does the policy cover first-party diminished value, and how is a third-party diminished value claim calculated?",
+      "naive_precision": 0.9999999999,
+      "naive_recall": 1.0,
+      "hybrid_precision": 0.9999999999,
+      "hybrid_recall": 1.0,
+      "faithfulness": 0.9666666666666667,
+      "correctness": 1.0,
+      "naive_top_filenames": [
+        "Guideline_Diminished_Value.docx",
+        "Endorsement_Classic_Car_Agreed_Value.pdf",
+        "Rider_Gap_Insurance_Coverage.pdf",
+        "Rider_Roadside_Assistance_Plus.pdf"
+      ],
+      "hybrid_top_filenames": [
+        "Guideline_Diminished_Value.docx",
+        "SOP_Subrogation_Recovery.pdf",
+        "Rider_Gap_Insurance_Coverage.pdf",
+        "Endorsement_Classic_Car_Agreed_Value.pdf"
+      ]
+    },
+    {
+      "id": "betterment-tires",
+      "claim_id": null,
+      "query": "How is betterment calculated on a replaced tire, and which parts are never subject to betterment?",
+      "naive_precision": 0.9999999999,
+      "naive_recall": 1.0,
+      "hybrid_precision": 0.9999999999,
+      "hybrid_recall": 1.0,
+      "faithfulness": 0.6666666666666666,
+      "correctness": 1.0,
+      "naive_top_filenames": [
+        "Guideline_Betterment_Adjustments.docx",
+        "Rider_OEM_Parts_Guarantee.pdf",
+        "Guideline_Diminished_Value.docx",
+        "SOP_Total_Loss_Valuation.pdf"
+      ],
+      "hybrid_top_filenames": [
+        "Guideline_Betterment_Adjustments.docx",
+        "Rider_OEM_Parts_Guarantee.pdf",
+        "Auto_Claims_Guidelines.docx",
+        "Guideline_Diminished_Value.docx"
+      ]
+    },
+    {
+      "id": "liability-comparative-fault-texas",
+      "claim_id": null,
+      "query": "Under the liability SOP, can a Texas claimant who is 60% at fault recover damages, and how does California differ?",
+      "naive_precision": 0.7499999999625,
+      "naive_recall": 1.0,
+      "hybrid_precision": 0.8333333332916666,
+      "hybrid_recall": 1.0,
+      "faithfulness": 0.7333333333333333,
+      "correctness": 1.0,
+      "naive_top_filenames": [
+        "Texas_Auto_Insurance_Code_2026.pdf",
+        "California_Auto_Claims_Regulations.pdf",
+        "California_Auto_Claims_Regulations.pdf",
+        "SOP_Liability_Determination.pdf"
+      ],
+      "hybrid_top_filenames": [
+        "SOP_Liability_Determination.pdf",
+        "California_Auto_Claims_Regulations.pdf",
+        "Texas_Auto_Insurance_Code_2026.pdf",
+        "California_Auto_Claims_Regulations.pdf"
+      ]
+    },
+    {
+      "id": "towing-after-accident",
+      "claim_id": null,
+      "query": "Does the Roadside Assistance Plus rider pay for towing after a collision?",
+      "naive_precision": 0.9999999999,
+      "naive_recall": 1.0,
+      "hybrid_precision": 0.9999999999,
+      "hybrid_recall": 1.0,
+      "faithfulness": 1.0,
+      "correctness": 1.0,
+      "naive_top_filenames": [
+        "Rider_Roadside_Assistance_Plus.pdf",
+        "SOP_Vehicle_Storage_Fees.txt",
+        "California_Auto_Claims_Regulations.pdf",
+        "California_Auto_Claims_Regulations.pdf"
+      ],
+      "hybrid_top_filenames": [
+        "Rider_Roadside_Assistance_Plus.pdf",
+        "Auto_Deductibles_And_Limits.xlsx",
+        "SOP_Vehicle_Storage_Fees.txt",
+        "Endorsement_Rideshare_TNC_Form702.pdf"
+      ]
+    },
+    {
+      "id": "storage-fee-cutoff",
+      "claim_id": null,
+      "query": "How much storage is covered for a vehicle at a tow yard, and when does the policyholder become responsible for storage charges?",
+      "naive_precision": 0.9999999999,
+      "naive_recall": 1.0,
+      "hybrid_precision": 0.9999999999,
+      "hybrid_recall": 1.0,
+      "faithfulness": 0.9230769230769231,
+      "correctness": 1.0,
+      "naive_top_filenames": [
+        "SOP_Vehicle_Storage_Fees.txt",
+        "Rider_Roadside_Assistance_Plus.pdf",
+        "Endorsement_Classic_Car_Agreed_Value.pdf",
+        "Auto_Deductibles_And_Limits.xlsx"
+      ],
+      "hybrid_top_filenames": [
+        "SOP_Vehicle_Storage_Fees.txt",
+        "Rider_Roadside_Assistance_Plus.pdf",
+        "Case_Study_Stolen_Honda_Civic.pdf",
+        "SOP_Total_Loss_Valuation.pdf"
+      ]
+    }
+  ]
+}

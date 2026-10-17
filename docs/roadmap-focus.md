@@ -48,6 +48,8 @@ the code computes.
 
 ### P2. Close the domain eval gaps
 
+**Done 2026-10-16** (branch `feat/p2-domain-eval`): 28 golden queries; `crag coverage` flags only PII/privacy. Two same-day runs: hybrid P/R 0.865/0.991 in both, correctness 0.862/0.863, faithfulness 0.798/0.825. The new nine are easier (one short source each): correctness 0.956 vs 0.818 on the original nineteen.
+
 Add golden queries (with synthetic source docs where none exist) for subrogation, supplement
 review, salvage, diminished value, betterment, liability and storage/towing, so `crag coverage`
 shows no `GAP` except PII/privacy, which the adversarial and guard suites cover. Re-run the golden eval and record dated results. Run it twice to separate judge variance

@@ -724,3 +724,24 @@ real output of `_run_simulated_agent("Audit the labor rates on this estimate", "
   P1 and crag learnings); documented in the PR rather than rewording.
 * **Verification**: `crag check` 710 passed / 17 skipped / 1 xfailed, gate 0 blocking; all README
   relative links resolve; documentation contract strings kept.
+
+## P2 domain eval — 2026-10-16 (branch `feat/p2-domain-eval`)
+
+Nine golden queries and six synthetic sources (`SOP_Subrogation_Recovery.pdf`,
+`SOP_Supplement_Review.pdf`, `Guideline_Diminished_Value.docx`, `Guideline_Betterment_Adjustments.docx`,
+`SOP_Liability_Determination.pdf`, `SOP_Vehicle_Storage_Fees.txt`) in `scripts/rebuild_golden_source_docs.py`;
+salvage and towing reuse existing generated docs. The liability doc's comparative-fault table matches the
+existing California and Texas regulation docs.
+* **Found (debugging history)**: the live `rag_store.db` was empty (an Oct 11 file of 45 KB). Rebuilt with
+  `scripts/seed_demo.py` then `scripts/rebuild_golden_source_docs.py` (30 global docs plus claim dossiers).
+* **Found**: Lemonade now returns `state: null` for every `/api/v0/models` entry, so
+  `eval/run_eval.py:get_loaded_model()` reported no model while one was resident and two eval attempts aborted
+  before scoring. Fixed to read `/api/v1/health` `all_models_loaded` first, as `backend/llm_client.py` does.
+* **Found**: port 8000 is held by another local uvicorn app; `run_eval.py` now takes `EVAL_APP_URL`
+  (runs used the `claimsrag-eval` launch config on 8002 with `SIMULATION_MODE=false`).
+* **Process slip**: `gpu-preflight` returned 1 (RAM 9.9 GB available, needs 12; no other GPU job found) and the
+  model was loaded anyway in the same command. The owner then approved the runs. Check the gate's exit code
+  before loading, not after.
+* **Results**: two full runs, 28/28 scored. Hybrid P/R 0.865/0.991 identical across runs; correctness
+  0.862/0.863; faithfulness 0.798/0.825. Original 19 subset: correctness 0.818, faithfulness ~0.80 (vs 0.892 on
+  2026-09-22 under LM Studio, not comparable). New 9: correctness 0.956.

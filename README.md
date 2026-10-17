@@ -20,7 +20,7 @@ What this project shows, in the order a claims-AI team tends to ask:
 
 - **Claims domain knowledge drives the design.** The test questions cover what adjusters and appraisers actually decide: labor rate caps, OEM versus aftermarket parts, total-loss thresholds, deductibles and endorsements, stacked exclusions, SIU red flags.
 - **The math is computed, not generated.** Labor caps, OEM parts eligibility, total loss and net settlement come from small, unit-tested functions. The model explains; the code computes. Each answer ends with a table of every input and the document it came from.
-- **Quality is measured, with dates.** A 19-question golden set is scored on retrieval, groundedness and correctness. A separate adversarial suite attacks the system with poisoned and conflicting documents. Every number below has a run date and a judge model.
+- **Quality is measured, with dates.** A 28-question golden set covering fourteen claims topics is scored on retrieval, groundedness and correctness. A separate adversarial suite attacks the system with poisoned and conflicting documents. Every number below has a run date and a judge model.
 - **It says no when it should.** If nothing relevant is found, it refuses rather than inventing an answer. Answers that announce a claim decision (approved, paid, denied) that the claim record doesn't support are held back for a human.
 - **It stays on the machine.** Search, reranking, generation and evaluation all run locally by default. No claim content goes to a cloud API unless someone configures one.
 - **It is built like software a team would run:** sign-in on every API route, role and claim-level permissions (adjuster, supervisor, SIU, admin), an audit log, rate limits, a Postgres option, Docker, and CI on every pull request.
@@ -63,20 +63,24 @@ Today the claims tools run in the demo's labelled simulation mode, which works w
 
 ### Golden set: does it find the right documents and answer correctly?
 
-19 claims questions, each with a reference answer checked against the source documents. Scored with Ragas by a local judge model, so nothing goes to a hosted API.
+28 claims questions, each with a reference answer checked against the source documents. They cover labor rates, OEM parts, total loss, deductibles, rental, glass, fraud/SIU, subrogation, supplement review, salvage, diminished value, betterment, liability and storage/towing. Scored with Ragas by a local judge model, so nothing goes to a hosted API.
 
-Latest full run: **2026-09-22**, judge and generator `qwen3-coder-30b-a3b-instruct`, all 19 questions scored on every metric with no scoring failures.
+Latest: **two full runs on 2026-10-16**, judge and generator `Qwen3-Coder-30B-A3B-Instruct-GGUF` on Lemonade, all 28 questions scored on every metric in both runs with no scoring failures.
 
 | Metric | What it checks | Plain vector search | Hybrid search + reranking |
 |---|---|---|---|
-| Context precision | The documents it pulled are relevant | 0.727 | **0.832** |
-| Context recall | It didn't miss a relevant document | 0.895 | **0.965** |
-| Faithfulness | The answer sticks to the retrieved documents | — | **0.892** |
-| Reference-fact coverage | The answer covers what the reference requires | — | **0.797** |
+| Context precision | The documents it pulled are relevant | 0.800 | **0.865** |
+| Context recall | It didn't miss a relevant document | 0.943 | **0.991** |
+| Faithfulness | The answer sticks to the retrieved documents | — | **0.798 / 0.825** (run 1 / run 2) |
+| Reference-fact coverage | The answer covers what the reference requires | — | **0.862 / 0.863** |
 
-These are single-run scores from a language-model judge, and they move between runs. Compared with the 2026-09-03 run, faithfulness and coverage went up, while precision dropped by the same amount in *both* columns. A change to the hybrid path can't explain a matching drop in the plain baseline, so this reads as judge variance or corpus drift, and a confirming run is still to do. Hybrid beat plain search on precision in 9 of 19 questions and lost in 1.
+Retrieval scores were identical in both runs, and coverage moved by 0.001. Faithfulness moved by 0.027, which is the run-to-run noise this judge is known for. Hybrid beat plain search on precision in 8 of 28 questions and lost in 1.
 
-![Evaluation results chart](assets/eval_results.png)
+The nine new questions (subrogation through storage/towing) score higher than the original nineteen: 0.956 coverage against 0.818. Their source documents are short and focused, so treat that as an easier set, not as proof the system is better at those topics. On the original nineteen, faithfulness is lower than the 2026-09-22 run (about 0.80 against 0.892) while coverage is close (0.818 against 0.797). That run used a different model server and quantization, so the two aren't directly comparable.
+
+![Evaluation results chart (2026-09-22 run, 19 questions)](assets/eval_results.png)
+
+*Chart from the 2026-09-22 run on the original 19 questions; it predates the 2026-10-16 runs above.*
 
 ### Adversarial suite: can a poisoned document hijack it?
 
@@ -211,7 +215,7 @@ Synthetic data only. Read [`SECURITY.md`](SECURITY.md) before handling uploaded 
 - **Faithfulness measures groundedness, not correctness:** an answer can stick to partial context and still be wrong. Reference-fact coverage is the check against the verified answer.
 - **Context precision and recall score single-shot search,** not the full pipeline's guaranteed inclusion of the claim's own documents. Coverage *is* scored through the full pipeline.
 - **Prompt injection is reduced, not solved.** The default sanitizer stopped none of the held-out attacks, which were written after reading its code. The answer guard stops forged decisions and exfiltration links, not every injected phrase.
-- **Test coverage has gaps.** The golden set has no subrogation, supplement review, salvage, diminished value, betterment, liability or storage/towing questions yet. Closing that is next on the [roadmap](docs/roadmap-focus.md).
+- **The golden set is still small.** 28 questions, mostly one or two per topic, all on synthetic documents. The newer topics have one short source document each, which makes them easier than real claim files. The adversarial suite has not been rerun; its next ingest will include the six new documents.
 
 ## Tech stack
 
