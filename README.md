@@ -1,7 +1,7 @@
 # ClaimsRAG
 
 [![tests](https://github.com/jf1shh/claims-rag/actions/workflows/tests.yml/badge.svg)](https://github.com/jf1shh/claims-rag/actions/workflows/tests.yml)
-[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![license: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
 [![release](https://img.shields.io/github/v/release/jf1shh/claims-rag)](https://github.com/jf1shh/claims-rag/releases/tag/v1.0.0)
 
 **An AI assistant for auto claims adjusters.** It answers questions from the policy documents and the claim file, works out the claim math in tested code instead of trusting a language model to do arithmetic, and cites a source for every number. It runs on one machine, and every document in it is synthetic.
@@ -228,3 +228,7 @@ Python · FastAPI (JSON + server-sent events) · SQLite with a custom hybrid vec
 Built independently by [Jared Fisher](https://www.linkedin.com/in/jaredfisher-ai/) with AI coding agents, drawing on 17 years at Liberty Mutual, including 11 as senior appraiser. Jared defines the requirements, directs the build, and verifies the results. Moving into AI enablement and product; open to Associate Product Manager, AI operations, and claims roles.
 
 [GitHub profile](https://github.com/jf1shh) · [LinkedIn](https://www.linkedin.com/in/jaredfisher-ai/) · [Live portfolio](https://jf1shh.github.io/agentic-app-harness/)
+
+## License
+
+Copyright (C) 2026 Jared Fisher. Licensed under the [GNU Affero General Public License v3.0](LICENSE). You may use, modify and redistribute it, but if you run a modified version as a network service, you must publish your modified source under the same license. Releases before 2026-10-17 were MIT-licensed. For other licensing terms, contact the author.
