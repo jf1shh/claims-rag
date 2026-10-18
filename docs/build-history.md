@@ -761,3 +761,14 @@ existing California and Texas regulation docs.
 
 - Owner asked whether companies could reuse the code freely under MIT (yes: MIT only requires keeping the notice), compared the permissive, copyleft and source-available options, and chose AGPL-3.0.
 - `LICENSE` replaced with the official AGPL-3.0 text (GitHub licenses API); README badge updated and a License section added. History entries that say MIT (Phase 15) are left as written: they were true then.
+
+
+## P4 supplement review — 2026-10-18 (branch `feat/p4-supplement-review`)
+
+- Goal (owner picked over per-role endpoints): the roadmap's first P4 workflow mode.
+- `claims_tools.supplement_review` + helpers; rule constants are pinned to the generator text by `tests/test_supplement_review.py` (implicit string concatenation is joined before matching).
+- Design choices: "original approved estimate" = the itemized original lines at the SOP labor caps (the shop's `totalEst` is not itemized); betterment is taken on the labor-capped amount; parts mismatches are flagged, not repriced (no LKQ price in the corpus); shocks/exhaust are flagged because the guideline has no formula; holidays are not modelled in the due date.
+- Debugging history: ruff B905 on `zip()` without `strict=`; fixed with `strict=True`. Nothing else failed.
+- Routed review (Haiku, route.py) found three defects, all fixed with regression tests: wear items matched as bare substrings ("entire" → tire, "exhaustive" → exhaust; now whole-word regexes); betterment was prorated on parts + labor instead of the part price; aftermarket on a safety part was not flagged under the SOP's OEM-for-safety rule.
+- Verified: 21 new tests, `crag check` 774 passed / gate passed; button clicked in the app (Simulation Mode, port 8011) rendered the Sterling review with REINSPECTION REQUIRED.
+

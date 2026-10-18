@@ -42,7 +42,7 @@ Ask a question about a claim, in plain English. For example, *"Audit the labor r
 >
 > **Tool inputs and citations:** each cap is cited to `SOP_Auto_Repair_Labor_Rates.pdf`, section 1, and each billed rate to the claim's estimate.
 
-Four claims tools sit behind answers like this ([`backend/claims_tools.py`](backend/claims_tools.py)):
+Five claims tools sit behind answers like this ([`backend/claims_tools.py`](backend/claims_tools.py)):
 
 | Tool | Answers |
 |---|---|
@@ -50,6 +50,7 @@ Four claims tools sit behind answers like this ([`backend/claims_tools.py`](back
 | `oem_rider_check` | Does the OEM parts rider apply, given vehicle age, mileage and the endorsements on the policy? |
 | `total_loss_check` | Is this a total loss under the state's rule (synthetic table)? It asks for ACV or salvage when they're missing instead of guessing. |
 | `deductible_apply` | What is the net settlement after the deductible, endorsements and excluded items? |
+| `supplement_review` | For each line a shop adds after teardown: labor over the cap, betterment on wear items (tires, batteries), and whether the part type fits the vehicle's parts standard. For each supplement: are the photos there, is a field reinspection required (over $1,500, or all supplements over 25% of the original), and when is the response due? Try *"Review the supplement"* on #2026-99382 or #2026-10492. |
 
 Other things an adjuster can do:
 

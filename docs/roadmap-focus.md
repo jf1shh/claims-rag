@@ -64,6 +64,8 @@ lowering the conflict pass rate (0.9). Record before/after with dates. Insurers'
 
 ### P4. Workflow modes that match the target companies
 
+**Supplement review done 2026-10-18** (branch `feat/p4-supplement-review`): `claims_tools.supplement_review`, synthetic supplements on #2026-99382 (reinspection: 56.5% of the original) and #2026-10492 (held: no photos; OEM on a non-safety part; tire betterment), a "Review Supplement" button, 21 tests. Simulation mode only, like P1. Next: total-loss explainer.
+
 One "audit" mode each, built on P1 tools and P2 evals, with cited per-line output and advisory-only
 wording:
 
