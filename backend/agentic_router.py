@@ -24,6 +24,14 @@ CLAIMS_DATA = [
             { "cat": "Safety", "op": "ADAS Backup Sensor Calibration", "rate": "Flat", "qty": "1 Unit", "total": "$450" },
             { "cat": "Frame", "op": "Pull Rear Body Panel (Alignment)", "rate": "$85/hr", "qty": "5.0 hrs", "total": "$425" },
             { "cat": "Mechanical", "op": "Replace Rear Motor Shield & Alignment", "rate": "$120/hr", "qty": "4.0 hrs", "total": "$480" }
+        ],
+        # Synthetic teardown supplement (P4 supplement review demo).
+        "supplements": [
+            {"id": "S1", "received": "2026-01-14", "photos": True, "submitted_before_work": True, "lines": [
+                { "cat": "Body", "op": "Replace Rear Bumper Reinforcement Bar", "rate": "$75/hr", "qty": "3.0 hrs", "total": "$625", "part": "OEM" },
+                { "cat": "Frame", "op": "Repair Hidden Rear Rail Kink", "rate": "$85/hr", "qty": "4.0 hrs", "total": "$340" },
+                { "cat": "Electrical", "op": "Replace 12V Battery (cracked case)", "rate": "Flat", "qty": "1 Unit", "total": "$240", "wear": {"battery_age_months": 30} }
+            ]}
         ]
     },
     {
@@ -41,6 +49,14 @@ CLAIMS_DATA = [
             { "cat": "Paint", "op": "Refinish Passenger Doors", "rate": "$75/hr", "qty": "12.0 hrs", "total": "$900" },
             { "cat": "Glass", "op": "Replace Windshield (OEM Spec Glass)", "rate": "Flat", "qty": "1 Unit", "total": "$1,200" },
             { "cat": "Safety", "op": "Windshield ADAS Camera Recalibration", "rate": "Flat", "qty": "1 Unit", "total": "$350" }
+        ],
+        # Synthetic supplement submitted without teardown photos (P4 supplement review demo).
+        "supplements": [
+            {"id": "S1", "received": "2026-02-03", "photos": False, "submitted_before_work": True, "lines": [
+                { "cat": "Body", "op": "Replace Passenger Door Shell", "rate": "$75/hr", "qty": "3.0 hrs", "total": "$1,325", "part": "OEM" },
+                { "cat": "Paint", "op": "Refinish Replacement Door Shell", "rate": "$75/hr", "qty": "4.0 hrs", "total": "$300" },
+                { "cat": "Tires", "op": "Replace 2x Front Tires (sidewall cuts)", "rate": "Flat", "qty": "2 Units", "total": "$480", "wear": {"tread_32nds": 6} }
+            ]}
         ]
     },
     {
@@ -813,6 +829,9 @@ class AgenticRAGRouter:
                          "until the shop supports it."]
         out: List[str] = []
 
+        if audit_type == "supplement":
+            return self._supplement_answer(claim, evidence, logs)
+
         if audit_type == "labor":
             out += [f"### ⚡ Labor Rate Audit: {name} ({cid})",
                     f"**Result: {'OVER CAP' if labor['status'] == 'over_cap' else 'WITHIN CAP'}** "
@@ -893,6 +912,42 @@ class AgenticRAGRouter:
         out.append("*Calculated figures for adjuster review; not a coverage decision.*")
         return out + ct.render_inputs([labor, pay])
 
+    SUPPLEMENT_VERDICTS = {
+        "hold_documentation": "HOLD: documentation incomplete",
+        "reinspection_required": "REINSPECTION REQUIRED before approval",
+        "approve_on_photos": "MAY BE APPROVED ON PHOTOS",
+    }
+
+    def _supplement_answer(self, claim: Dict[str, Any], evidence: Dict[str, Any], logs: List[str]) -> List[str]:
+        """Supplement review: every added line checked by claims_tools.supplement_review."""
+        name, cid = claim["insured"], claim["id"]
+        result = ct.supplement_review(original=claim["estimate"], supplements=claim.get("supplements", []),
+                                      vehicle=claim["vehicle"], loss_year=evidence.get("loss_year", 2026),
+                                      endorsements=claim["endorsements"])
+        logs.append(f"🧮 [Tool] supplement_review: {result['status']}, "
+                    f"{len(result['supplements'])} supplement(s), {ct.fmt(result['cumulative_billed'])} billed")
+        out = [f"### 🧾 Supplement Review: {name} ({cid})"]
+        if result["status"] == "no_supplement":
+            return out + ["No supplement is on file for this claim; the original estimate is the only one to review."]
+        out += [f"**Recommended next step: {self.SUPPLEMENT_VERDICTS[result['status']]}**", "",
+                f"* Original approved estimate: {ct.fmt(result['original_approved'])} (itemized lines at the SOP labor caps).",
+                f"* Parts standard for this vehicle: {result['parts']['standard']}."]
+        for supp in result["supplements"]:
+            out += ["", f"#### Supplement {supp['id']} (received {supp['received'] or 'unknown'}): "
+                        f"billed {ct.fmt(supp['billed'])}, supported {ct.fmt(supp['approved'])}", "",
+                    "| # | Added line | Billed | Labor over cap | Betterment | Supported | Flags |",
+                    "| --- | --- | --- | --- | --- | --- | --- |"]
+            for row in supp["lines"]:
+                out.append(f"| {row['line']} | {row['op']} | {ct.fmt(row['billed'])} | {ct.fmt(row['labor_excess'])} | "
+                           f"{ct.fmt(row['betterment'])} | {ct.fmt(row['approved'])} | {'; '.join(row['flags']) or 'none'} |")
+            out.append("")
+            out += [f"* {flag}" for flag in supp["flags"]]
+            out.append(f"* Reinspection: {'required: ' + supp['reinspection_reason'] if supp['reinspection'] else 'not required'}.")
+            out.append(f"* Response due: {supp['due']} (2 business days)." if supp["due"]
+                       else "* Response clock: not started until documentation is complete.")
+        out += ["", "*Advisory review for the adjuster; not a coverage decision.*"]
+        return out + ct.render_inputs([result])
+
     @staticmethod
     def _amount_after(text: str, word: str):
         """'ACV of $14,000' -> Decimal('14000'); None when the query does not state it."""
@@ -929,7 +984,9 @@ class AgenticRAGRouter:
         # Detect audit parameter type
         q_lower = query_text.lower()
         audit_type = "general"
-        if "total loss" in q_lower or "totaled" in q_lower or "acv" in q_lower or "salvage" in q_lower:
+        if "supplement" in q_lower:
+            audit_type = "supplement"
+        elif "total loss" in q_lower or "totaled" in q_lower or "acv" in q_lower or "salvage" in q_lower:
             audit_type = "total_loss"
         elif "labor" in q_lower or "rate" in q_lower or "cap" in q_lower:
             audit_type = "labor"

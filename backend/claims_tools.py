@@ -11,6 +11,7 @@ fails if a value here stops appearing in its generator's text.
 from __future__ import annotations
 
 import re
+from datetime import date, timedelta
 from decimal import Decimal
 from typing import Any, Dict, Iterable, List, Optional
 
@@ -72,6 +73,29 @@ DEDUCTIBLES: Dict[tuple, Decimal] = {
 
 # Endorsement_Custom_Equipment_Form402.pdf, section 2: standard CPE limit.
 CPE_STANDARD_LIMIT = Decimal("5000")
+
+SUPPLEMENT_SOP = "SOP_Supplement_Review.pdf"
+BETTERMENT_GUIDE = "Guideline_Betterment_Adjustments.docx"
+# SOP_Supplement_Review.pdf, section 2: reinspection when one supplement exceeds $1,500 or all
+# supplements together exceed 25% of the original approved estimate. Section 3: respond within
+# 2 business days of complete documentation.
+REINSPECTION_SINGLE = Decimal("1500")
+REINSPECTION_SHARE = Decimal("0.25")
+SUPPLEMENT_RESPONSE_DAYS = 2
+# Guideline_Betterment_Adjustments.docx: wear items only; tire tread 10/32 new to 2/32 minimum;
+# batteries prorated over 60 months. Shocks and exhaust have no formula in the guideline.
+TIRE_NEW_TREAD = 10
+TIRE_MIN_TREAD = 2
+BATTERY_LIFE_MONTHS = 60
+# Whole words only: "entire" is not a tire and "exhaustive" is not an exhaust.
+WEAR_ITEMS = {
+    "tire": re.compile(r"\btires?\b"),
+    "battery": re.compile(r"\bbatter(?:y|ies)\b"),
+    "shock": re.compile(r"\bshocks?\b"),
+    "exhaust": re.compile(r"\bexhaust\b"),
+}
+# Lines the SOP treats as safety parts for the "OEM for safety components" rule.
+SAFETY_CATEGORIES = {"Safety", "Frame"}
 
 ZERO = Decimal("0")
 
@@ -342,6 +366,153 @@ def deductible_apply(*, lines: Iterable[Dict[str, Any]], plan: str, deductible: 
             "custom": custom, "custom_paid": custom_paid, "gross": gross,
             "deductible": stated, "deductible_applied": applied, "glass_waiver": waived,
             "payout": payout, "notes": notes, "inputs": inputs}
+
+
+def add_business_days(day: str, count: int) -> str:
+    """'2026-01-16' (a Friday) + 2 business days -> '2026-01-20'. Holidays are not modelled."""
+    current = date.fromisoformat(day)
+    while count:
+        current += timedelta(days=1)
+        if current.weekday() < 5:
+            count -= 1
+    return current.isoformat()
+
+
+def _wear_item(op: str) -> Optional[str]:
+    text = op.lower()
+    return next((item for item, pattern in WEAR_ITEMS.items() if pattern.search(text)), None)
+
+
+def _betterment(row: Dict[str, Any], price: Decimal) -> tuple:
+    """(amount, flag or None, citation or None) for one supplement line."""
+    item = _wear_item(row["op"])
+    if item is None:
+        return ZERO, None, None  # body panels, glass and structural parts never take betterment
+    wear = row.get("wear") or {}
+    if item == "tire":
+        if "tread_32nds" not in wear:
+            return ZERO, "betterment applies but the remaining tread depth is not on file", None
+        usable = TIRE_NEW_TREAD - TIRE_MIN_TREAD
+        worn = min(max(TIRE_NEW_TREAD - Decimal(str(wear["tread_32nds"])), ZERO), Decimal(usable))
+        amount = (price * worn / usable).quantize(Decimal("0.01"))
+        basis = f"{fmt(price)} x ({TIRE_NEW_TREAD} - {wear['tread_32nds']})/{usable} worn = {fmt(amount)}"
+        return amount, None, cite(f"{row['op']} betterment", basis, BETTERMENT_GUIDE, "2. Tire Betterment")
+    if item == "battery":
+        if "battery_age_months" not in wear:
+            return ZERO, "betterment applies but the battery's age is not on file", None
+        months = min(int(wear["battery_age_months"]), BATTERY_LIFE_MONTHS)
+        amount = (price * months / BATTERY_LIFE_MONTHS).quantize(Decimal("0.01"))
+        basis = f"{fmt(price)} x {months}/{BATTERY_LIFE_MONTHS} months = {fmt(amount)}"
+        return amount, None, cite(f"{row['op']} betterment", basis, BETTERMENT_GUIDE, "3. Battery Betterment")
+    return ZERO, f"betterment applies to {item} parts but the guideline gives no formula: adjuster to calculate", None
+
+
+def _parts_flag(row: Dict[str, Any], standard: str) -> Optional[str]:
+    part = (row.get("part") or "").upper()
+    if not part:
+        return None
+    if standard == "oem_rider" and part != "OEM":
+        return f"parts: {part.title()} part billed, but the OEM rider requires OEM"
+    if standard == "lkq" and part == "OEM":
+        return "parts: OEM billed; the SOP standard for this vehicle is LKQ or certified aftermarket"
+    if standard == "sop_oem_safety" and part == "OEM" and row["cat"] not in SAFETY_CATEGORIES:
+        return "parts: OEM billed on a non-safety part; the SOP calls for LKQ or aftermarket pricing"
+    if standard == "sop_oem_safety" and part != "OEM" and row["cat"] in SAFETY_CATEGORIES:
+        return f"parts: {part.title()} part billed on a safety part; the SOP requires OEM"
+    if standard in ("rider_ineligible", "sop_gap"):
+        return f"parts: {part.title()} part billed; parts standard is an adjuster decision for this vehicle"
+    return None
+
+
+def supplement_review(*, original: Iterable[Dict[str, Any]], supplements: Iterable[Dict[str, Any]],
+                      vehicle: str, loss_year: int, endorsements: Iterable[str],
+                      mileage: Optional[int] = None) -> Dict[str, Any]:
+    """Check each supplement line against the same rules as the original estimate.
+
+    Per line: labor over the SOP cap, betterment on wear items, and the parts standard. Per
+    supplement: documentation, the reinspection threshold (single and cumulative) and the
+    response due date. Amounts are what the guidelines support; the decision stays with the
+    adjuster.
+    """
+    endorsements = list(endorsements)
+    supplements = list(supplements)
+    base = labor_rate_check(original)
+    original_approved = sum((line.get("approved", line["total"]) for line in base["lines"]), ZERO)
+    parts = oem_rider_check(vehicle=vehicle, loss_year=loss_year, endorsements=endorsements, mileage=mileage)
+    inputs = [cite("original approved estimate", fmt(original_approved), DOSSIER, "estimate at SOP labor caps"),
+              cite("supplement labor", "same caps as the original estimate", SUPPLEMENT_SOP, "1. Supplement Submission")]
+    if not supplements:
+        return {"tool": "supplement_review", "status": "no_supplement", "supplements": [],
+                "original_approved": original_approved, "cumulative_billed": ZERO, "parts": parts, "inputs": inputs}
+    inputs += [cite("reinspection threshold", f"single supplement over {fmt(REINSPECTION_SINGLE)} or all supplements "
+                    f"over {REINSPECTION_SHARE * 100:.0f}% of the original approved estimate", SUPPLEMENT_SOP,
+                    "2. Reinspection Threshold"),
+               cite("parts standard", parts["standard"], OEM_RIDER if parts["has_rider"] else LABOR_SOP,
+                    "2. Eligibility & Term Limits" if parts["has_rider"] else "3. Aftermarket vs. OEM Parts Policy")]
+
+    reviewed = []
+    cumulative = ZERO
+    used_caps = set()
+    for supp in supplements:
+        labor = labor_rate_check(supp["lines"])
+        used_caps.update(line["labor_class"] for line in labor["lines"] if line["status"] != "not_checked")
+        rows = []
+        for row, checked in zip(supp["lines"], labor["lines"], strict=True):
+            billed = checked["total"]
+            excess = checked.get("excess", ZERO)
+            flags = []
+            if checked["status"] == "over_cap":
+                flags.append(f"labor {fmt(checked['rate'])}/hr over the {fmt(checked['cap'])}/hr cap")
+            # Betterment is on the replacement part's price: labor is never prorated.
+            price = checked["parts"] if "parts" in checked else billed
+            amount, flag, citation = _betterment(row, price)
+            if flag:
+                flags.append(flag)
+            if citation:
+                inputs.append(citation)
+            parts_flag = _parts_flag(row, parts["status"])
+            if parts_flag:
+                flags.append(parts_flag)
+            rows.append({"line": checked["line"], "op": row["op"], "cat": row["cat"], "billed": billed,
+                         "labor_excess": excess, "betterment": amount, "approved": billed - excess - amount,
+                         "flags": flags})
+        billed = sum((r["billed"] for r in rows), ZERO)
+        cumulative += billed
+        flags = []
+        if not supp.get("photos"):
+            flags.append("teardown photos missing: the SOP requires itemized lines and photos")
+        if not supp.get("submitted_before_work", True):
+            flags.append("work was performed before the supplement was submitted")
+        share = cumulative / original_approved if original_approved else Decimal("1")
+        reasons = []
+        if billed > REINSPECTION_SINGLE:
+            reasons.append(f"this supplement ({fmt(billed)}) exceeds {fmt(REINSPECTION_SINGLE)}")
+        if share > REINSPECTION_SHARE:
+            reasons.append(f"supplements to date ({fmt(cumulative)}) are {share * 100:.1f}% of the original "
+                           f"approved estimate, over {REINSPECTION_SHARE * 100:.0f}%")
+        complete = not flags
+        due = add_business_days(supp["received"], SUPPLEMENT_RESPONSE_DAYS) if complete and supp.get("received") else None
+        inputs.append(cite(f"{supp['id']} received", supp.get("received", "unknown"), DOSSIER, "supplement"))
+        reviewed.append({"id": supp["id"], "received": supp.get("received"), "billed": billed,
+                         "approved": sum((r["approved"] for r in rows), ZERO), "lines": rows, "flags": flags,
+                         "reinspection": bool(reasons), "reinspection_reason": "; ".join(reasons),
+                         "cumulative_billed": cumulative, "due": due})
+
+    for labor_class in sorted(used_caps):
+        inputs.append(cite(f"{LABOR_CAP_LABELS[labor_class]} cap", f"{fmt(LABOR_CAPS[labor_class])}/hr",
+                           LABOR_SOP, "1. Standard Repair Labor Rates"))
+    if any(s["due"] for s in reviewed):
+        inputs.append(cite("response time", f"{SUPPLEMENT_RESPONSE_DAYS} business days from complete documentation",
+                           SUPPLEMENT_SOP, "3. Response Time"))
+    if any(s["flags"] for s in reviewed):
+        status = "hold_documentation"
+    elif any(s["reinspection"] for s in reviewed):
+        status = "reinspection_required"
+    else:
+        status = "approve_on_photos"
+    return {"tool": "supplement_review", "status": status, "supplements": reviewed,
+            "original_approved": original_approved, "cumulative_billed": cumulative, "parts": parts,
+            "inputs": inputs}
 
 
 def render_inputs(results: Iterable[Dict[str, Any]]) -> List[str]:
