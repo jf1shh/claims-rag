@@ -772,3 +772,13 @@ existing California and Texas regulation docs.
 - Routed review (Haiku, route.py) found three defects, all fixed with regression tests: wear items matched as bare substrings ("entire" → tire, "exhaustive" → exhaust; now whole-word regexes); betterment was prorated on parts + labor instead of the part price; aftermarket on a safety part was not flagged under the SOP's OEM-for-safety rule.
 - Verified: 21 new tests, `crag check` 774 passed / gate passed; button clicked in the app (Simulation Mode, port 8011) rendered the Sterling review with REINSPECTION REQUIRED.
 
+
+## P4 total-loss explainer — 2026-10-18 (branch `feat/p4-total-loss-explainer`)
+
+- Owner: "Continue with total loss" (after PR #20 merged).
+- `claims_tools.total_loss_explain` builds on `total_loss_check` and `supplement_review`: steps, margin/break-even, supplement flip, retained-salvage payout (ACV - salvage, before deductible), valuation flags (SOP §2: two independent sources; KBB secondary), post-total-loss steps from the total-loss and storage SOPs. Rostova gets synthetic valuations (CCC ONE + KBB). The router's total-loss answer now uses it; repair cost changed from the billed itemized total to the original at the labor caps plus supported supplements.
+- Not modelled: how to combine valuation sources into one ACV (the SOP doesn't say), so ACV still comes from the question; the deductible on a total loss.
+- **Debugging history.** The in-app click routed the new button to the supplement review: its query mentions supplements and `supplement` was detected before total loss. Detection order swapped (total loss first) and a test now runs both buttons' exact query text from `frontend/app.js`. Also: a running uvicorn without `--reload` serves old code after a router edit; `kill` on the wrapper PID left the server holding the port (restart exit 3); `fuser -k PORT/tcp` frees it.
+
+- Routed review (Haiku) found three defects, all fixed with tests: supplements held for documentation were counted in the repair cost (now reported as pending, with the result they would produce); valuation sources matched as substrings ("Canada" → NADA; now whole words); a supplement question mentioning salvage routed to total loss (now "total loss"/"totaled" wins, then "supplement", then ACV/salvage alone).
+- Verified: 18 new tests; `crag check` 792 passed / gate passed; in the app (Simulation Mode, port 8011) the button gave NEEDS INPUT with the valuation check, and "ACV $14,000, salvage $2,500" gave TOTAL LOSS, $740.00 over, $11,500.00 retained payout and the next steps.

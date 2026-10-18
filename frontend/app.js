@@ -190,6 +190,7 @@ const btnAuditOEM = document.getElementById('btn-audit-oem');
 const btnAuditFraud = document.getElementById('btn-audit-fraud');
 const btnAuditLetter = document.getElementById('btn-audit-letter');
 const btnAuditSupplement = document.getElementById('btn-audit-supplement');
+const btnAuditTotalLoss = document.getElementById('btn-audit-total-loss');
 
 const claimDocsList = document.getElementById('claim-docs-list');
 const claimUploadZone = document.getElementById('claim-upload-zone');
@@ -1167,6 +1168,7 @@ function setupClaimsCases() {
     btnAuditFraud.addEventListener('click', () => triggerAudit('fraud'));
     btnAuditLetter.addEventListener('click', () => triggerAudit('letter'));
     btnAuditSupplement.addEventListener('click', () => triggerAudit('supplement'));
+    btnAuditTotalLoss.addEventListener('click', () => triggerAudit('total_loss'));
 }
 
 function loadCaseFolder(c) {
@@ -1259,6 +1261,9 @@ async function triggerAudit(type) {
             break;
         case 'supplement':
             queryText = `Review the repair supplement on claim ${activeCase.id} (${activeCase.vehicle}, ${activeCase.facility}). Check every added line against the Supplement Review SOP, the labor rate caps, the parts standard for this vehicle and the betterment guideline, and say whether a field reinspection is required.`;
+            break;
+        case 'total_loss':
+            queryText = `Explain whether claim ${activeCase.id} (${activeCase.vehicle}, ${activeCase.facility}) is a total loss under the state rule in the Total Loss Valuation SOP. Show the threshold math, include any supported supplements in the repair cost, check the valuation sources on file, and list what follows a total loss declaration.`;
             break;
         case 'letter':
             queryText = `Draft a formal, professional Claim Decision and Payout Settlement Letter to the policyholder ${activeCase.insured} for claim ${activeCase.id}. In the letter, explain the vehicle damage assessed (${activeCase.vehicle}), apply the deductible (${activeCase.deductible}), outline covered repairs, list any disallowed charges, and note if subrogation is being pursued against the third party. Quote the corresponding policy sections.`;
