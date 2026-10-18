@@ -94,6 +94,19 @@ WEAR_ITEMS = {
     "shock": re.compile(r"\bshocks?\b"),
     "exhaust": re.compile(r"\bexhaust\b"),
 }
+STORAGE_SOP = "SOP_Vehicle_Storage_Fees.txt"
+# SOP_Total_Loss_Valuation.pdf, section 2: ACV from at least two independent sources; Kelley Blue
+# Book is secondary (historical reference only), so it does not count toward the two.
+MIN_VALUATION_SOURCES = 2
+ACCEPTED_VALUATION_SOURCES = ("ccc one", "nada", "dealer")
+# Whole words only: "Canada Auto Appraisal" is not NADA.
+ACCEPTED_VALUATION_PATTERN = re.compile(
+    r"\b(?:" + "|".join(re.escape(name) for name in ACCEPTED_VALUATION_SOURCES) + r")\b", re.IGNORECASE)
+# SOP_Vehicle_Storage_Fees.txt: storage covered up to $45/day; the policyholder owns storage more
+# than 3 calendar days after the ready-to-move notice; transfer to salvage within 3 business days.
+STORAGE_DAILY_CAP = 45
+STORAGE_NOTICE_DAYS = 3
+SALVAGE_TRANSFER_DAYS = 3
 # Lines the SOP treats as safety parts for the "OEM for safety components" rule.
 SAFETY_CATEGORIES = {"Safety", "Frame"}
 
@@ -513,6 +526,100 @@ def supplement_review(*, original: Iterable[Dict[str, Any]], supplements: Iterab
     return {"tool": "supplement_review", "status": status, "supplements": reviewed,
             "original_approved": original_approved, "cumulative_billed": cumulative, "parts": parts,
             "inputs": inputs}
+
+
+def _valuation_flags(valuations: List[Dict[str, Any]]) -> List[str]:
+    flags = []
+    accepted = [v for v in valuations if ACCEPTED_VALUATION_PATTERN.search(v["source"])]
+    for v in valuations:
+        if "kelley" in v["source"].lower() or "kbb" in v["source"].lower():
+            flags.append(f"{v['source']} is a secondary source (historical reference only) and does not count "
+                         "toward the ACV")
+    if len(accepted) < MIN_VALUATION_SOURCES:
+        flags.append(f"ACV needs at least two independent valuation sources; {len(accepted)} acceptable "
+                     "source(s) on file")
+    return flags
+
+
+def total_loss_explain(*, original: Iterable[Dict[str, Any]], supplements: Iterable[Dict[str, Any]],
+                       vehicle: str, loss_year: int, endorsements: Iterable[str], state: Optional[str],
+                       acv: Optional[Decimal], salvage: Optional[Decimal] = None,
+                       valuations: Iterable[Dict[str, Any]] = ()) -> Dict[str, Any]:
+    """Explain the total-loss decision: the state rule, the math, the headroom, and what follows.
+
+    Repair cost is the original estimate at the SOP labor caps plus the supported amount of every
+    documented supplement (supplement_review), so the explainer can say whether the supplements
+    flip the result. Supplements held for documentation are reported as pending, not counted.
+    """
+    supp = supplement_review(original=original, supplements=supplements, vehicle=vehicle,
+                             loss_year=loss_year, endorsements=endorsements)
+    original_cost = supp["original_approved"]
+    supplement_cost = sum((s["approved"] for s in supp["supplements"] if not s["flags"]), ZERO)
+    pending_cost = sum((s["approved"] for s in supp["supplements"] if s["flags"]), ZERO)
+    repair_cost = original_cost + supplement_cost
+    valuations = list(valuations)
+    check = total_loss_check(state=state, repair_cost=repair_cost, acv=acv, salvage=salvage)
+    inputs = [cite("original repair at SOP caps", fmt(original_cost), DOSSIER, "estimate"),
+              cite("supported supplements", fmt(supplement_cost), DOSSIER, "supplement_review")]
+    inputs += [item for item in check["inputs"] if item["name"] != "repair cost"]
+    for v in valuations:
+        inputs.append(cite(f"valuation: {v['source']}", fmt(money(v["acv"])), DOSSIER, "valuation reports"))
+    if valuations or acv is not None:
+        inputs.append(cite("valuation sources", "minimum of two independent; KBB secondary", TOTAL_LOSS_SOP,
+                           "2. Valuation Methodology"))
+    result = {"tool": "total_loss_explain", "status": check["status"], "missing": check.get("missing", []),
+              "reason": check.get("reason"), "original_cost": original_cost, "supplement_cost": supplement_cost,
+              "pending_cost": pending_cost, "pending_status": None, "repair_cost": repair_cost, "supplements": supp["supplements"], "steps": [], "margin": None,
+              "break_even_repair": None, "limit": None, "original_status": None, "flipped_by_supplements": False,
+              "retained_payout": None, "valuation_flags": _valuation_flags(valuations), "next_steps": [],
+              "inputs": inputs}
+    if check["status"] not in ("total_loss", "repairable"):
+        return result
+
+    rule = TOTAL_LOSS_RULES[state]
+    steps = [f"{state} rule: {rule['text']} ({TOTAL_LOSS_SOP}, section 1).",
+             f"Repair cost: {fmt(original_cost)} original at the SOP labor caps + {fmt(supplement_cost)} "
+             f"supported supplements = {fmt(repair_cost)}."]
+    if rule["kind"] == "formula":
+        break_even = acv - salvage
+        steps.append(f"Repair + salvage: {fmt(repair_cost)} + {fmt(salvage)} = {fmt(repair_cost + salvage)}, "
+                     f"compared with ACV {fmt(acv)}.")
+    else:
+        break_even = check["limit"]
+        steps.append(f"Threshold: {rule['ratio'] * 100:.0f}% of ACV {fmt(acv)} = {fmt(check['limit'])}, "
+                     f"compared with repair cost {fmt(repair_cost)}.")
+    margin = break_even - repair_cost
+    steps.append(f"Repairs can rise {fmt(margin)} before the vehicle is a total loss." if margin > 0 else
+                 f"Repair cost is {fmt(-margin)} over the threshold." if margin < 0 else
+                 "Repair cost is exactly at the threshold, which the rule counts as a total loss.")
+    original_check = total_loss_check(state=state, repair_cost=original_cost, acv=acv, salvage=salvage)
+    result.update(steps=steps, margin=margin, break_even_repair=break_even, limit=check["limit"],
+                  original_status=original_check["status"],
+                  flipped_by_supplements=original_check["status"] != check["status"])
+    if pending_cost:
+        pending_check = total_loss_check(state=state, repair_cost=repair_cost + pending_cost, acv=acv, salvage=salvage)
+        result["pending_status"] = pending_check["status"]
+        steps.append(f"Not counted: {fmt(pending_cost)} in supplements held for documentation; with them the "
+                     f"vehicle would be {pending_check['status'].replace('_', ' ')}.")
+    if salvage is not None:
+        result["retained_payout"] = acv - salvage
+    if check["status"] == "total_loss":
+        result["next_steps"] = [
+            "Title: surrender to the DMV for re-branding, 'Salvage' if repairable or 'Junk / Destruction' if it "
+            "cannot be safely rebuilt (adjuster's call).",
+            f"Storage: covered up to ${STORAGE_DAILY_CAP}/day; notify the policyholder and facility in writing, and "
+            f"storage more than {STORAGE_NOTICE_DAYS} calendar days after that notice is the policyholder's.",
+            f"Transfer the vehicle to the salvage vendor's yard within {SALVAGE_TRANSFER_DAYS} business days of "
+            "the total loss declaration.",
+        ]
+        inputs += [cite("title branding", "Salvage or Junk / Destruction", TOTAL_LOSS_SOP, "3. Salvage & Title Branding"),
+                   cite("storage cap and cut-off", f"${STORAGE_DAILY_CAP}/day; {STORAGE_NOTICE_DAYS} calendar days "
+                        "after notice", STORAGE_SOP, "1-2. Covered Storage, Notice and Cut-Off"),
+                   cite("salvage transfer", f"{SALVAGE_TRANSFER_DAYS} business days", STORAGE_SOP, "3. Moving the Vehicle")]
+    if salvage is not None:
+        inputs.append(cite("owner retains salvage", "salvage value deducted from the payout", TOTAL_LOSS_SOP,
+                           "3. Salvage & Title Branding"))
+    return result
 
 
 def render_inputs(results: Iterable[Dict[str, Any]]) -> List[str]:

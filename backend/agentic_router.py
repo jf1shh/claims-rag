@@ -113,6 +113,11 @@ CLAIM_EVIDENCE: Dict[str, Dict[str, Any]] = {
     "#2026-55912": {
         "loss_year": 2026,
         "exclude_all": "driver-induced consequential damage from restart attempts (Case_Study_Engine_Hydro_Lock.pdf)",
+        # Synthetic valuation reports on file (P4 total-loss explainer demo): one primary, one secondary.
+        "valuations": [
+            {"source": "CCC ONE Market Valuation Report", "acv": "$14,200"},
+            {"source": "Kelley Blue Book", "acv": "$13,600"},
+        ],
     },
 }
 
@@ -871,18 +876,35 @@ class AgenticRAGRouter:
             acv = self._amount_after(query_text, "acv")
             salvage = self._amount_after(query_text, "salvage")
             state = ct.facility_state(claim["facility"])
-            tl = ct.total_loss_check(state=state, repair_cost=itemized, acv=acv, salvage=salvage)
-            logs.append(f"🧮 [Tool] total_loss_check: {tl['status']}")
-            out.append(f"### 🚗 Total Loss Check: {name} ({cid})")
+            tl = ct.total_loss_explain(original=claim["estimate"], supplements=claim.get("supplements", []),
+                                       vehicle=claim["vehicle"], loss_year=evidence.get("loss_year", 2026),
+                                       endorsements=claim["endorsements"], state=state, acv=acv, salvage=salvage,
+                                       valuations=evidence.get("valuations", ()))
+            logs.append(f"🧮 [Tool] total_loss_explain: {tl['status']}")
+            out.append(f"### 🚗 Total Loss Explainer: {name} ({cid})")
             if tl["status"] == "needs_input":
                 out += [f"**Result: NEEDS INPUT** — provide the {' and '.join(tl['missing'])} "
                         "(e.g. \"ACV $14,000, salvage $2,500\")."]
             elif tl["status"] == "no_rule":
                 out += [f"**Result: NO RULE** — {tl['reason']}."]
             else:
-                out += [f"**Result: {'TOTAL LOSS' if tl['status'] == 'total_loss' else 'REPAIRABLE'}**",
-                        "", f"* {tl['basis']}."]
-            out += [f"* Loss state taken from the repair facility: {state or 'unknown'}."] + reconcile
+                out += [f"**Result: {'TOTAL LOSS' if tl['status'] == 'total_loss' else 'REPAIRABLE'}**", "",
+                        "**How the result was reached**", ""]
+                out += [f"{i}. {step}" for i, step in enumerate(tl["steps"], start=1)]
+                if tl["supplements"]:
+                    out.append("")
+                    out.append("* Supplements " + ("change the result: without them the vehicle is "
+                                                   f"{tl['original_status'].replace('_', ' ')}." if tl["flipped_by_supplements"]
+                                                   else "do not change the result."))
+                if tl["retained_payout"] is not None:
+                    out.append(f"* If the owner keeps the vehicle: ACV less salvage value = "
+                               f"{ct.fmt(tl['retained_payout'])} before the deductible.")
+                if tl["next_steps"]:
+                    out += ["", "**If the total loss is declared**", ""] + [f"* {step}" for step in tl["next_steps"]]
+            if tl["valuation_flags"]:
+                out += ["", "**Valuation check**", ""] + [f"* {flag}." for flag in tl["valuation_flags"]]
+            out += ["", f"* Loss state taken from the repair facility: {state or 'unknown'}."] + reconcile
+            out.append("*Advisory explanation for the adjuster; not a coverage decision.*")
             return out + ct.render_inputs([tl])
 
         # Settlement letter / general: labor at the caps, then exclusions, limits and deductible.
@@ -984,9 +1006,14 @@ class AgenticRAGRouter:
         # Detect audit parameter type
         q_lower = query_text.lower()
         audit_type = "general"
-        if "supplement" in q_lower:
+        # An explicit total-loss question may mention supplements (they count toward repair cost);
+        # a supplement question may mention salvage or ACV in passing. So: "total loss" wins, then
+        # "supplement", then ACV/salvage alone.
+        if "total loss" in q_lower or "totaled" in q_lower:
+            audit_type = "total_loss"
+        elif "supplement" in q_lower:
             audit_type = "supplement"
-        elif "total loss" in q_lower or "totaled" in q_lower or "acv" in q_lower or "salvage" in q_lower:
+        elif "acv" in q_lower or "salvage" in q_lower:
             audit_type = "total_loss"
         elif "labor" in q_lower or "rate" in q_lower or "cap" in q_lower:
             audit_type = "labor"
