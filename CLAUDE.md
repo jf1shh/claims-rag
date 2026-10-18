@@ -28,7 +28,7 @@ Key code: [backend/rag_engine.py](backend/rag_engine.py) (parse, chunk, embed, r
 ## Critical Constraints
 
 * **100% Local Ingestion**: No document contents or raw vector embeddings may be sent to external cloud vector databases. All vector searches run on the host CPU/GPU locally.
-* Detailed constraints load by path: [.claude/rules/backend-constraints.md](.claude/rules/backend-constraints.md) (backend, tests, eval, ingest) and [.claude/rules/frontend-constraints.md](.claude/rules/frontend-constraints.md) (frontend). Tools that don't read `.claude/rules/` (Codex) must open them before editing those paths.
+* Detailed constraints load by path: [.claude/rules/backend-constraints.md](.claude/rules/backend-constraints.md) (backend, tests, eval, ingest) and [.claude/rules/frontend-constraints.md](.claude/rules/frontend-constraints.md) (frontend). Tools that don't read `.claude/rules/` automatically must open them before editing those paths.
 * API contract tests must explicitly isolate model dependencies: a router stub alone does not prevent argument evaluation from loading an embedding model. The PR suite runs with model downloads disabled; tests must also pass with an empty model cache.
 
 ## Session Protocol — Mandatory
