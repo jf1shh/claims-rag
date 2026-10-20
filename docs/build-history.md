@@ -844,3 +844,7 @@ existing California and Texas regulation docs.
 - Scope C first read `MAX_STREAM_SECONDS` from the environment on every request, because the worker could not edit `config.py`. It was moved into `Settings`.
   - A misplaced test override then slowed the suite from 8 s to 306 s. It was fixed.
 - Verified: `crag check` 1026 passed, 17 skipped, 1 xfailed, gate 0 blocking; Postgres suite 1042 passed; ruff clean.
+- **Debugging history (PR #25 CI):** both CI jobs failed on two stream tests in `tests/test_web_edge.py` (early close and wall-clock cap), because `audit.jsonl` was never written. Locally they passed.
+  - Cause: CI resolved Starlette 1.9.0, while local has 1.8.0, and `fastapi==0.139.0` does not pin Starlette. The 1.9.0 `TestClient` streams for real instead of buffering the whole body. So when the client left, the app was cancelled mid-send and the sync generator stayed suspended. Its `finally` (audit and slot release) then waited on garbage collection. A real client disconnect behind uvicorn has the same gap.
+  - Ruled out: the GC timing alone. With `gc.disable()` on Starlette 1.8, the tests still passed.
+  - Fix: `_TimeBoxedStream.__call__` now closes the raw generator in a `finally` on every exit, not only on timeout. Verified on Starlette 1.9.0 (scratch `PYTHONPATH` overlay, 3 runs) and on 1.8.0. Both suites pass: SQLite 1026, Postgres 1042.

@@ -43,9 +43,14 @@ class _TimeBoxedStream(StreamingResponse):
         self._max_seconds = max_seconds
 
     async def __call__(self, scope, receive, send):
-        with anyio.move_on_after(self._max_seconds) as cancel_scope:
-            await super().__call__(scope, receive, send)
-        if cancel_scope.cancelled_caught:
+        # Close on every exit -- timeout, normal end, client disconnect or outer
+        # cancellation -- not only on timeout: a cancelled send leaves the sync
+        # generator suspended, so without this its finally (audit + slot release)
+        # waits on garbage collection. Closing a finished generator is a no-op.
+        try:
+            with anyio.move_on_after(self._max_seconds):
+                await super().__call__(scope, receive, send)
+        finally:
             try:
                 self._raw_generator.close()
             except ValueError:
