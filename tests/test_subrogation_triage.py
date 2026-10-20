@@ -64,6 +64,20 @@ class TestSubrogationTriage:
         assert result["deductible_reimbursed"] == Decimal("350.00")
         assert result["fault_basis"] == "assessed" and result["status"] == "refer"
 
+    def test_deductible_above_damages_reimburses_only_what_the_insured_paid(self):
+        # $865 damages under a $1,000 deductible: the insured paid $865, so the pro rata
+        # reimbursement is 70% of $865, never more than the $605.50 actually recovered.
+        result = triage(damages="865", deductible="1000", third_party_fault=Decimal("0.70"))
+        assert result["expected_recovery"] == Decimal("605.50")
+        assert result["deductible_borne"] == Decimal("865")
+        assert result["deductible_reimbursed"] == Decimal("605.50")
+
+    @pytest.mark.parametrize("damages,deductible,fault", [
+        ("865", "1000", "0.70"), ("500", "500", "1"), ("100", "2500", "0.25"), ("10000", "500", "0.50")])
+    def test_reimbursement_never_exceeds_recovery(self, damages, deductible, fault):
+        result = triage(damages=damages, deductible=deductible, third_party_fault=Decimal(fault))
+        assert result["deductible_reimbursed"] <= result["expected_recovery"]
+
     def test_tx_insured_exactly_50_percent_still_recovers(self):
         assert triage(third_party_fault=Decimal("0.50"))["recoverable_share"] == Decimal("0.50")
 

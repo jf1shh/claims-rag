@@ -778,7 +778,7 @@ def subrogation_triage(*, state: Optional[str], loss_date: Optional[str], damage
         status = "refer"
 
     # Recovery math: only with a known fault share and a known comparative-fault rule.
-    rule = share = expected = reimbursed = None
+    rule = share = expected = reimbursed = borne = None
     if tp_fault is not None:
         rule, rule_flag = _comparative_rule(state, loss_date)
         if rule_flag:
@@ -792,7 +792,10 @@ def subrogation_triage(*, state: Optional[str], loss_date: Optional[str], damage
                 flags.append(f"insured is {_pct(insured_fault)} at fault: the {state} 51% bar blocks any recovery")
             expected = (damages * share).quantize(Decimal("0.01"))
             if deductible is not None:
-                reimbursed = (deductible * share).quantize(Decimal("0.01"))
+                # The insured paid at most the damages, so a deductible above them is capped there;
+                # otherwise reimbursement could exceed the recovery itself.
+                borne = min(deductible, damages)
+                reimbursed = (borne * share).quantize(Decimal("0.01"))
                 inputs.append(cite("deductible reimbursement", "same percentage of the deductible as of damages "
                                    "recovered (pro rata)", SUBRO_SOP, "2. Deductible Reimbursement"))
     if deductible is None and needs_liability:
@@ -822,6 +825,7 @@ def subrogation_triage(*, state: Optional[str], loss_date: Optional[str], damage
             "third_party_fault": tp_fault, "insured_fault": insured_fault, "indicators": indicators,
             "flags": flags, "evidence_types": evidence_types, "rule": rule["text"] if rule else None,
             "recoverable_share": share, "expected_recovery": expected, "deductible_reimbursed": reimbursed,
+            "deductible_borne": borne,
             "forum": forum, "referral_due": referral_due, "notice": notice, "inputs": inputs}
 
 

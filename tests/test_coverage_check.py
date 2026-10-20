@@ -190,7 +190,7 @@ class TestWebbSubrogation:
                                        liability=evidence["subrogation"])
         assert result["status"] == "refer"
         assert result["recoverable_share"] == Decimal("0.70")
-        assert result["deductible_reimbursed"] == Decimal("700.00")
+        assert result["deductible_reimbursed"] == Decimal("605.50")  # 70% of the $865 paid, not of $1,000
         assert result["referral_due"] == "2026-03-12"
 
 
