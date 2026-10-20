@@ -240,6 +240,32 @@ def register_routes(app, runtime):
         report["action"] = "redacted"
         return {**result, "provenance": report, "answer": checked.answer}
 
+    def tools_result(result):
+        """Computed claim figures (the router's `tool_section`), applied last so the guard,
+        provenance and conflict checks never see -- or redact -- the computed section. Live
+        prose is checked against the section and the evidence (backend/figure_check.py);
+        a withheld answer gets the section without a figure check. Never raises."""
+        section = result.get("tool_section")
+        if not section:
+            return result
+        answer = str(result.get("answer") or "")
+        if "withheld" in {(result.get("guard") or {}).get("action"),
+                          (result.get("provenance") or {}).get("action")}:
+            return {**result, "answer": answer + "\n\n---\n\n" + section}
+        try:
+            from backend.figure_check import check_figures, notice
+            evidence = [s.get("content") or "" for s in result.get("sources") or []]
+            check = check_figures(answer, trusted=section,
+                                  evidence=evidence + [result.get("claim_dossier") or ""])
+            flagged = notice(check)
+            if flagged:
+                answer += "\n\n" + flagged
+            return {**result, "answer": answer + "\n\n---\n\n" + section, "figure_check": check.to_dict()}
+        except Exception as exc:  # noqa: BLE001 -- a check failure must not lose the computed section
+            import logging
+            logging.getLogger(__name__).warning("figure check failed: %s", type(exc).__name__)
+            return {**result, "answer": str(result.get("answer") or "") + "\n\n---\n\n" + section}
+
     def guard_audit_fields(result):
         """Metadata-only guard summary for the audit sink: action and finding categories,
         never the excerpts, which are answer text."""
@@ -685,7 +711,7 @@ def register_routes(app, runtime):
                 llm_client=runtime._llm_client,
                 caps=runtime.settings,
             )
-            result = conflict_result(provenance_result(guard_result(result, req.claim_id)), req.query)
+            result = tools_result(conflict_result(provenance_result(guard_result(result, req.claim_id)), req.query))
             _audit(
                 request,
                 principal,
@@ -751,7 +777,8 @@ def register_routes(app, runtime):
                         # Chunks already streamed cannot be recalled; the final event's answer
                         # replaces the streamed bubble (frontend finalizeStreamingBubble), so a
                         # withheld answer is withdrawn from view once generation completes.
-                        final_event = project_result(request, conflict_result(provenance_result(guard_result(event, req.claim_id)), req.query))
+                        final_event = project_result(request, tools_result(conflict_result(
+                            provenance_result(guard_result(event, req.claim_id)), req.query)))
                         yield f"data: {json.dumps({k: v for k, v in final_event.items() if k != 'type'})}\n\n"
                 yield "data: [DONE]\n\n"
             finally:
