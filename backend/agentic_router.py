@@ -164,6 +164,15 @@ CLAIM_EVIDENCE: Dict[str, Dict[str, Any]] = {
             ],
             "first_payment": None,
         },
+        "fraud": {
+            "loss_time": None,
+            "scene": {
+                "single_vehicle": False, "remote": False, "police_report": "police_report_Sterling.pdf",
+                "witnesses": [],
+                "photos": [{"angle": "rear bumper crush damage", "date": "2026-01-12",
+                            "source": "tesla_rear_collision.png"}],
+            },
+        },
     },
     "#2026-10492": {
         "loss_year": 2026,
@@ -183,6 +192,14 @@ CLAIM_EVIDENCE: Dict[str, Dict[str, Any]] = {
                           "detail": "hail dents on hood and roof; windshield crack"}],
             "first_payment": None,
             "note": "hail is a weather peril; no responsible third party is on file",
+        },
+        "fraud": {
+            "loss_time": None,
+            "scene": {
+                "single_vehicle": False, "remote": False, "police_report": None, "witnesses": [],
+                "photos": [{"angle": "hood/roof hail dent cluster", "date": "2026-01-25",
+                            "source": "dent_photos_description_Jenkins.pdf"}],
+            },
         },
     },
     "#2026-30291": {
@@ -209,6 +226,21 @@ CLAIM_EVIDENCE: Dict[str, Dict[str, Any]] = {
         "excluded": {
             "Repair Passenger Side Key Scratches":
                 "pre-existing rust oxidation (inspection_photos_Chen.pdf; SOP_Claims_Fraud_Red_Flags.pdf)",
+        },
+        "fraud": {
+            "loss_time": None,
+            "scene": {
+                "single_vehicle": False, "remote": False, "police_report": "police_theft_report_Chen.pdf",
+                "witnesses": [],
+                "photos": [{"angle": "passenger-side key scratches with rust oxidation", "date": "2026-01-18",
+                            "source": "inspection_photos_Chen.pdf"}],
+            },
+            "findings": [
+                {"indicator": "pre_existing_damage",
+                 "detail": "passenger-side key scratches show rust oxidation in the scratch channels, "
+                           "consistent with damage older than the January 18, 2026 break-in",
+                 "source": "inspection_photos_Chen.pdf"},
+            ],
         },
     },
     "#2026-55912": {
@@ -237,6 +269,21 @@ CLAIM_EVIDENCE: Dict[str, Dict[str, Any]] = {
             {"source": "CCC ONE Market Valuation Report", "acv": "$14,200"},
             {"source": "Kelley Blue Book", "acv": "$13,600"},
         ],
+        "fraud": {
+            "loss_time": "14:32",
+            "scene": {
+                "single_vehicle": True, "remote": False, "police_report": None, "witnesses": [],
+                "photos": [{"angle": "engine intake standing water", "date": "2026-01-20",
+                            "source": "engine_diagnostic_report_Rostova.pdf"}],
+            },
+            # Not an SIU indicator: a consequential-damage coverage exclusion question.
+            "notes": [
+                "The restart attempts after the stall raise a consequential-damage coverage exclusion "
+                "question (Case_Study_Engine_Hydro_Lock.pdf), not a fraud indicator.",
+                "The claim record's status is 'SIU Flagged'; none of the four SOP indicators below are "
+                "present, and the record does not document a reason for the flag.",
+            ],
+        },
     },
     "#2026-71845": {
         "loss_year": 2026,
@@ -270,6 +317,15 @@ CLAIM_EVIDENCE: Dict[str, Dict[str, Any]] = {
             ],
             "first_payment": "2026-02-10",
         },
+        "fraud": {
+            "loss_time": None,
+            "scene": {
+                "single_vehicle": False, "remote": False, "police_report": "police_report_Webb.pdf",
+                "witnesses": ["Carla Nguyen"],
+                "photos": [{"angle": "rear-end impact dashcam", "date": "2026-02-03",
+                            "source": "dashcam_summary_Webb.pdf"}],
+            },
+        },
     },
     "#2026-84410": {
         "loss_year": 2026,
@@ -288,6 +344,19 @@ CLAIM_EVIDENCE: Dict[str, Dict[str, Any]] = {
             "evidence": [],
             "first_payment": None,
             "note": "single-vehicle loss: no responsible third party is on file",
+        },
+        "fraud": {
+            "loss_time": "02:40",
+            "scene": {
+                "single_vehicle": True, "remote": True, "police_report": None, "witnesses": [],
+                "photos": [{"angle": "front-end pole-strike damage; rust-through rear quarter panel",
+                            "date": "2026-02-26", "source": "inspection_photos_Brooks.pdf"}],
+            },
+            "findings": [
+                {"indicator": "pre_existing_damage",
+                 "detail": "left rear quarter panel rust-through, outside the front-impact direction of force",
+                 "source": "inspection_photos_Brooks.pdf"},
+            ],
         },
     },
 }
@@ -1014,6 +1083,9 @@ class AgenticRAGRouter:
         if audit_type == "coverage":
             return self._coverage_answer(claim, evidence, logs)
 
+        if audit_type == "fraud":
+            return self._siu_answer(claim, evidence, logs)
+
         if audit_type == "labor":
             out += [f"### ⚡ Labor Rate Audit: {name} ({cid})",
                     f"**Result: {'OVER CAP' if labor['status'] == 'over_cap' else 'WITHIN CAP'}** "
@@ -1096,7 +1168,7 @@ class AgenticRAGRouter:
                     f"{ct.fmt(pay['deductible_applied'])} = {ct.fmt(pay['payout'])}")
         out += [f"### 📝 Settlement Calculation: {name} ({cid})",
                 f"**Vehicle**: {claim['vehicle']} · **Facility**: {claim['facility']}", "",
-                "| Operation | Approved | Note |", "| --- | --- | --- |"]
+                "| Operation | Allowable | Note |", "| --- | --- | --- |"]
         for row in pay["rows"]:
             out.append(f"| {row['op']} | {ct.fmt(row['amount'])} | {row['note']} |")
         out += ["",
@@ -1106,7 +1178,8 @@ class AgenticRAGRouter:
         out.append(f"* Gross covered amount: {ct.fmt(pay['gross'])}")
         waiver = " (glass portion waived)" if pay["glass_waiver"] else ""
         out.append(f"* Deductible applied: -{ct.fmt(pay['deductible_applied'])}{waiver}")
-        out.append(f"* **Net settlement: {ct.fmt(pay['payout'])}**")
+        out.append(f"* **Draft net settlement: {ct.fmt(pay['payout'])}**")
+        out.append("*Draft for adjuster review; not a settlement decision.*")
         out += [""] + reconcile + [f"* {note}" for note in pay["notes"]]
         out.append("*Calculated figures for adjuster review; not a coverage decision.*")
         return out + ct.render_inputs([labor, pay])
@@ -1204,6 +1277,38 @@ class AgenticRAGRouter:
         for row in result["checks"]:
             out.append(f"| {row['check'].title()} | {row['result'].upper()} | {row['detail']} |")
         out += ["", "*Advisory coverage check for the adjuster; not a coverage decision.*"]
+        return out + ct.render_inputs([result])
+
+    def _siu_answer(self, claim: Dict[str, Any], evidence: Dict[str, Any], logs: List[str]) -> List[str]:
+        """SIU indicator checklist: the four SOP red flags from claims_tools.siu_checklist.
+
+        Computed and cited; never a decision -- a referral is an adjuster call, not this tool's.
+        """
+        name, cid = claim["insured"], claim["id"]
+        fraud = evidence.get("fraud", {})
+        other_claims = [
+            {"claim_id": other["id"],
+             "photos": CLAIM_EVIDENCE.get(other["id"], {}).get("fraud", {}).get("scene", {}).get("photos", [])}
+            for other in CLAIMS_DATA if other["id"] != cid
+        ]
+        result = ct.siu_checklist(
+            claim_id=cid, reported=evidence.get("reported"), loss_date=evidence.get("loss_date"),
+            loss_time=fraud.get("loss_time"), policy=evidence.get("policy", {}), scene=fraud.get("scene", {}),
+            estimate=claim["estimate"], findings=fraud.get("findings", ()), other_claims=other_claims,
+        )
+        logs.append(f"🧮 [Tool] siu_checklist: {result['status']}")
+        out = [f"### 🔍 SIU Indicator Checklist: {name} ({cid})", f"**{result['message']}**", "",
+               "| Indicator | Result | Detail | Source |", "| --- | --- | --- | --- |"]
+        for row in result["indicators"]:
+            section = f", {row['section']}" if row.get("section") else ""
+            out.append(f"| {row['indicator'].replace('_', ' ').title()} | {row['result'].upper()} | "
+                       f"{row['detail']} | {row['source']}{section} |")
+        if result["procedure"]:
+            out += [""] + [f"* {step}" for step in result["procedure"]]
+        notes = list(fraud.get("notes", ()))
+        if notes:
+            out += ["", "**Coverage notes (not fraud indicators)**"] + [f"* {note}" for note in notes]
+        out += ["", "*Indicator screen for the adjuster; SIU referral is the adjuster's decision.*"]
         return out + ct.render_inputs([result])
 
     @staticmethod
@@ -1307,86 +1412,10 @@ class AgenticRAGRouter:
         answer_parts = []
 
         claim = next((c for c in CLAIMS_DATA if c["id"] == claim_id), None) if claim_id else None
-        if claim and audit_type != "fraud":
-            # Labor, parts, total-loss and payout numbers are computed by backend/claims_tools.py.
+        if claim:
+            # Labor, parts, total-loss, payout and SIU-indicator numbers are all computed by
+            # backend/claims_tools.py.
             answer_parts.extend(self._computed_claim_answer(claim, audit_type, query_text, logs))
-
-        elif claim_id == "#2026-99382": # Matthew Sterling
-            if audit_type == "fraud":
-                logs.append("⚙️ [Tool Exec] policy_search: Found SOP_Claims_Fraud_Red_Flags.pdf")
-                logs.append("⚙️ [Tool Exec] dossier_search: Found telematics_log_Sterling.pdf (Rear collision force of 4.2G at 14 mph)")
-                logs.append("🔍 [Reflection] Checking sensor timelines against statement: Deceleration footprint matches.")
-                answer_parts.extend([
-                    "### 🔍 SIU Fraud Red Flags Audit: Matthew Sterling (#2026-99382)",
-                    "**Status: CLEAR (no flags detected)**",
-                    "",
-                    "1. **Incident Telematics Audit**:",
-                    "   * Telematics extract (*telematics_log_Sterling.pdf*) reports a rear deceleration impact force of **4.2G at 14 mph** on January 10, 2026, at 14:32:05.",
-                    "   * This sensor footprint correlates perfectly with the claimant's statement and police report details of being rear-ended by a third party while stopped at a red light.",
-                    "2. **Pre-Existing Damage Check**:",
-                    "   * Photo descriptions and diagnostic codes show no overlapping impact wear or pre-existing trunk rust.",
-                    "3. **Timeline Check**:",
-                    "   * Loss reported within 24 hours of incident (PASSED).",
-                    "",
-                    "**Summary Recommendation**: No SIU flags active. Approve claim liability as 100% third-party fault."
-                ])
-
-        elif claim_id == "#2026-10492": # Sarah Jenkins
-            if audit_type == "fraud":
-                logs.append("⚙️ [Tool Exec] policy_search: Found Case_Study_Hail_Damage_PlanA.pdf")
-                logs.append("⚙️ [Tool Exec] dossier_search: Found dent_photos_description_Jenkins.pdf (18 hood dents, 24 roof dents, paint unbroken)")
-                logs.append("🔍 [Reflection] Checking PDR and repainting scope against the case study precedent: distinct damage, not overlapping.")
-                answer_parts.extend([
-                    "### 🔍 SIU Fraud Red Flags Audit: Sarah Jenkins (#2026-10492)",
-                    "**Status: CLEAR (no flags detected; underpayment risk flagged for review)**",
-                    "",
-                    "1. **Estimate Duplication Check**:",
-                    "   * The estimate charges **$3,200.00** for Paintless Dent Repair (PDR, 42 hood/roof dents) and **$2,400.00** for conventional bodywork and repainting of the passenger doors.",
-                    "   * *Case_Study_Hail_Damage_PlanA.pdf* (precedent for this exact claim ID) confirms these are two distinct, non-overlapping repairs — PDR for unbroken-paint dents, repainting for the passenger door body damage — totaling **$6,800.00** together with the $1,200.00 windshield replacement. No duplication.",
-                    "2. **Deductible/Rider Check**:",
-                    "   * The case study record shows the standard **$500.00 Comprehensive deductible** was applied to the overall claim.",
-                    "   * However, Sarah Jenkins' active **Zero-Deductible Glass** rider (*Endorsement_Windshield_Zero_Deductible.docx*) waives the Comprehensive deductible specifically for windshield/safety glass replacement. If the $500 deductible was drawn entirely from the windshield line rather than the non-glass repairs, this may be a rider mis-application worth a supplement review.",
-                    "",
-                    "**Summary Recommendation**: Approve the estimate as-is; flag the deductible allocation against the Zero-Deductible Glass rider for adjuster review."
-                ])
-
-        elif claim_id == "#2026-30291": # David Chen
-            if audit_type == "fraud":
-                logs.append("⚙️ [Tool Exec] policy_search: Found SOP_Claims_Fraud_Red_Flags.pdf")
-                logs.append("⚙️ [Tool Exec] dossier_search: Found inspection_photos_Chen.pdf")
-                logs.append("🔍 [Reflection] Checking oxidation on passenger side key scratches: Rust present (pre-existing damage).")
-                answer_parts.extend([
-                    "### 🔍 SIU Fraud Red Flags Audit: David Chen (#2026-30291)",
-                    "**Status: RED FLAG DETECTED (Pre-existing damage)**",
-                    "",
-                    "1. **Wear & Tear Investigation**:",
-                    "   * The estimate lists **$600.00** to repair key scratches on the passenger side panel.",
-                    "   * The inspection photo log (*inspection_photos_Chen.pdf*) shows the key scratches have rust oxidation in the scratch channels, consistent with damage older than the break-in.",
-                    "   * Under *SOP_Claims_Fraud_Red_Flags.pdf*, oxidized rust proves the damage is pre-existing (at least 6 months old) and did not occur during the recent theft. Key scratch repair is **Denied**.",
-                    "2. **Theft Recovery Check**:",
-                    "   * Police report confirms vehicle recovery with no key scratching noted on recovery scene inventory.",
-                    "",
-                    "**Summary Recommendation**: Deny the $600.00 key scratch repair. Proceed with theft-recovery billing."
-                ])
-
-        elif claim_id == "#2026-55912": # Elena Rostova
-            if audit_type == "fraud":
-                logs.append("⚙️ [Tool Exec] policy_search: Found Case_Study_Engine_Hydro_Lock.pdf")
-                logs.append("⚙️ [Tool Exec] dossier_search: Found telematics_log_Rostova.pdf (Speed 45 mph in standing water, followed by 3 starter crank attempts) and engine_diagnostic_report_Rostova.pdf")
-                logs.append("🔍 [Reflection] Checking starter logs: 3 cranking attempts post-stall confirmed.")
-                logs.append("🔍 [Reflection] Checking claim file for a DUI citation: no police report on file for this claim; no such record found.")
-                answer_parts.extend([
-                    "### 🔍 SIU Fraud Red Flags Audit: Elena Rostova (#2026-55912)",
-                    "**Status: CRITICAL EXCLUSION DETECTED (CLAIM DENIED)**",
-                    "",
-                    "1. **Consequential Damage Audit**:",
-                    "   * Telematics diagnostic log (*telematics_log_Rostova.pdf*) shows that after the vehicle stalled in standing water, the starter ignition button was pressed **3 separate times**; *engine_diagnostic_report_Rostova.pdf* confirms standing water in the intake and a fractured engine block consistent with hydraulic lock.",
-                    "   * Under *Case_Study_Engine_Hydro_Lock.pdf*, damages resulting from attempts to restart a stalled engine in deep water are driver-induced consequential damages and are **excluded**.",
-                    "2. **DUI Exclusion Check**:",
-                    "   * No police report or citation record exists in this claim's file. The DUI exclusion (*DUI_Exclusion_Directive.txt*) is not applicable here — there is no evidence to invoke it, and this should not be asserted without a supporting record.",
-                    "",
-                    "**Summary Recommendation**: Deny claims liability in full on consequential-damage grounds; DUI exclusion not applicable absent supporting evidence."
-                ])
 
         else: # Generic reference lookup
             logs.append("⚙️ [Tool Exec] No active claim folder selected. Fetching global reference matches.")

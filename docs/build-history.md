@@ -782,3 +782,23 @@ existing California and Texas regulation docs.
 
 - Routed review (Haiku) found three defects, all fixed with tests: supplements held for documentation were counted in the repair cost (now reported as pending, with the result they would produce); valuation sources matched as substrings ("Canada" → NADA; now whole words); a supplement question mentioning salvage routed to total loss (now "total loss"/"totaled" wins, then "supplement", then ACV/salvage alone).
 - Verified: 18 new tests; `crag check` 792 passed / gate passed; in the app (Simulation Mode, port 8011) the button gave NEEDS INPUT with the valuation check, and "ACV $14,000, salvage $2,500" gave TOTAL LOSS, $740.00 over, $11,500.00 retained payout and the next steps.
+
+## Security hardening, coverage and SIU tools — 2026-10-20 (branch `fix/security-hardening`, PR #22)
+
+- Owner: keep building until it is robust, secure and enterprise ready; push, merge and sync at each milestone.
+- Every finding in the 2026-10-19 Opus security review was verified against the code, then fixed with tests:
+  - 1146896 (storage): vector-cache generation lock, embedding before the write transaction, a generic conflict message, and in-flight-only dedupe.
+  - 9a5835a (web edge): Origin and TrustedHost checks, a production-default image, concurrency gates, stream audit and close, a scoped delete, server request IDs.
+  - 2c413cc (lows): byte-safe API key compare, JWKS fallback and backoff, the zip cap split, a minimal parser env, `.xls` dropped, S3 content types, Postgres savepoints.
+- Tools (simulation mode, computed and cited, advisory only):
+  - 0ced9fc: subrogation triage.
+  - b19f8af: coverage verification, with the new synthetic `SOP_Coverage_Verification.pdf` and claims Webb and Brooks.
+  - 57cbe2e: the SIU indicator checklist replaces four canned fraud narratives.
+  - The settlement letter now uses draft wording.
+- **Debugging history.**
+  - The coverage worker matched the bare word "coverage", so the OEM and settlement-letter buttons routed to the coverage tool. The pattern now needs explicit phrasing, and a new test routes every UI button's real query from `app.js`.
+  - The Postgres CI job failed one logging test that passed alone. `alembic/env.py`'s `fileConfig()` disabled every existing logger when the migration tests ran first. It now passes `disable_existing_loggers=False` (fdaba9c).
+- Verified:
+  - `crag check`: 970 passed, 17 skipped, 1 xfailed; gate passed, 0 blocking.
+  - Full suite on a local pgvector:pg16: 986 passed.
+  - Parity: PASS (recall@4 0.9844).
