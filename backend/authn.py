@@ -3,6 +3,7 @@ from __future__ import annotations
 import hmac
 import json
 import logging
+import threading
 import time
 from abc import ABC, abstractmethod
 from pathlib import Path
@@ -98,12 +99,40 @@ class OIDCAuthenticator(Authenticator):
         self._clock = clock
         self._jwks: dict[str, Any] | None = None
         self._jwks_fetched_at = -float("inf")
+        self._last_fetch_failure_at = -float("inf")
+        self._last_kid_refetch_at = -float("inf")
+        self._refresh_lock = threading.Lock()
 
-    def _get_jwks(self) -> dict[str, Any]:
+    _FETCH_BACKOFF_SECONDS = 30
+    _UNKNOWN_KID_REFETCH_SECONDS = 60
+
+    def _get_jwks(self, force_refresh: bool = False) -> dict[str, Any]:
         now = self._clock()
-        if self._jwks is None or (now - self._jwks_fetched_at) >= self.cache_ttl_seconds:
-            self._jwks = self._jwks_fetcher(self.jwks_url)
-            self._jwks_fetched_at = now
+        stale = self._jwks is None or (now - self._jwks_fetched_at) >= self.cache_ttl_seconds
+        if not force_refresh and not stale:
+            return self._jwks
+        if self._jwks is not None and (now - self._last_fetch_failure_at) < self._FETCH_BACKOFF_SECONDS:
+            return self._jwks
+        if not self._refresh_lock.acquire(blocking=False):
+            # A refresh is already in flight; use whatever is cached rather
+            # than block (or raise, if nothing has ever been fetched yet).
+            if self._jwks is not None:
+                return self._jwks
+            with self._refresh_lock:
+                pass
+            return self._jwks
+        try:
+            try:
+                self._jwks = self._jwks_fetcher(self.jwks_url)
+                self._jwks_fetched_at = self._clock()
+                self._last_fetch_failure_at = -float("inf")
+            except Exception as exc:
+                self._last_fetch_failure_at = self._clock()
+                logger.warning("JWKS fetch failed, serving cached keys: %s", type(exc).__name__)
+                if self._jwks is None:
+                    raise
+        finally:
+            self._refresh_lock.release()
         return self._jwks
 
     def authenticate(self, request: Request) -> PrincipalContext:
@@ -117,7 +146,18 @@ class OIDCAuthenticator(Authenticator):
             # HTTP fetch); for an injectable fetcher we select the key by the
             # token header's kid ourselves (PyJWKSet[kid]) -- same semantics.
             header = pyjwt.get_unverified_header(token)
-            signing_key = key_set[header["kid"]]
+            kid = header["kid"]
+            try:
+                signing_key = key_set[kid]
+            except KeyError:
+                # The key may simply be new (rotation); refetch at most once
+                # per _UNKNOWN_KID_REFETCH_SECONDS rather than on every request
+                # with a stale/unknown kid.
+                now = self._clock()
+                if (now - self._last_kid_refetch_at) >= self._UNKNOWN_KID_REFETCH_SECONDS:
+                    self._last_kid_refetch_at = now
+                    key_set = pyjwt.PyJWKSet.from_dict(self._get_jwks(force_refresh=True))
+                signing_key = key_set[kid]
             payload = pyjwt.decode(
                 token,
                 signing_key.key,
@@ -186,8 +226,9 @@ class ServiceAccountAuthenticator(Authenticator):
         key = request.headers.get("X-API-Key", "")
         if not key:
             raise AuthenticationError("missing API key")
+        key_bytes = key.encode("utf-8")
         for stored_key, principal in self._accounts.items():
-            if hmac.compare_digest(key, stored_key):
+            if hmac.compare_digest(key_bytes, stored_key.encode("utf-8")):
                 return principal
         raise AuthenticationError("invalid API key")
 

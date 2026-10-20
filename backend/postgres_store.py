@@ -33,12 +33,15 @@ with the index.
 """
 from __future__ import annotations
 
+import logging
 import os
 import time
 from typing import List, Optional
 from urllib.parse import urlsplit, urlunsplit
 
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 
 def _redact_dsn(dsn: str) -> str:
@@ -140,10 +143,17 @@ class PostgresVectorStore:
                 if not (existing_claim is None and claim_id is None) and existing_claim != claim_id:
                     existing_scope = f"claim {existing_claim}" if existing_claim else "global guidelines"
                     new_scope = f"claim {claim_id}" if claim_id else "global guidelines"
+                    # The client-facing message must not name the other
+                    # scope's claim ID -- an adjuster restricted to claim A
+                    # would otherwise learn claim B's ID just by uploading a
+                    # same-named file. The detail is still logged for operators.
+                    logger.warning(
+                        "Scope-mismatched overwrite rejected for %r: existing=%s new=%s",
+                        filename, existing_scope, new_scope,
+                    )
                     raise ValueError(
-                        f"'{filename}' already exists in {existing_scope}; refusing to overwrite it "
-                        f"from {new_scope}. Rename the uploaded file (or delete the existing one) first "
-                        "-- claim folders and global guidelines must not overwrite each other."
+                        f"A document named '{filename}' already exists outside this folder. "
+                        "Rename the file and upload it again."
                     )
                 # Same scope -> overwrite: delete its rows (cascade removes chunks).
                 conn.execute(
@@ -349,44 +359,50 @@ class PostgresVectorStore:
             # the SQLite brute-force behavior) ------------------------------ #
             vector_ranked: List[dict] = []
             try:
-                top = conn.execute(
-                    """
-                    SELECT c.parent_id, max(1.0 - (c.embedding <=> %(q)s)) AS sim
-                    FROM child_chunks c
-                    JOIN parent_chunks p ON c.parent_id = p.id
-                    JOIN documents d ON p.document_id = d.id
-                    WHERE c.tenant_id = %(t)s
-                      AND (d.claim_id IS NULL OR d.claim_id = %(c)s)
-                    GROUP BY c.parent_id
-                    ORDER BY sim DESC
-                    LIMIT %(lim)s
-                    """,
-                    {"q": query, "t": self.tenant_id, "c": claim_id, "lim": pool},
-                ).fetchall()
-                if top:
-                    ids = [r[0] for r in top]
-                    meta = {
-                        r[0]: (r[1], r[2], r[3], r[4], r[5])
-                        for r in conn.execute(
-                            """
-                            SELECT p.id, p.content, d.filename, d.file_type, d.id, d.document_version
-                            FROM parent_chunks p
-                            JOIN documents d ON p.document_id = d.id
-                            WHERE p.tenant_id = %s AND p.id = ANY(%s)
-                            """,
-                            (self.tenant_id, ids),
-                        ).fetchall()
-                    }
-                    vector_ranked = [
-                        {"id": pid, "content": meta[pid][0], "filename": meta[pid][1],
-                         "file_type": meta[pid][2], "score": float(sim),
-                         "document_id": str(meta[pid][3]), "document_version": meta[pid][4] or "legacy-unversioned"}
-                        for pid, sim in top
-                        if pid in meta
-                    ]
-            except Exception:
+                # Each leg runs in its own savepoint: a failure here must not
+                # abort the outer transaction and take the keyword leg down
+                # with it (a plain aborted-transaction error would otherwise
+                # make every subsequent statement on `conn` fail too).
+                with conn.transaction():
+                    top = conn.execute(
+                        """
+                        SELECT c.parent_id, max(1.0 - (c.embedding <=> %(q)s)) AS sim
+                        FROM child_chunks c
+                        JOIN parent_chunks p ON c.parent_id = p.id
+                        JOIN documents d ON p.document_id = d.id
+                        WHERE c.tenant_id = %(t)s
+                          AND (d.claim_id IS NULL OR d.claim_id = %(c)s)
+                        GROUP BY c.parent_id
+                        ORDER BY sim DESC
+                        LIMIT %(lim)s
+                        """,
+                        {"q": query, "t": self.tenant_id, "c": claim_id, "lim": pool},
+                    ).fetchall()
+                    if top:
+                        ids = [r[0] for r in top]
+                        meta = {
+                            r[0]: (r[1], r[2], r[3], r[4], r[5])
+                            for r in conn.execute(
+                                """
+                                SELECT p.id, p.content, d.filename, d.file_type, d.id, d.document_version
+                                FROM parent_chunks p
+                                JOIN documents d ON p.document_id = d.id
+                                WHERE p.tenant_id = %s AND p.id = ANY(%s)
+                                """,
+                                (self.tenant_id, ids),
+                            ).fetchall()
+                        }
+                        vector_ranked = [
+                            {"id": pid, "content": meta[pid][0], "filename": meta[pid][1],
+                             "file_type": meta[pid][2], "score": float(sim),
+                             "document_id": str(meta[pid][3]), "document_version": meta[pid][4] or "legacy-unversioned"}
+                            for pid, sim in top
+                            if pid in meta
+                        ]
+            except Exception as exc:
                 # Degrade gracefully to the keyword leg only (mirrors SQLite's
                 # `except sqlite3.OperationalError: pass` behavior).
+                logger.warning("Vector search leg failed, falling back to keyword-only: %s", type(exc).__name__)
                 vector_ranked = []
 
             # --- 2. Keyword leg: Postgres FTS, quoted tokens + ts_rank order.  #
@@ -396,26 +412,27 @@ class PostgresVectorStore:
             if use_fts and tokens:
                 clean_query = " ".join(f'"{t}"' for t in tokens)
                 try:
-                    fts_rows = conn.execute(
-                        """
-                        SELECT p.id, p.content, d.filename, d.file_type, d.id, d.document_version
-                        FROM parent_chunks p
-                        JOIN documents d ON p.document_id = d.id
-                        WHERE p.tenant_id = %(t)s
-                          AND (d.claim_id IS NULL OR d.claim_id = %(c)s)
-                          AND p.content_tsv @@ websearch_to_tsquery('english', %(q)s)
-                        ORDER BY ts_rank(p.content_tsv, websearch_to_tsquery('english', %(q)s)) DESC
-                        LIMIT 40
-                        """,
-                        {"t": self.tenant_id, "c": claim_id, "q": clean_query},
-                    ).fetchall()
-                    fts_ranked = [
-                        {"id": r[0], "content": r[1], "filename": r[2], "file_type": r[3], "score": 0.0,
-                         "document_id": str(r[4]), "document_version": r[5] or "legacy-unversioned"}
-                        for r in fts_rows
-                    ]
-                except Exception:
-                    pass
+                    with conn.transaction():
+                        fts_rows = conn.execute(
+                            """
+                            SELECT p.id, p.content, d.filename, d.file_type, d.id, d.document_version
+                            FROM parent_chunks p
+                            JOIN documents d ON p.document_id = d.id
+                            WHERE p.tenant_id = %(t)s
+                              AND (d.claim_id IS NULL OR d.claim_id = %(c)s)
+                              AND p.content_tsv @@ websearch_to_tsquery('english', %(q)s)
+                            ORDER BY ts_rank(p.content_tsv, websearch_to_tsquery('english', %(q)s)) DESC
+                            LIMIT 40
+                            """,
+                            {"t": self.tenant_id, "c": claim_id, "q": clean_query},
+                        ).fetchall()
+                        fts_ranked = [
+                            {"id": r[0], "content": r[1], "filename": r[2], "file_type": r[3], "score": 0.0,
+                             "document_id": str(r[4]), "document_version": r[5] or "legacy-unversioned"}
+                            for r in fts_rows
+                        ]
+                except Exception as exc:
+                    logger.warning("Keyword search leg failed, falling back to vector-only: %s", type(exc).__name__)
 
             # --- 3. RRF fusion (k=60) -------------------------------------- #
             k_const = 60

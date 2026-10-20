@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from typing import Optional
 from backend.rag_engine import EmbeddingEngine, safe_filename
-from backend.document_limits import parse_bounded, DocumentLimitError
+from backend.document_limits import parse_bounded, DocumentLimitError, CONTENT_TYPES
 from backend.agentic_router import CLAIMS_DATA
 from backend.health import live_status, ready_status
 from backend.authn import AuthenticationError
@@ -47,12 +47,6 @@ class SearchRequest(BaseModel):
         if self.top_k <= 0:
             raise ValueError("top_k must be positive")
         return self
-
-
-_CONTENT_TYPES = {
-    "pdf": "application/pdf", "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "xls": "application/vnd.ms-excel", "txt": "text/plain",
-}
 
 
 class _ConcurrencyGate:
@@ -435,7 +429,7 @@ def register_routes(app, runtime):
             _audit(request, principal, "upload", outcome="failed", filename=file.filename, reason="invalid filename")
             raise HTTPException(status_code=400, detail="Invalid filename.") from None
         file_ext = filename.split(".")[-1].lower()
-        if file_ext not in ["pdf", "docx", "xlsx", "xls", "txt"]:
+        if file_ext not in ["pdf", "docx", "xlsx", "txt"]:
             _audit(request, principal, "upload", outcome="failed", filename=filename, reason="unsupported format")
             raise HTTPException(
                 status_code=400,
@@ -797,7 +791,7 @@ def register_routes(app, runtime):
 
 
     def _content_type(file_ext: str) -> str:
-        return _CONTENT_TYPES.get(file_ext, "application/octet-stream")
+        return CONTENT_TYPES.get(file_ext, "application/octet-stream")
 
 
     @app.post("/api/eval/search", dependencies=[Depends(get_current_tenant)])

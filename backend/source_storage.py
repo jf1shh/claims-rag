@@ -4,6 +4,7 @@ import uuid
 from pathlib import Path
 
 from backend.blob_store import LocalDocumentBlobStore
+from backend.document_limits import CONTENT_TYPES
 
 
 def source_store(store):
@@ -15,5 +16,6 @@ def stage_source(store, filename, file_type, text, file_path=None):
     version = 'sha256:' + hashlib.sha256(content).hexdigest()
     # Unique keys avoid touching an existing version, even on a retry.
     key = f'versions/{uuid.uuid4().hex}/{filename}'
-    source_store(store).put(key, content, file_type or 'application/octet-stream')
+    content_type = CONTENT_TYPES.get(file_type, 'application/octet-stream')
+    source_store(store).put(key, content, content_type)
     return key, version

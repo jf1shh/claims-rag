@@ -339,7 +339,7 @@ function setupBrowseButton() {
 
 async function handleFileUpload(file) {
     const ext = file.name.split('.').pop().toLowerCase();
-    if (!['pdf', 'docx', 'xlsx', 'xls', 'txt'].includes(ext)) {
+    if (!['pdf', 'docx', 'xlsx', 'txt'].includes(ext)) {
         alert('Unsupported file format. Please upload PDF, DOCX, Excel, or Text documents.');
         return;
     }
