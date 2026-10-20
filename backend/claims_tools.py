@@ -140,6 +140,14 @@ COMPARATIVE_FAULT: Dict[str, Dict[str, Any]] = {
            "text": "modified comparative fault with a 51% bar for accidents on or after March 24, 2023"},
 }
 
+COVERAGE_SOP = "SOP_Coverage_Verification.pdf"
+# SOP_Coverage_Verification.pdf, section 4: 30 days to report a loss.
+NOTICE_DAYS = 30
+# SOP_Coverage_Verification.pdf, section 3: collision is impact with a vehicle or object, or rollover;
+# comprehensive is theft, vandalism, hail, flood, fire, falling objects, animal strikes or glass.
+COLLISION_PERILS = {"collision", "rollover", "single_vehicle"}
+COMPREHENSIVE_PERILS = {"theft", "vandalism", "hail", "flood", "fire", "falling_object", "animal", "glass"}
+
 ZERO = Decimal("0")
 
 
@@ -802,6 +810,140 @@ def subrogation_triage(*, state: Optional[str], loss_date: Optional[str], damage
             "flags": flags, "evidence_types": evidence_types, "rule": rule["text"] if rule else None,
             "recoverable_share": share, "expected_recovery": expected, "deductible_reimbursed": reimbursed,
             "forum": forum, "referral_due": referral_due, "notice": notice, "inputs": inputs}
+
+
+def _period_check(loss_date: str, policy: Dict[str, Any]) -> Dict[str, Any]:
+    reasons = []
+    if loss_date < policy["effective"]:
+        reasons.append(f"loss date {loss_date} is before the policy effective date {policy['effective']}")
+    elif loss_date >= policy["expiration"]:
+        reasons.append(f"loss date {loss_date} is on or after the policy expiration date {policy['expiration']}")
+    cancelled = policy.get("cancelled")
+    if cancelled and loss_date >= cancelled:
+        reasons.append(f"loss date {loss_date} is on or after the cancellation effective date {cancelled}")
+    for lapse in policy.get("lapses") or []:
+        if lapse["start"] <= loss_date <= lapse["end"]:
+            reasons.append(f"loss date {loss_date} falls within a coverage lapse ({lapse['start']} to "
+                           f"{lapse['end']})")
+    if reasons:
+        return {"check": "period", "result": "issue", "detail": "; ".join(reasons), "source": COVERAGE_SOP,
+                "section": "1. Policy Period"}
+    return {"check": "period", "result": "pass",
+            "detail": f"loss date {loss_date} is within the policy period {policy['effective']} to "
+                       f"{policy['expiration']}", "source": COVERAGE_SOP, "section": "1. Policy Period"}
+
+
+def _driver_check(driver: Optional[str], policy: Dict[str, Any]) -> Dict[str, Any]:
+    fact_source = policy.get("source", "claim record")
+    if driver is None:
+        return {"check": "driver", "result": "missing", "detail": "no driver is on file for this loss",
+                "source": fact_source, "section": None}
+    if driver in (policy.get("excluded_drivers") or ()):
+        return {"check": "driver", "result": "issue",
+                "detail": f"{driver} is named on an Excluded Driver Endorsement and is not covered operating "
+                           "this vehicle", "source": COVERAGE_SOP, "section": "2. Drivers"}
+    if driver in (policy.get("listed_drivers") or ()):
+        return {"check": "driver", "result": "pass", "detail": f"{driver} is listed on the declarations page",
+                "source": COVERAGE_SOP, "section": "2. Drivers"}
+    permissive = policy.get("permissive") or {}
+    if driver in permissive:
+        documented = permissive[driver]
+        if documented:
+            return {"check": "driver", "result": "pass",
+                    "detail": f"{driver} is a permissive user; permission documented: {documented}",
+                    "source": COVERAGE_SOP, "section": "2. Drivers"}
+        return {"check": "driver", "result": "issue",
+                "detail": f"{driver} is a permissive user but how permission was given is not documented",
+                "source": COVERAGE_SOP, "section": "2. Drivers"}
+    return {"check": "driver", "result": "missing",
+            "detail": f"{driver} is not listed, excluded, or recorded as a permissive user on this policy",
+            "source": fact_source, "section": None}
+
+
+def _peril_check(peril: str, plan: str) -> tuple:
+    """(coverage_part, check row)."""
+    if peril in COLLISION_PERILS:
+        part = "collision"
+    elif peril in COMPREHENSIVE_PERILS:
+        part = "comprehensive"
+    else:
+        raise ValueError(f"unknown peril {peril!r}")
+    letter = plan_letter(plan)
+    if (letter, part) in DEDUCTIBLES:
+        return part, {"check": "peril", "result": "pass",
+                      "detail": f"{peril} is a {part} peril; Plan {letter} carries {part} coverage",
+                      "source": COVERAGE_SOP, "section": "3. Peril and Coverage Part"}
+    return part, {"check": "peril", "result": "issue",
+                  "detail": f"{peril} is a {part} peril; Plan {letter} does not carry {part} coverage",
+                  "source": COVERAGE_SOP, "section": "3. Peril and Coverage Part"}
+
+
+def _notice_check(loss_date: str, reported: Optional[str]) -> Dict[str, Any]:
+    if reported is None:
+        return {"check": "notice", "result": "missing", "detail": "the date the loss was reported is not on file",
+                "source": DOSSIER, "section": None}
+    days = (date.fromisoformat(reported) - date.fromisoformat(loss_date)).days
+    if days > NOTICE_DAYS:
+        return {"check": "notice", "result": "issue",
+                "detail": f"reported {days} days after the loss, over the {NOTICE_DAYS}-day notice requirement: "
+                           "document it; refer to a claims supervisor if the delay prejudiced the investigation",
+                "source": COVERAGE_SOP, "section": "4. Notice of Loss"}
+    return {"check": "notice", "result": "pass",
+            "detail": f"reported {days} day(s) after the loss, within the {NOTICE_DAYS}-day notice requirement",
+            "source": COVERAGE_SOP, "section": "4. Notice of Loss"}
+
+
+def coverage_check(*, loss_date: str, reported: Optional[str], peril: str, plan: str,
+                   policy: Dict[str, Any], driver: Optional[str]) -> Dict[str, Any]:
+    """Check policy period, driver, peril/coverage part and notice of loss for one claim.
+
+    Every row is advisory -- a coverage question for the adjuster, never a denial or approval.
+    """
+    fact_source = policy.get("source", "claim record")
+    coverage_part, peril_row = _peril_check(peril, plan)
+    checks = [_period_check(loss_date, policy), _driver_check(driver, policy), peril_row,
+              _notice_check(loss_date, reported)]
+
+    if any(c["result"] == "issue" for c in checks):
+        status = "coverage_question"
+    elif any(c["result"] == "missing" for c in checks):
+        status = "incomplete"
+    else:
+        status = "verified"
+
+    letter = plan_letter(plan)
+    inputs = [
+        cite("loss date", loss_date, DOSSIER),
+        cite("policy effective", policy["effective"], fact_source),
+        cite("policy expiration", policy["expiration"], fact_source),
+        cite("policy period rule", "covered only on or after the effective date and before the expiration date; "
+             "not covered on or after a cancellation date or during a lapse", COVERAGE_SOP, "1. Policy Period"),
+        cite("driver", driver or "not on file", fact_source),
+        cite("listed drivers", ", ".join(policy.get("listed_drivers") or []) or "none", fact_source),
+        cite("excluded drivers", ", ".join(policy.get("excluded_drivers") or []) or "none", fact_source),
+        cite("driver coverage rule", "listed drivers are covered; an excluded driver is not; an unlisted driver "
+             "with permission is a permissive user and the permission must be documented", COVERAGE_SOP,
+             "2. Drivers"),
+        cite("peril", peril, DOSSIER),
+        cite("policy plan", plan, DOSSIER),
+        cite("peril coverage rule", "collision covers impact and rollover; comprehensive covers theft, "
+             "vandalism, hail, flood, fire, falling objects, animal strikes and glass; Plan C carries collision "
+             "only", COVERAGE_SOP, "3. Peril and Coverage Part"),
+        cite(f"Plan {letter} {coverage_part} coverage", "carried" if (letter, coverage_part) in DEDUCTIBLES
+             else "not carried", DEDUCTIBLE_TABLE),
+        cite("reported", reported or "not on file", DOSSIER),
+        cite("notice rule", f"the insured must report a loss within {NOTICE_DAYS} days", COVERAGE_SOP,
+             "4. Notice of Loss"),
+    ]
+    if policy.get("cancelled"):
+        inputs.append(cite("policy cancelled", policy["cancelled"], fact_source))
+    if policy.get("lapses"):
+        inputs.append(cite("coverage lapse(s)",
+                           "; ".join(f"{lapse['start']} to {lapse['end']}" for lapse in policy["lapses"]),
+                           fact_source))
+
+    return {"tool": "coverage_check", "status": status, "coverage_part": coverage_part, "checks": checks,
+            "inputs": inputs}
 
 
 def render_inputs(results: Iterable[Dict[str, Any]]) -> List[str]:

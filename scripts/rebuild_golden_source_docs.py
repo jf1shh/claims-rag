@@ -349,6 +349,43 @@ def _documents() -> list[tuple[str, str, callable]]:
             ),
         ),
         (
+            "SOP_Coverage_Verification.pdf",
+            "pdf",
+            lambda path: _build_pdf(
+                path,
+                "SOP: Coverage Verification",
+                [
+                    (
+                        "1. Policy Period",
+                        "A loss is covered only when it occurs on or after the policy effective date and before "
+                        "the expiration date. A loss on or after a cancellation effective date is not covered. A "
+                        "policy cancelled for non-payment and reinstated with a lapse provides no coverage for "
+                        "losses during the lapse.",
+                    ),
+                    (
+                        "2. Drivers",
+                        "Drivers listed on the declarations page are covered. A driver named on an Excluded "
+                        "Driver Endorsement is not covered for any loss while operating the vehicle. An unlisted "
+                        "driver operating the vehicle with the named insured's permission is covered as a "
+                        "permissive user; the handler must document how permission was given.",
+                    ),
+                    (
+                        "3. Peril and Coverage Part",
+                        "Collision coverage applies to impact with another vehicle or object and to rollover. "
+                        "Comprehensive coverage applies to theft, vandalism, hail, flood, fire, falling objects, "
+                        "animal strikes and glass breakage. The loss must fall under a coverage part shown on the "
+                        "policy; Plan C policies carry collision coverage only.",
+                    ),
+                    (
+                        "4. Notice of Loss",
+                        "The insured must report a loss within 30 days. Late notice is not by itself a reason to "
+                        "deny; it must be documented, and if the delay prejudiced the investigation the file is "
+                        "referred to a claims supervisor.",
+                    ),
+                ],
+            ),
+        ),
+        (
             "SOP_Vehicle_Storage_Fees.txt",
             "txt",
             lambda path: open(path, "w", encoding="utf-8").write(

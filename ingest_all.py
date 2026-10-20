@@ -253,6 +253,13 @@ def seed_claim_documents(vector_store, embedding_engine):
             "type": "image",
             "content": "Inspection Photo: Smashed passenger window and vandalized console dash screen in David Chen's 2022 Honda Civic Sport."
         },
+        {
+            "claim_id": "#2026-30291",
+            "filename": "inspection_photos_Chen.pdf",
+            "type": "pdf",
+            "title": "Inspection Photo Log",
+            "content": "Claim ID: #2026-30291\nInsured: David Chen\nVehicle: 2022 Honda Civic Sport\nInspector: A. Ramirez, Claims Specialist\n\nPhotos Reviewed:\n- Photo 1: Passenger-side key scratches show rust oxidation in the scratch channels, consistent with damage older than the January 18, 2026 break-in.\n- Photo 2: The police report lists the smashed window, stolen console and cut catalytic converter, but no key scratches."
+        },
 
         # Elena Rostova
         {
@@ -274,6 +281,45 @@ def seed_claim_documents(vector_store, embedding_engine):
             "filename": "bmw_water_damage.png",
             "type": "image",
             "content": "Inspection Photo: Disassembled BMW 330i engine intake tract showing standing water and bent piston rod diagnostic inspection."
+        },
+
+        # Marcus Webb
+        {
+            "claim_id": "#2026-71845",
+            "filename": "police_report_Webb.pdf",
+            "type": "pdf",
+            "title": "STATE OF TEXAS - POLICE ACCIDENT REPORT",
+            "content": "Case ID: #2026-71845\nDate: February 3, 2026\nLocation: I-35E, Dallas, TX\nReporting Officer: Sgt. T. Alvarez\n\nSummary:\nVehicle 1 (2021 Toyota Camry SE, driven by Marcus Webb) was changing lanes on I-35E when it was rear-ended by Vehicle 2, a FastFreight Logistics commercial box truck. Independent witness Carla Nguyen, driving in the adjacent lane, confirmed Vehicle 2 was following too closely for the posted highway speed.\n\nFault Determination:\nThe reporting officer assigns 30% fault to Vehicle 1 (Webb) for an unsafe lane change and 70% fault to Vehicle 2 (the FastFreight Logistics truck driver) for following too closely."
+        },
+        {
+            "claim_id": "#2026-71845",
+            "filename": "witness_statement_Webb.pdf",
+            "type": "pdf",
+            "title": "INDEPENDENT WITNESS STATEMENT",
+            "content": "Claim ID: #2026-71845\nWitness: Carla Nguyen (independent witness, adjacent lane)\nDate: February 3, 2026\n\nStatement:\nI was driving next to the Toyota Camry on I-35E. The Camry driver signaled and moved into the lane ahead of the box truck. The box truck was following too closely for highway speed and could not brake in time, rear-ending the Camry."
+        },
+        {
+            "claim_id": "#2026-71845",
+            "filename": "dashcam_summary_Webb.pdf",
+            "type": "pdf",
+            "title": "FASTFREIGHT LOGISTICS - DASH CAMERA ANALYSIS SUMMARY",
+            "content": "Claim ID: #2026-71845\nSource: FastFreight Logistics truck dash camera\nAnalyst: Fleet Safety Review Team\n\nFindings:\nDash camera footage shows the Toyota Camry completing its lane change 1.2 seconds before impact. The box truck's recorded speed at the moment of impact was 41 mph. No evasive braking is visible in the 1.2 seconds between the lane change and impact."
+        },
+
+        # Tyler Brooks
+        {
+            "claim_id": "#2026-84410",
+            "filename": "loss_statement_Brooks.pdf",
+            "type": "pdf",
+            "title": "RECORDED INSURED STATEMENT",
+            "content": "Claim ID: #2026-84410\nInsured Statement: Tyler Brooks (recorded)\nDate: February 26, 2026\n\nStatement:\nAt approximately 2:40 AM on February 25, 2026, I was driving alone on a rural county road when a deer ran into the road. I swerved to avoid it and struck a utility pole. No one else was around, and I did not call the police because I did not think anyone was hurt and the pole was still standing."
+        },
+        {
+            "claim_id": "#2026-84410",
+            "filename": "inspection_photos_Brooks.pdf",
+            "type": "pdf",
+            "title": "INSPECTION PHOTO LOG",
+            "content": "Claim ID: #2026-84410\nInsured: Tyler Brooks\nVehicle: 2019 Dodge Charger R/T\nInspector: A. Ramirez, Claims Specialist\n\nPhotos Reviewed:\n- Photos 1-3: Front-end impact damage consistent with a pole strike -- crushed front bumper, hood deformation, and a bent radiator support.\n- Photo 4: The left rear quarter panel shows rust-through with flaking paint. This damage is not in the line of the front impact and shows no fresh deformation."
         }
     ]
 

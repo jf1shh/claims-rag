@@ -91,6 +91,40 @@ CLAIMS_DATA = [
             { "cat": "Mechanical", "op": "Flush Oil Lines and Cooling System", "rate": "$110/hr", "qty": "4.0 hrs", "total": "$440" },
             { "cat": "Electrical", "op": "Replace Submerged ECU & Sensors", "rate": "Flat", "qty": "1 Unit", "total": "$2,000" }
         ]
+    },
+    {
+        "id": "#2026-71845",
+        "status": "Open",
+        "insured": "Marcus Webb",
+        "vehicle": "2021 Toyota Camry SE",
+        "facility": "Lone Star Collision (Dallas, TX)",
+        "totalEst": "$865",
+        "plan": "Plan A (Standard)",
+        "deductible": "$1,000 Collision Deductible",
+        "endorsements": ["Premium Rental Upgrade"],
+        "estimate": [
+            { "cat": "Body", "op": "Replace Rear Bumper Cover", "rate": "$60/hr", "qty": "5.0 hrs", "total": "$300" },
+            { "cat": "Paint", "op": "Refinish Rear Bumper Cover", "rate": "$60/hr", "qty": "4.0 hrs", "total": "$240" },
+            { "cat": "Frame", "op": "Pull Trunk Floor Panel (Alignment)", "rate": "$75/hr", "qty": "3.0 hrs", "total": "$225" },
+            { "cat": "Mechanical", "op": "Replace Rear Parking Sensor", "rate": "$100/hr", "qty": "1.0 hrs", "total": "$100" }
+        ]
+    },
+    {
+        "id": "#2026-84410",
+        "status": "Open",
+        "insured": "Tyler Brooks",
+        "vehicle": "2019 Dodge Charger R/T",
+        "facility": "Sunbelt Body Works (Miami, FL)",
+        "totalEst": "$920",
+        "plan": "Plan C (Basic)",
+        "deductible": "$2,000 Collision Deductible",
+        "endorsements": [],
+        "estimate": [
+            { "cat": "Body", "op": "Replace Front Bumper Cover", "rate": "$60/hr", "qty": "4.0 hrs", "total": "$240" },
+            { "cat": "Body", "op": "Replace Hood Panel", "rate": "$60/hr", "qty": "3.0 hrs", "total": "$180" },
+            { "cat": "Mechanical", "op": "Replace Radiator Support", "rate": "$100/hr", "qty": "2.0 hrs", "total": "$200" },
+            { "cat": "Body", "op": "Repair Rust-Through on Left Rear Quarter Panel", "rate": "$60/hr", "qty": "5.0 hrs", "total": "$300" }
+        ]
     }
 ]
 
@@ -103,6 +137,14 @@ CLAIM_EVIDENCE: Dict[str, Dict[str, Any]] = {
     "#2026-99382": {
         "loss_year": 2026,
         "loss_date": "2026-01-12",
+        "reported": "2026-01-12",
+        "peril": "collision",
+        "driver": "Matthew Sterling",
+        "policy": {
+            "effective": "2025-01-01", "expiration": "2027-01-01", "cancelled": None, "lapses": [],
+            "listed_drivers": ["Matthew Sterling"], "excluded_drivers": [], "permissive": {},
+            "source": "claim record",
+        },
         "subrogation": {
             "third_party": "Vehicle 2 (other driver; towed from the scene)",
             "third_party_source": "police_report_Sterling.pdf",
@@ -125,7 +167,15 @@ CLAIM_EVIDENCE: Dict[str, Dict[str, Any]] = {
     },
     "#2026-10492": {
         "loss_year": 2026,
-        "loss_date": None,  # the hail inspection log carries no loss date
+        "loss_date": "2026-01-25",
+        "reported": "2026-01-26",
+        "peril": "hail",
+        "driver": "Sarah Jenkins",
+        "policy": {
+            "effective": "2024-06-01", "expiration": "2026-06-01", "cancelled": None, "lapses": [],
+            "listed_drivers": ["Sarah Jenkins"], "excluded_drivers": [], "permissive": {},
+            "source": "claim record",
+        },
         "subrogation": {
             "third_party": None,
             "causes": [],
@@ -138,6 +188,14 @@ CLAIM_EVIDENCE: Dict[str, Dict[str, Any]] = {
     "#2026-30291": {
         "loss_year": 2026,
         "loss_date": "2026-01-18",
+        "reported": "2026-01-18",
+        "peril": "theft",
+        "driver": "David Chen",
+        "policy": {
+            "effective": "2024-11-01", "expiration": "2026-11-01", "cancelled": None, "lapses": [],
+            "listed_drivers": ["David Chen"], "excluded_drivers": [], "permissive": {},
+            "source": "claim record",
+        },
         "subrogation": {
             "third_party": None,
             "causes": [],
@@ -150,12 +208,20 @@ CLAIM_EVIDENCE: Dict[str, Dict[str, Any]] = {
         "custom_source": "custom_equipment_receipts_Chen.xlsx",
         "excluded": {
             "Repair Passenger Side Key Scratches":
-                "pre-existing rust oxidation (SOP_Claims_Fraud_Red_Flags.pdf)",
+                "pre-existing rust oxidation (inspection_photos_Chen.pdf; SOP_Claims_Fraud_Red_Flags.pdf)",
         },
     },
     "#2026-55912": {
         "loss_year": 2026,
         "loss_date": "2026-01-20",
+        "reported": "2026-01-21",
+        "peril": "flood",
+        "driver": "Elena Rostova",
+        "policy": {
+            "effective": "2024-03-01", "expiration": "2027-03-01", "cancelled": None, "lapses": [],
+            "listed_drivers": ["Elena Rostova"], "excluded_drivers": [], "permissive": {},
+            "source": "claim record",
+        },
         "subrogation": {
             "third_party": None,
             "causes": [],
@@ -171,6 +237,58 @@ CLAIM_EVIDENCE: Dict[str, Dict[str, Any]] = {
             {"source": "CCC ONE Market Valuation Report", "acv": "$14,200"},
             {"source": "Kelley Blue Book", "acv": "$13,600"},
         ],
+    },
+    "#2026-71845": {
+        "loss_year": 2026,
+        "loss_date": "2026-02-03",
+        "reported": "2026-02-04",
+        "peril": "collision",
+        "driver": "Marcus Webb",
+        "policy": {
+            "effective": "2025-01-15", "expiration": "2027-01-15", "cancelled": None, "lapses": [],
+            "listed_drivers": ["Marcus Webb"], "excluded_drivers": [], "permissive": {},
+            "source": "claim record",
+        },
+        "subrogation": {
+            "third_party": "FastFreight Logistics (commercial box truck)",
+            "third_party_source": "police_report_Webb.pdf",
+            "third_party_fault": Decimal("0.70"),
+            "fault_source": "police_report_Webb.pdf",
+            "collision": "rear_end",
+            "collision_source": "police_report_Webb.pdf",
+            "insured_position": "lead",
+            "rebuttal": ["unsafe lane change (police_report_Webb.pdf)"],
+            "causes": [{"cause": "commercial_vehicle", "source": "police_report_Webb.pdf"}],
+            "evidence": [
+                {"type": "police_report", "source": "police_report_Webb.pdf",
+                 "detail": "officer assigns 30% fault to Webb for an unsafe lane change and 70% to the truck "
+                           "driver for following too closely"},
+                {"type": "witness_statement", "source": "witness_statement_Webb.pdf",
+                 "detail": "independent witness confirms the truck was following too closely"},
+                {"type": "telematics", "source": "dashcam_summary_Webb.pdf",
+                 "detail": "truck dash camera shows the lane change 1.2 seconds before impact, truck at 41 mph"},
+            ],
+            "first_payment": "2026-02-10",
+        },
+    },
+    "#2026-84410": {
+        "loss_year": 2026,
+        "loss_date": "2026-02-25",
+        "reported": "2026-02-26",
+        "peril": "single_vehicle",
+        "driver": "Tyler Brooks",
+        "policy": {
+            "effective": "2026-02-20", "expiration": "2027-02-20", "cancelled": None, "lapses": [],
+            "listed_drivers": ["Tyler Brooks"], "excluded_drivers": [], "permissive": {},
+            "source": "claim record",
+        },
+        "subrogation": {
+            "third_party": None,
+            "causes": [],
+            "evidence": [],
+            "first_payment": None,
+            "note": "single-vehicle loss: no responsible third party is on file",
+        },
     },
 }
 
@@ -893,6 +1011,9 @@ class AgenticRAGRouter:
         if audit_type == "subrogation":
             return self._subrogation_answer(claim, evidence, logs)
 
+        if audit_type == "coverage":
+            return self._coverage_answer(claim, evidence, logs)
+
         if audit_type == "labor":
             out += [f"### ⚡ Labor Rate Audit: {name} ({cid})",
                     f"**Result: {'OVER CAP' if labor['status'] == 'over_cap' else 'WITHIN CAP'}** "
@@ -1034,6 +1155,11 @@ class AgenticRAGRouter:
         ("total_loss", re.compile(r"\btotal[- ]loss(?:es)?\b|\btotall?ed\b")),
         ("supplement", re.compile(r"\bsupplements?\b")),
         ("subrogation", re.compile(r"\bsubrogat\w*|\brecover(?:y|ies)? from\b")),
+        # Explicit coverage phrasing only: other buttons' queries mention "coverage" in passing
+        # (OEM rider, settlement letter) and must keep their own route.
+        ("coverage", re.compile(r"\bverify(?:ing)? coverage\b|\bcoverage (?:check|verification)\b"
+                                r"|\b(?:is|was|are|were) (?:\w+ ){0,6}covered\b|\bin force\b"
+                                r"|\bexcluded driver\b|\bpermissive\b")),
         ("total_loss", re.compile(r"\bacv\b|\bsalvage\b")),
         ("labor", re.compile(r"\blabou?rs?\b|\brates?\b|\bcaps?\b|\bcapped\b")),
         ("oem", re.compile(r"\boems?\b|\baftermarket\b|\blkq\b")),
@@ -1058,6 +1184,27 @@ class AgenticRAGRouter:
         "refer_after_evidence": "Refer after evidence: complete the liability file first",
         "no_indicator": "No subrogation indicator on file",
     }
+
+    COVERAGE_VERDICTS = {
+        "verified": "Coverage verified for this loss",
+        "coverage_question": "Coverage question for the adjuster",
+        "incomplete": "Incomplete: more information is needed before coverage can be verified",
+    }
+
+    def _coverage_answer(self, claim: Dict[str, Any], evidence: Dict[str, Any], logs: List[str]) -> List[str]:
+        """Coverage verification: policy period, driver, peril/coverage part and notice, from claims_tools."""
+        name, cid = claim["insured"], claim["id"]
+        result = ct.coverage_check(loss_date=evidence.get("loss_date"), reported=evidence.get("reported"),
+                                   peril=evidence.get("peril"), plan=claim["plan"], policy=evidence.get("policy", {}),
+                                   driver=evidence.get("driver"))
+        logs.append(f"🧮 [Tool] coverage_check: {result['status']} ({result['coverage_part']})")
+        out = [f"### 🛡️ Coverage Verification: {name} ({cid})",
+               f"**{self.COVERAGE_VERDICTS[result['status']]}**", "",
+               "| Check | Result | Detail |", "| --- | --- | --- |"]
+        for row in result["checks"]:
+            out.append(f"| {row['check'].title()} | {row['result'].upper()} | {row['detail']} |")
+        out += ["", "*Advisory coverage check for the adjuster; not a coverage decision.*"]
+        return out + ct.render_inputs([result])
 
     @staticmethod
     def _policy_deductible(claim: Dict[str, Any]):
@@ -1206,7 +1353,7 @@ class AgenticRAGRouter:
         elif claim_id == "#2026-30291": # David Chen
             if audit_type == "fraud":
                 logs.append("⚙️ [Tool Exec] policy_search: Found SOP_Claims_Fraud_Red_Flags.pdf")
-                logs.append("⚙️ [Tool Exec] dossier_search: Found custom_equipment_receipts_Chen.xlsx and recovery photos")
+                logs.append("⚙️ [Tool Exec] dossier_search: Found inspection_photos_Chen.pdf")
                 logs.append("🔍 [Reflection] Checking oxidation on passenger side key scratches: Rust present (pre-existing damage).")
                 answer_parts.extend([
                     "### 🔍 SIU Fraud Red Flags Audit: David Chen (#2026-30291)",
@@ -1214,7 +1361,7 @@ class AgenticRAGRouter:
                     "",
                     "1. **Wear & Tear Investigation**:",
                     "   * The estimate lists **$600.00** to repair key scratches on the passenger side panel.",
-                    "   * The investigator notes (*custom_equipment_receipts_Chen.xlsx*) and photos show the key scratches have extensive deep rust oxidation.",
+                    "   * The inspection photo log (*inspection_photos_Chen.pdf*) shows the key scratches have rust oxidation in the scratch channels, consistent with damage older than the break-in.",
                     "   * Under *SOP_Claims_Fraud_Red_Flags.pdf*, oxidized rust proves the damage is pre-existing (at least 6 months old) and did not occur during the recent theft. Key scratch repair is **Denied**.",
                     "2. **Theft Recovery Check**:",
                     "   * Police report confirms vehicle recovery with no key scratching noted on recovery scene inventory.",

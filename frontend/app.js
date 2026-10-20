@@ -185,6 +185,7 @@ const claimPolicyDeductible = document.getElementById('claim-policy-deductible')
 const claimPolicyEndorsements = document.getElementById('claim-policy-endorsements');
 const claimEstimateBody = document.getElementById('claim-estimate-body');
 
+const btnAuditCoverage = document.getElementById('btn-audit-coverage');
 const btnAuditLabor = document.getElementById('btn-audit-labor');
 const btnAuditOEM = document.getElementById('btn-audit-oem');
 const btnAuditFraud = document.getElementById('btn-audit-fraud');
@@ -1164,6 +1165,7 @@ function setupClaimsCases() {
     loadCaseFolder(activeCase);
 
     // Setup Audit Button Click Listeners
+    btnAuditCoverage.addEventListener('click', () => triggerAudit('coverage'));
     btnAuditLabor.addEventListener('click', () => triggerAudit('labor'));
     btnAuditOEM.addEventListener('click', () => triggerAudit('oem'));
     btnAuditFraud.addEventListener('click', () => triggerAudit('fraud'));
@@ -1252,6 +1254,9 @@ async function triggerAudit(type) {
     let queryText = "";
     
     switch (type) {
+        case 'coverage':
+            queryText = `Verify coverage for claim ${activeCase.id} (${activeCase.vehicle}, ${activeCase.facility}): policy period on the loss date, the driver, the peril and coverage part, and notice of loss, citing the Coverage Verification SOP.`;
+            break;
         case 'labor':
             queryText = `For claim ${activeCase.id} involving vehicle ${activeCase.vehicle} being repaired at ${activeCase.facility}: Check the regional labor rate schedules for 2026. Compare the standard capped rates for Sheet Metal, Frame, Painting, and Mechanical work against the shop charges in our estimate. Highlight any repair lines that exceed the allowable cap limits.`;
             break;
