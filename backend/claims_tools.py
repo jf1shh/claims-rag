@@ -853,8 +853,8 @@ def _driver_check(driver: Optional[str], policy: Dict[str, Any]) -> Dict[str, An
                 "source": fact_source, "section": None}
     if driver in (policy.get("excluded_drivers") or ()):
         return {"check": "driver", "result": "issue",
-                "detail": f"{driver} is named on an Excluded Driver Endorsement and is not covered operating "
-                           "this vehicle", "source": COVERAGE_SOP, "section": "2. Drivers"}
+                "detail": f"{driver} is named on an Excluded Driver Endorsement: coverage question for "
+                           "the adjuster", "source": COVERAGE_SOP, "section": "2. Drivers"}
     if driver in (policy.get("listed_drivers") or ()):
         return {"check": "driver", "result": "pass", "detail": f"{driver} is listed on the declarations page",
                 "source": COVERAGE_SOP, "section": "2. Drivers"}
@@ -1013,12 +1013,18 @@ def _paper_accident_check(loss_time: Optional[str], scene: Dict[str, Any]) -> Di
 def _pre_existing_damage_check(estimate: List[Dict[str, Any]], findings: List[Dict[str, Any]]) -> Dict[str, Any]:
     hits = [(row["op"], DOSSIER) for row in estimate if PRE_EXISTING_DAMAGE_PATTERN.search(row.get("op", ""))]
     dossier_findings = [f for f in findings if f.get("indicator") == "pre_existing_damage"]
-    if hits or dossier_findings:
-        details = [f"estimate line '{op}' describes rust, corrosion or an old dent" for op, _ in hits]
-        details += [f["detail"] for f in dossier_findings]
-        sources = [src for _, src in hits] + [f["source"] for f in dossier_findings]
+    if dossier_findings:
+        details = [f["detail"] for f in dossier_findings]
+        details += [f"estimate line '{op}' describes rust, corrosion or an old dent" for op, _ in hits]
+        sources = [f["source"] for f in dossier_findings] + [src for _, src in hits]
         return {"indicator": "pre_existing_damage", "result": "present", "detail": "; ".join(details),
                 "source": "; ".join(dict.fromkeys(sources)), "section": "2. Red Flags Checklist"}
+    if hits:
+        details = [f"estimate line '{op}' describes rust, corrosion or an old dent" for op, _ in hits]
+        return {"indicator": "pre_existing_damage", "result": "review", "detail": "; ".join(details) +
+                "; the SOP's condition is damage that does not match the direction of force, which this "
+                "cannot compute", "source": "; ".join(dict.fromkeys(src for _, src in hits)),
+                "section": "2. Red Flags Checklist"}
     return {"indicator": "pre_existing_damage", "result": "absent",
             "detail": "no estimate line or dossier finding of rust, corrosion, an old dent, or damage "
                        "predating the loss", "source": FRAUD_SOP, "section": "2. Red Flags Checklist"}
@@ -1031,19 +1037,26 @@ def _duplicate_invoices_check(photos: Optional[List[Dict[str, Any]]],
     if not photos or not other_claims:
         return {"indicator": "duplicate_invoices", "result": "missing",
                 "detail": "not checkable: no photo metadata on file", "source": DOSSIER, "section": None}
+    partial_match = False
     for other in other_claims:
         for other_photo in other.get("photos") or []:
             for photo in photos:
                 same_angle = photo.get("angle") and photo.get("angle") == other_photo.get("angle")
                 same_date = photo.get("date") and photo.get("date") == other_photo.get("date")
-                if same_angle or same_date:
+                if same_angle and same_date:
                     return {"indicator": "duplicate_invoices", "result": "present",
-                            "detail": f"photo angle or date on this claim matches "
-                                       f"{other.get('claim_id', 'another claim')}",
-                            "source": other_photo.get("source", DOSSIER), "section": None}
+                            "detail": "a photo on this claim matches a photo on another claim on file; "
+                                       "SIU can see which", "source": DOSSIER, "section": None,
+                            "_internal": {"matched_claim_id": other.get("claim_id")}}
+                if same_angle or same_date:
+                    partial_match = True
+    if partial_match:
+        return {"indicator": "duplicate_invoices", "result": "review",
+                "detail": "a photo angle or treatment date on this claim partially matches another claim "
+                           "on file, but not both; not a confirmed SOP match", "source": DOSSIER, "section": None}
     return {"indicator": "duplicate_invoices", "result": "absent",
-            "detail": f"no identical photo angle or treatment date found against {len(other_claims)} other "
-                       "claim(s) on file", "source": FRAUD_SOP, "section": "2. Red Flags Checklist"}
+            "detail": "no identical photo angle or treatment date found against other claims on file",
+            "source": FRAUD_SOP, "section": "2. Red Flags Checklist"}
 
 
 def siu_checklist(*, claim_id: str, reported: Optional[str], loss_date: str, loss_time: Optional[str],
@@ -1065,8 +1078,11 @@ def siu_checklist(*, claim_id: str, reported: Optional[str], loss_date: str, los
     ]
     present = [i for i in indicators if i["result"] == "present"]
     missing = [i for i in indicators if i["result"] == "missing"]
+    review = [i for i in indicators if i["result"] == "review"]
     if present:
         status = "refer_to_siu"
+    elif review:
+        status = "review"
     elif missing:
         status = "incomplete"
     else:
@@ -1101,6 +1117,8 @@ def siu_checklist(*, claim_id: str, reported: Optional[str], loss_date: str, los
                            "3. SIU Referral Procedure"))
         inputs.append(cite("SIU referral deadline", f"{SIU_REFERRAL_BUSINESS_DAYS} business days of detection",
                            FRAUD_SOP, "1. The Importance of Fraud Detection"))
+    elif status == "review":
+        message = "Indicators to review; no SOP red flag confirmed."
     elif status == "incomplete":
         message = "No indicator is present, but some could not be checked on the file as it stands."
     else:

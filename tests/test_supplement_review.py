@@ -159,10 +159,16 @@ class TestSimulatedSupplementAnswer:
     def test_supplement_query_routes_to_the_tool(self):
         answer, logs = run("Review the supplement against the labor rate caps", "#2026-99382")
         assert "### 🧾 Supplement Review: Matthew Sterling (#2026-99382)" in answer
-        assert "REINSPECTION REQUIRED" in answer
+        assert "Reinspection recommended before the adjuster's decision" in answer
+        assert "Original estimate at SOP caps" in answer
         assert "SOP_Supplement_Review.pdf, 2. Reinspection Threshold" in answer
         assert "not a coverage decision" in answer
         assert any("[Tool] supplement_review: reinspection_required" in line for line in logs)
+
+    def test_supplement_verdict_wording_is_advisory_not_a_decision(self):
+        assert AgenticRAGRouter.SUPPLEMENT_VERDICTS["approve_on_photos"] == "Supported on photos"
+        assert (AgenticRAGRouter.SUPPLEMENT_VERDICTS["reinspection_required"]
+                == "Reinspection recommended before the adjuster's decision")
 
     def test_hold_answer_names_missing_photos(self):
         answer, _ = run("Supplement review please", "#2026-10492")

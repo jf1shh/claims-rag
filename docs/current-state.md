@@ -103,7 +103,17 @@ As of September 6, the authoritative state is [portfolio-hardening.md](docs/port
 > - `/api/chat` and the stream behave the same. A tool error drops the section with a WARNING and never fails the request.
 > - Verified: `crag check` 988 passed, gate 0 blocking; Postgres suite 1004 passed.
 >
-> **Next:** re-seed plus golden queries for subrogation, coverage and SIU, then a fresh security review. See `HANDOFF.md`.
+> PR #24 merged as f433740.
+
+> **2026-10-20 security review closed** (Opus review CR-SEC-1020 of `3b98400..f433740`: 0 critical/high, 2 medium, 6 low; branch `fix/security-hardening`).
+> - SIU duplicate-photo check no longer names another claim or its source file (the cross-claim leak). A duplicate needs the same angle and date; a partial match or estimate-line rust alone is `review`, a new non-referral status.
+> - The live path attaches a computed section only for the explicit audit-button phrasings (`_detect_live_audit_type`); "decision" no longer routes to the letter. Remaining decision-style wording is advisory ("All coverage checks pass (advisory)", "Supported on photos").
+> - Figure check has trust tiers: only the computed section and claim dossier verify a figure; a figure found only in retrieved documents is `source_only` with its own notice line. Money keeps its sign, scales k/m/million, accepts USD/"dollars"; malformed amounts stay unverified.
+> - `/api/chat/stream` has a hard wall-clock cap (`MAX_STREAM_SECONDS`, default 300) so a stalled reader cannot hold a chat slot. DOCX/XLSX media has its own budget (`max_bytes*4`), classified by path and extension.
+> - Verified: `crag check` 1026 passed, gate 0 blocking; Postgres suite 1042 passed.
+> - **Open (owner decision):** the 2026-10-19 #5 fix is partial. "A document named X already exists outside this folder" still confirms a filename exists in another scope, because `documents.filename` is unique across all scopes. The real fix is per-scope keys `(claim_id, filename)`, a schema change.
+>
+> **Next:** re-seed plus golden queries for subrogation, coverage and SIU. See `HANDOFF.md`.
 
 > **License changed 2026-10-17**: MIT → AGPL-3.0 (owner decision; `LICENSE`, README badge and a new License section). Code copied before the change stays under MIT.
 
