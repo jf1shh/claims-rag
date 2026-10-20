@@ -249,14 +249,38 @@ def test_given_keyword_leg_fails_when_searching_then_vector_leg_still_used(monke
     assert any("RuntimeError" in message for message in caplog.messages)
 
 
-def test_given_scope_mismatch_when_adding_document_then_generic_message_and_warning_logged(monkeypatch, caplog):
+def test_given_same_filename_in_another_scope_when_adding_document_then_only_own_scope_deleted(monkeypatch, tmp_path):
+    """A document's identity is (claim_id, filename): adding "report.pdf" to the
+    global scope while claim-b already holds a same-named file must not touch
+    claim-b's row -- only the caller's own (claim_id, filename) row is deleted
+    before the fresh insert."""
     from backend.postgres_store import PostgresVectorStore
 
-    class _ConflictConn:
+    class _FakeEmbeddingEngine:
+        def embed_chunks(self, chunks):
+            return [[0.0] * 384 for _ in chunks]
+
+    class _ScopedConn:
+        def __init__(self):
+            self.delete_params = []
+
         def execute(self, sql, params=None):
-            if "SELECT id, claim_id FROM documents" in sql:
-                return _FakeCursor([(1, "claim-b")])
+            stripped = sql.strip()
+            if stripped.startswith("DELETE FROM documents"):
+                self.delete_params.append(params)
+                return _FakeCursor([])
+            if stripped.startswith("INSERT INTO documents"):
+                return _FakeCursor([(42,)])
+            if stripped.startswith("INSERT INTO parent_chunks"):
+                return _FakeCursor([(1,)])
+            if stripped.startswith("INSERT INTO child_chunks"):
+                return _FakeCursor([])
+            if stripped.startswith("UPDATE documents SET storage_key"):
+                return _FakeCursor([])
             raise AssertionError(f"unexpected query: {sql}")
+
+        def commit(self):
+            pass
 
         def rollback(self):
             pass
@@ -267,20 +291,19 @@ def test_given_scope_mismatch_when_adding_document_then_generic_message_and_warn
     store = PostgresVectorStore.__new__(PostgresVectorStore)
     store.dsn = "postgresql://fake"
     store.tenant_id = "tenant-a"
-    store.storage_dir = "/tmp/unused"
+    store.storage_dir = str(tmp_path)
     store.embedding_dimensions = 384
     store.blob_store = None
     store.db_path = "postgresql://fake"
-    monkeypatch.setattr(store, "_connect", lambda: _ConflictConn())
+    conn = _ScopedConn()
+    monkeypatch.setattr(store, "_connect", lambda: conn)
 
-    with caplog.at_level(logging.WARNING):
-        with pytest.raises(ValueError) as excinfo:
-            store.add_document("report.pdf", "pdf", 10, "text", embedding_engine=None, claim_id=None)
+    doc_id, _ = store.add_document("report.pdf", "pdf", 10, "text", _FakeEmbeddingEngine(), claim_id=None)
 
-    message = str(excinfo.value)
-    assert "already exists outside this folder" in message
-    assert "claim-b" not in message
-    assert any("Scope-mismatched overwrite rejected" in record.getMessage() for record in caplog.records)
+    assert doc_id == 42
+    # Exactly one scoped delete, matching this call's own (tenant, filename,
+    # claim_id) scope -- never a delete reaching into claim-b's row.
+    assert conn.delete_params == [("tenant-a", "report.pdf", None)]
 
 
 # --- Finding 7: JWKS fetch failure must not lock users out ------------------

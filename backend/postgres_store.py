@@ -128,42 +128,18 @@ class PostgresVectorStore:
 
         conn = self._connect()
         try:
-            # Scope guard (parity with SQLite). Because the schema now allows the
-            # same filename in different scopes, an overwrite must only clobber
-            # the SAME scope -- never a sibling claim's or the global set's copy.
-            existing = conn.execute(
+            # Overwrite only the existing row in the SAME scope -- the schema's
+            # (tenant_id, claim_id, filename) NULLS NOT DISTINCT unique index
+            # already makes a cross-scope collision impossible, so this is a
+            # plain scoped delete-then-insert, not a guard.
+            conn.execute(
                 """
-                SELECT id, claim_id FROM documents
+                DELETE FROM documents
                 WHERE tenant_id = %s AND filename = %s
+                  AND claim_id IS NOT DISTINCT FROM %s
                 """,
-                (self.tenant_id, filename),
-            ).fetchall()
-            if existing:
-                existing_claim = existing[0][1]
-                if not (existing_claim is None and claim_id is None) and existing_claim != claim_id:
-                    existing_scope = f"claim {existing_claim}" if existing_claim else "global guidelines"
-                    new_scope = f"claim {claim_id}" if claim_id else "global guidelines"
-                    # The client-facing message must not name the other
-                    # scope's claim ID -- an adjuster restricted to claim A
-                    # would otherwise learn claim B's ID just by uploading a
-                    # same-named file. The detail is still logged for operators.
-                    logger.warning(
-                        "Scope-mismatched overwrite rejected for %r: existing=%s new=%s",
-                        filename, existing_scope, new_scope,
-                    )
-                    raise ValueError(
-                        f"A document named '{filename}' already exists outside this folder. "
-                        "Rename the file and upload it again."
-                    )
-                # Same scope -> overwrite: delete its rows (cascade removes chunks).
-                conn.execute(
-                    """
-                    DELETE FROM documents
-                    WHERE tenant_id = %s AND filename = %s
-                      AND claim_id IS NOT DISTINCT FROM %s
-                    """,
-                    (self.tenant_id, filename, claim_id),
-                )
+                (self.tenant_id, filename, claim_id),
+            )
 
             row = conn.execute(
                 """
@@ -220,19 +196,24 @@ class PostgresVectorStore:
 
         return doc_id, len(parent_chunks)
 
-    def delete_document(self, filename) -> bool:
-        """Removes a document and (cascade) its chunks/embeddings/FTS rows by
-        filename within this tenant. False if no such document exists. The
-        physical file is removed only after the delete commits."""
+    def delete_document(self, filename, claim_id=None) -> bool:
+        """Removes the document in the given scope (claim_id, filename) within
+        this tenant, and (cascade) its chunks/embeddings/FTS rows. False if no
+        such document exists. The physical file is removed only after the
+        delete commits."""
         from backend.rag_engine import safe_filename
 
         filename = safe_filename(filename)
-        source_key = self.get_blob_key(filename)
+        source_key = self.get_blob_key(filename, claim_id)
         conn = self._connect()
         try:
             cur = conn.execute(
-                "DELETE FROM documents WHERE tenant_id = %s AND filename = %s RETURNING id",
-                (self.tenant_id, filename),
+                """
+                DELETE FROM documents
+                WHERE tenant_id = %s AND filename = %s AND claim_id IS NOT DISTINCT FROM %s
+                RETURNING id
+                """,
+                (self.tenant_id, filename, claim_id),
             )
             deleted = cur.rowcount > 0
             conn.commit()
@@ -310,7 +291,7 @@ class PostgresVectorStore:
             for c, f, t, pid, did, version in rows
         ]
 
-    def get_document_content(self, filename) -> str:
+    def get_document_content(self, filename, claim_id=None) -> str:
         """Reconstructs a document's full text by joining its parent chunks in order."""
         conn = self._connect()
         try:
@@ -319,27 +300,30 @@ class PostgresVectorStore:
                 SELECT p.content
                 FROM parent_chunks p
                 JOIN documents d ON p.document_id = d.id
-                WHERE d.tenant_id = %s AND d.filename = %s
+                WHERE d.tenant_id = %s AND d.filename = %s AND d.claim_id IS NOT DISTINCT FROM %s
                 ORDER BY p.chunk_index ASC
                 """,
-                (self.tenant_id, filename),
+                (self.tenant_id, filename, claim_id),
             ).fetchall()
         finally:
             conn.close()
         return "\n\n".join(r[0] for r in rows)
 
-    def get_document_metadata(self, filename):
+    def get_document_metadata(self, filename, claim_id=None):
         from backend.rag_engine import safe_filename
         conn = self._connect()
         try:
-            row = conn.execute("SELECT id, claim_id, filename, storage_key, document_version FROM documents WHERE tenant_id = %s AND filename = %s", (self.tenant_id, safe_filename(filename))).fetchone()
+            row = conn.execute(
+                "SELECT id, claim_id, filename, storage_key, document_version FROM documents WHERE tenant_id = %s AND filename = %s AND claim_id IS NOT DISTINCT FROM %s",
+                (self.tenant_id, safe_filename(filename), claim_id),
+            ).fetchone()
             return {"document_id": str(row[0]), "claim_id": row[1], "filename": row[2], "storage_key": row[3], "document_version": row[4] or "legacy-unversioned"} if row else None
         finally:
             conn.close()
 
-    def get_blob_key(self, filename):
+    def get_blob_key(self, filename, claim_id=None):
         from backend.rag_engine import _blob_key
-        metadata = self.get_document_metadata(filename)
+        metadata = self.get_document_metadata(filename, claim_id)
         if metadata is None:
             return None
         return metadata["storage_key"] or _blob_key(metadata["claim_id"], filename)

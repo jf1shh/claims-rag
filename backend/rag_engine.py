@@ -257,8 +257,8 @@ class VectorStore(ABC):
         """Indexes a document (chunk + embed + physical copy) and returns (doc_id, parent_chunk_count)."""
 
     @abstractmethod
-    def delete_document(self, filename) -> bool:
-        """Removes a document and its chunks/embeddings/FTS rows; False if absent."""
+    def delete_document(self, filename, claim_id=None) -> bool:
+        """Removes a document scoped to (claim_id, filename); False if absent."""
 
     @abstractmethod
     def get_all_documents(self):
@@ -273,7 +273,7 @@ class VectorStore(ABC):
         """Every parent chunk of a claim's own documents, unranked (score=1.0 sentinel)."""
 
     @abstractmethod
-    def get_document_content(self, filename) -> str:
+    def get_document_content(self, filename, claim_id=None) -> str:
         """Reconstructs a document's full text by joining its parent chunks in order."""
 
     @abstractmethod
@@ -396,11 +396,14 @@ class SQLiteVectorStore(VectorStore):
         conn = self._connect()
         cursor = conn.cursor()
 
-        # Documents table (with claim_id tag)
+        # Documents table (with claim_id tag). No column-level UNIQUE on
+        # filename -- identity is (claim_id, filename), enforced below by
+        # ix_documents_scope so the same filename can exist once per scope
+        # (global = claim_id IS NULL).
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS documents (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                filename TEXT UNIQUE,
+                filename TEXT,
                 file_type TEXT,
                 file_size INTEGER,
                 uploaded_at TEXT,
@@ -412,6 +415,49 @@ class SQLiteVectorStore(VectorStore):
         for column in ("storage_key", "document_version"):
             if column not in columns:
                 cursor.execute(f"ALTER TABLE documents ADD COLUMN {column} TEXT")
+
+        # Legacy DBs were created with `filename TEXT UNIQUE` (global filename
+        # identity). sqlite_master still carries that literal DDL for them --
+        # ALTER TABLE ADD COLUMN above doesn't rewrite it -- so detect it and
+        # rebuild the table without the column-level UNIQUE, preserving ids
+        # (parent_chunks.document_id references them) and every other column.
+        # Idempotent: a migrated DB's DDL no longer contains the marker.
+        table_sql = cursor.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'documents'"
+        ).fetchone()
+        if table_sql and table_sql[0] and "filename TEXT UNIQUE" in table_sql[0]:
+            # Build the replacement under a fresh name, drop the old table,
+            # then rename the replacement into place -- never rename the live
+            # `documents` table away first. SQLite's ALTER TABLE RENAME
+            # rewrites *other* tables' FK references to the renamed table by
+            # default, so renaming `documents` to `documents_old` first would
+            # silently repoint parent_chunks.document_id's FK at
+            # `documents_old`, breaking it the moment that table is dropped.
+            cursor.execute("PRAGMA foreign_keys = OFF")
+            cursor.execute("""
+                CREATE TABLE documents_new (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    filename TEXT,
+                    file_type TEXT,
+                    file_size INTEGER,
+                    uploaded_at TEXT,
+                    claim_id TEXT,
+                    storage_key TEXT,
+                    document_version TEXT
+                )
+            """)
+            cursor.execute("""
+                INSERT INTO documents_new (id, filename, file_type, file_size, uploaded_at, claim_id, storage_key, document_version)
+                SELECT id, filename, file_type, file_size, uploaded_at, claim_id, storage_key, document_version FROM documents
+            """)
+            cursor.execute("DROP TABLE documents")
+            cursor.execute("ALTER TABLE documents_new RENAME TO documents")
+            cursor.execute("PRAGMA foreign_keys = ON")
+
+        cursor.execute("""
+            CREATE UNIQUE INDEX IF NOT EXISTS ix_documents_scope
+            ON documents (filename, COALESCE(claim_id, ''))
+        """)
 
         # Parent chunks table (larger text blocks for context)
         cursor.execute("""
@@ -480,35 +526,13 @@ class SQLiteVectorStore(VectorStore):
         cursor = conn.cursor()
 
         try:
-            # Delete if exists (to overwrite). Scope guard: the documents table
-            # keys on filename alone, so an overwrite must only be allowed when
-            # the existing row belongs to the SAME scope (same claim, or both
-            # global). Otherwise uploading "report.pdf" to claim B would
-            # silently delete claim A's "report.pdf" -- cross-claim data loss
-            # (verified empirically: the row, its chunks, and the physical
-            # file are all replaced). Must run against current DB state inside
-            # this transaction, i.e. after embedding above.
-            cursor.execute("SELECT id, claim_id FROM documents WHERE filename = ?", (filename,))
+            # Overwrite only the existing row in the SAME scope (identity is
+            # (claim_id, filename); a NULL claim_id is the global scope). Must
+            # run against current DB state inside this transaction, i.e. after
+            # embedding above.
+            cursor.execute("SELECT id FROM documents WHERE filename = ? AND claim_id IS ?", (filename, claim_id))
             existing = cursor.fetchone()
             if existing:
-                existing_claim = existing[1]
-                if existing_claim != claim_id:
-                    existing_scope = f"claim {existing_claim}" if existing_claim else "global guidelines"
-                    new_scope = f"claim {claim_id}" if claim_id else "global guidelines"
-                    # The client-facing message must not name the other
-                    # scope's claim ID -- an adjuster restricted to claim A
-                    # would otherwise learn claim B's ID just by uploading a
-                    # same-named file (verified: this string reaches job
-                    # error_message / the 400 detail). The detail is still
-                    # logged for operators.
-                    logger.warning(
-                        "Scope-mismatched overwrite rejected for %r: existing=%s new=%s",
-                        filename, existing_scope, new_scope,
-                    )
-                    raise ValueError(
-                        f"A document named '{filename}' already exists outside this folder. "
-                        "Rename the file and upload it again."
-                    )
                 doc_id = existing[0]
                 # Delete FTS index
                 cursor.execute("DELETE FROM parent_chunks_fts WHERE rowid IN (SELECT id FROM parent_chunks WHERE document_id = ?)", (doc_id,))
@@ -555,8 +579,9 @@ class SQLiteVectorStore(VectorStore):
 
         return doc_id, len(parent_chunks)
 
-    def delete_document(self, filename):
-        """Deletes a document and cascade deletes its chunks and FTS index.
+    def delete_document(self, filename, claim_id=None):
+        """Deletes the document in the given scope (claim_id, filename) and
+        cascade deletes its chunks and FTS index.
 
         The physical file is removed only after the DB delete has durably
         committed -- the mirror image of the add_document ordering fix (see
@@ -565,15 +590,15 @@ class SQLiteVectorStore(VectorStore):
         searchable.
         """
         filename = safe_filename(filename)
-        source_key = self.get_blob_key(filename)
+        source_key = self.get_blob_key(filename, claim_id)
         conn = self._connect()
         cursor = conn.cursor()
         try:
-            cursor.execute("SELECT id, claim_id FROM documents WHERE filename = ?", (filename,))
+            cursor.execute("SELECT id, storage_key FROM documents WHERE filename = ? AND claim_id IS ?", (filename, claim_id))
             row = cursor.fetchone()
             if not row:
                 return False
-            doc_id = row[0]
+            doc_id, storage_key = row
             # Delete FTS index first
             cursor.execute("""
                 DELETE FROM parent_chunks_fts
@@ -582,6 +607,20 @@ class SQLiteVectorStore(VectorStore):
 
             # Delete document (cascade will clean up parent_chunks and child_chunks)
             cursor.execute("DELETE FROM documents WHERE id = ?", (doc_id,))
+
+            # Legacy (pre-scope) rows have no storage_key and share a plain
+            # storage_dir/<filename> physical file by name -- before per-scope
+            # identity, filename was globally unique so at most one row ever
+            # owned it. New uploads always get a scoped (versioned)
+            # storage_key, so only another surviving legacy row can still
+            # reference that same plain file.
+            keep_legacy_file = False
+            if storage_key is None:
+                cursor.execute(
+                    "SELECT 1 FROM documents WHERE filename = ? AND storage_key IS NULL LIMIT 1",
+                    (filename,),
+                )
+                keep_legacy_file = cursor.fetchone() is not None
 
             conn.commit()
             self._invalidate_vector_cache()
@@ -598,7 +637,7 @@ class SQLiteVectorStore(VectorStore):
             from backend.source_storage import source_store
             if self.blob_store is not None or source_key.startswith("versions/"):
                 source_store(self).delete(source_key)
-            else:
+            elif not keep_legacy_file:
                 source_store(self).delete(filename)
         return True
 
@@ -668,7 +707,7 @@ class SQLiteVectorStore(VectorStore):
             for content, filename, file_type, pid, did, version in rows
         ]
 
-    def get_document_content(self, filename):
+    def get_document_content(self, filename, claim_id=None):
         """Reconstructs a document's full text by joining its parent chunks in
         order. Backend-neutral replacement for app.py's old inline sqlite read
         (which could not work on a Postgres backend)."""
@@ -678,24 +717,27 @@ class SQLiteVectorStore(VectorStore):
             SELECT p.content
             FROM parent_chunks p
             JOIN documents d ON p.document_id = d.id
-            WHERE d.filename = ?
+            WHERE d.filename = ? AND d.claim_id IS ?
             ORDER BY p.chunk_index ASC
-        """, (filename,))
+        """, (filename, claim_id))
         rows = cursor.fetchall()
         conn.close()
         return "\n\n".join(r[0] for r in rows)
 
-    def get_document_metadata(self, filename):
+    def get_document_metadata(self, filename, claim_id=None):
         conn = self._connect()
         try:
-            row = conn.execute("SELECT id, claim_id, filename, storage_key, document_version FROM documents WHERE filename = ?", (safe_filename(filename),)).fetchone()
+            row = conn.execute(
+                "SELECT id, claim_id, filename, storage_key, document_version FROM documents WHERE filename = ? AND claim_id IS ?",
+                (safe_filename(filename), claim_id),
+            ).fetchone()
             return {"document_id": str(row[0]), "claim_id": row[1], "filename": row[2], "storage_key": row[3], "document_version": row[4] or "legacy-unversioned"} if row else None
         finally:
             conn.close()
 
-    def get_blob_key(self, filename):
+    def get_blob_key(self, filename, claim_id=None):
         from backend.rag_engine import _blob_key
-        metadata = self.get_document_metadata(filename)
+        metadata = self.get_document_metadata(filename, claim_id)
         if metadata is None:
             return None
         return metadata["storage_key"] or _blob_key(metadata["claim_id"], filename)

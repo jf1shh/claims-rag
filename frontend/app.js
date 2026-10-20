@@ -924,14 +924,14 @@ function setupModal() {
 }
 
 let sourceReturnFocus = null;
-function showModal(filename, score, content, isImage = false, version = null) {
+function showModal(filename, score, content, isImage = false, version = null, claimId = null) {
     sourceReturnFocus = document.activeElement;
     modalFilename.innerText = filename;
-    
+
     if (typeof score === 'number') {
         modalScore.innerText = Number(score).toFixed(3);
         modalViewFullBtn.style.display = 'inline-block';
-        modalViewFullBtn.onclick = () => openDocumentViewer(filename, version);
+        modalViewFullBtn.onclick = () => openDocumentViewer(filename, version, claimId);
     } else {
         modalScore.innerText = score;
         modalViewFullBtn.style.display = 'none';
@@ -981,7 +981,7 @@ function renderSources(sources) {
         // Calls viewSource with real JS values, not values reconstructed from
         // an HTML/inline-JS string -- a malicious filename or document body
         // can't break out of any parsing context this way.
-        card.addEventListener('click', () => viewSource(src.filename, src.score, src.content, src.document_version));
+        card.addEventListener('click', () => viewSource(src.filename, src.score, src.content, src.document_version, src.claim_id));
 
         const fileSpan = document.createElement('span');
         fileSpan.className = 'source-file';
@@ -1007,8 +1007,8 @@ function renderSources(sources) {
 }
 
 // Make viewSource globally accessible for the onclick handlers
-window.viewSource = function(filename, score, content, version) {
-    showModal(filename, score, content, false, version);
+window.viewSource = function(filename, score, content, version, claimId) {
+    showModal(filename, score, content, false, version, claimId);
 };
 
 // 6. RAG Trace Logging
@@ -1411,8 +1411,8 @@ function renderClaimDocuments(docs) {
         const nameSpan = li.querySelector('.doc-name');
         nameSpan.textContent = doc.filename;
         nameSpan.title = doc.filename;
-        nameSpan.addEventListener('click', () => openDocumentViewer(doc.filename));
-        li.querySelector('.btn-delete').addEventListener('click', () => deleteClaimDocument(doc.filename));
+        nameSpan.addEventListener('click', () => openDocumentViewer(doc.filename, null, activeCase.id));
+        li.querySelector('.btn-delete').addEventListener('click', () => deleteClaimDocument(doc.filename, activeCase.id));
 
         claimDocsList.appendChild(li);
     });
@@ -1541,13 +1541,13 @@ async function pollIngestionJob(jobId, filename, claimId = null) {
 }
 
 // Make deleteClaimDocument globally accessible
-window.deleteClaimDocument = async function(filename) {
+window.deleteClaimDocument = async function(filename, claimId = activeCase?.id ?? null) {
     logSystemEvent(`Removing attachment: ${filename}`);
     try {
         const response = await apiFetch('/api/delete', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ filename })
+            body: JSON.stringify({ filename, claim_id: claimId })
         });
         
         if (!response.ok) throw new Error('Delete request failed');
@@ -1555,28 +1555,31 @@ window.deleteClaimDocument = async function(filename) {
         // Async mode: the deletion is a job -- poll it to completion.
         const result = await response.json();
         if (result.job_id && result.status && result.status !== 'deleted') {
-            await pollIngestionJob(result.job_id, filename, activeCase.id);
+            await pollIngestionJob(result.job_id, filename, claimId);
         }
-        
+
         logSystemEvent(`Removed attachment vector chunks for '${filename}'`, 'success');
-        await fetchClaimDocuments(activeCase.id);
+        await fetchClaimDocuments(claimId);
     } catch (error) {
         logSystemEvent(`Failed to remove attachment: ${error.message}`, 'error');
         alert(`Failed to delete document: ${error.message}`);
     }
 };
 
-async function openDocumentViewer(filename, version = null) {
-    const versionQuery = version ? `?version=${encodeURIComponent(version)}` : '';
+async function openDocumentViewer(filename, version = null, claimId = null) {
+    const params = new URLSearchParams();
+    if (version) params.set('version', version);
+    if (claimId) params.set('claim_id', claimId);
+    const query = params.toString() ? `?${params.toString()}` : '';
     const ext = filename.split('.').pop().toLowerCase();
-    
+
     // 1. If it's a PDF or Excel spreadsheet, open it physically in a new tab
     if (ext === 'pdf' || ext === 'xlsx' || ext === 'xls') {
         logSystemEvent(`Opening high-fidelity document in new tab: '${filename}'`);
         // Fetch the bytes with the auth header and open an object URL (a plain
         // window.open navigation cannot carry the Authorization header).
         try {
-            const blobUrl = await fetchBlobUrl(`/api/documents/download/${encodeURIComponent(filename)}${versionQuery}`);
+            const blobUrl = await fetchBlobUrl(`/api/documents/download/${encodeURIComponent(filename)}${query}`);
             window.open(blobUrl, '_blank');
         } catch (error) {
             logSystemEvent(`Failed to open document: ${error.message}`, 'error');
@@ -1584,25 +1587,25 @@ async function openDocumentViewer(filename, version = null) {
         }
         return;
     }
-    
+
     // 2. If it's an image, render it directly in the modal
     if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) {
         logSystemEvent(`Rendering photo in modal viewer: '${filename}'`);
         try {
-            const blobUrl = await fetchBlobUrl(`/api/documents/download/${encodeURIComponent(filename)}${versionQuery}`);
+            const blobUrl = await fetchBlobUrl(`/api/documents/download/${encodeURIComponent(filename)}${query}`);
             showModal(filename, 'N/A (Image View)', blobUrl, true);
         } catch (error) {
             logSystemEvent(`Failed to render photo: ${error.message}`, 'error');
         }
         return;
     }
-    
+
     // 3. Text or fallback content: fetch text from content API
     logSystemEvent(`Retrieving full text content for document: '${filename}'`);
     try {
-        const response = await apiFetch(`/api/documents/content/${encodeURIComponent(filename)}${versionQuery}`);
+        const response = await apiFetch(`/api/documents/content/${encodeURIComponent(filename)}${query}`);
         if (!response.ok) throw new Error('Failed to load document content');
-        
+
         const result = await response.json();
         showModal(filename, 'N/A (Full Document View)', result.content, false);
     } catch (error) {

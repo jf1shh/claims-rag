@@ -210,19 +210,24 @@ def test_given_malformed_message_when_processed_then_dead_lettered(harness):
     assert store.get_all_documents() == []
 
 
-def test_given_scope_conflict_when_message_processed_then_dead_lettered_and_other_scope_intact(harness):
+def test_given_scope_conflict_when_message_processed_then_indexed_and_other_scope_intact(harness):
     queue, blob, store = harness
-    # Claim-9 already owns report.txt; a global event for the same filename must
-    # not clobber it (per-scope overwrite guard surfaced as a permanent failure).
+    # Claim-9 already owns report.txt; identity is (claim_id, filename), so a
+    # global event for the same filename indexes a separate document and must
+    # not touch claim-9's copy.
     store.add_document("report.txt", "txt", 100, "claim nine report", _FakeEmbedder(), claim_id="claim-9")
     blob.put("global/report.txt", b"global report", "text/plain")
     queue.enqueue(_job_message("report.txt", "global/report.txt"))
 
-    assert _worker(harness).process_message(queue.dequeue()) == DEAD_LETTERED
+    assert _worker(harness).process_message(queue.dequeue()) == INDEXED
     claim_docs = store.get_claim_documents("claim-9")
     assert len(claim_docs) == 1
     assert claim_docs[0]["filename"] == "report.txt"
-    assert store.get_all_documents() == []
+    assert store.get_document_content("report.txt", "claim-9") == "claim nine report"
+    global_docs = store.get_all_documents()
+    assert len(global_docs) == 1
+    assert global_docs[0]["filename"] == "report.txt"
+    assert store.get_document_content("report.txt", None) == "global report"
 
 
 def test_given_same_message_replayed_then_one_consistent_document_version(harness):

@@ -65,6 +65,7 @@ class ChatRequest(BaseModel):
 
 class DeleteRequest(BaseModel):
     filename: str
+    claim_id: Optional[str] = None
 
 
 class SearchRequest(BaseModel):
@@ -204,13 +205,17 @@ def register_routes(app, runtime):
             raise HTTPException(status_code=403, detail=str(exc)) from None
 
 
-    def authorize_document(principal, filename):
-        metadata = runtime.vector_store.get_document_metadata(filename)
+    def authorize_document(principal, filename, claim_id=None):
+        """Looks up the document in the given scope. Claim access is checked
+        BEFORE the lookup when claim_id is given, so an unauthorized caller
+        gets 403 whether or not the file exists -- otherwise the lookup result
+        (404 vs proceed) would itself be an existence oracle."""
+        if claim_id is not None:
+            require_permission_403(principal, "claims:read")
+            require_claim_access_403(principal, claim_id)
+        metadata = runtime.vector_store.get_document_metadata(filename, claim_id)
         if metadata is None:
             raise HTTPException(status_code=404, detail="Document not found.")
-        if metadata.get("claim_id"):
-            require_permission_403(principal, "claims:read")
-            require_claim_access_403(principal, metadata["claim_id"])
         return metadata
 
     def project_result(request, result):
@@ -614,7 +619,7 @@ def register_routes(app, runtime):
 
 
     @app.get("/api/documents/content/{filename}", dependencies=[Depends(get_current_tenant)])
-    def get_document_content(filename: str, version: str | None = None, principal=Depends(get_current_tenant)):  # noqa: B008 - idiomatic FastAPI dependency injection
+    def get_document_content(filename: str, version: str | None = None, claim_id: str | None = None, principal=Depends(get_current_tenant)):  # noqa: B008 - idiomatic FastAPI dependency injection
         """Fetches the full text content of a document by joining all its parent chunks."""
         require_permission_403(principal, "documents:read")
         _rate_limit_429(principal)
@@ -625,17 +630,17 @@ def register_routes(app, runtime):
         # Backend-neutral: the store joins its own parent chunks. (This previously
         # opened an inline sqlite connection on vector_store.db_path, which could
         # not work on a Postgres backend.)
-        metadata = authorize_document(principal, filename)
+        metadata = authorize_document(principal, filename, claim_id)
         if version is not None and version != metadata["document_version"]:
             raise HTTPException(status_code=409, detail="This source has changed. Run the query again.")
-        full_text = runtime.vector_store.get_document_content(filename)
+        full_text = runtime.vector_store.get_document_content(filename, claim_id)
         if not full_text:
             raise HTTPException(status_code=404, detail="Document content not found.")
         return {"filename": filename, "content": full_text}
 
 
     @app.get("/api/documents/download/{filename}", dependencies=[Depends(get_current_tenant)])
-    def download_document(request: Request, filename: str, version: str | None = None, principal=Depends(get_current_tenant)):  # noqa: B008 - idiomatic FastAPI dependency injection
+    def download_document(request: Request, filename: str, version: str | None = None, claim_id: str | None = None, principal=Depends(get_current_tenant)):  # noqa: B008 - idiomatic FastAPI dependency injection
         """Serves the physical document. With an object store configured this is a
         redirect to a presigned URL; otherwise the file streams from the local
         storage directory. Both paths keep the source bytes behind the store's
@@ -646,9 +651,9 @@ def register_routes(app, runtime):
         except ValueError:
             raise HTTPException(status_code=400, detail="Invalid filename.") from None
         try:
-            metadata = authorize_document(principal, filename)
+            metadata = authorize_document(principal, filename, claim_id)
         except HTTPException as exc:
-            _audit(request, principal, "download", outcome="not_found" if exc.status_code == 404 else "denied", filename=filename)
+            _audit(request, principal, "download", outcome="not_found" if exc.status_code == 404 else "denied", filename=filename, claim_id=claim_id)
             raise
         if version is not None and version != metadata["document_version"]:
             raise HTTPException(status_code=409, detail="This source has changed. Run the query again to view current evidence.")
@@ -659,17 +664,17 @@ def register_routes(app, runtime):
             from backend.rag_engine import _blob_key
             key = metadata.get("storage_key") or _blob_key(metadata.get("claim_id"), filename)
             if key is None:
-                _audit(request, principal, "download", outcome="not_found", filename=filename)
+                _audit(request, principal, "download", outcome="not_found", filename=filename, claim_id=claim_id)
                 raise HTTPException(status_code=404, detail="File not found.")
             url = blob_store.create_download_url(key, 3600)
-            _audit(request, principal, "download", outcome="redirected", filename=filename)
+            _audit(request, principal, "download", outcome="redirected", filename=filename, claim_id=claim_id)
             return RedirectResponse(url)
         from backend.blob_store import LocalDocumentBlobStore
         file_path = LocalDocumentBlobStore(runtime.vector_store.storage_dir)._path(metadata.get("storage_key") or filename)
         if not os.path.exists(file_path):
-            _audit(request, principal, "download", outcome="not_found", filename=filename)
+            _audit(request, principal, "download", outcome="not_found", filename=filename, claim_id=claim_id)
             raise HTTPException(status_code=404, detail="File not found.")
-        _audit(request, principal, "download", outcome="served", filename=filename)
+        _audit(request, principal, "download", outcome="served", filename=filename, claim_id=claim_id)
         return FileResponse(file_path, filename=filename)
 
 
@@ -690,14 +695,14 @@ def register_routes(app, runtime):
             raise HTTPException(status_code=400, detail="Invalid filename.") from None
 
         try:
-            authorize_document(principal, filename)
+            authorize_document(principal, filename, req.claim_id)
         except HTTPException as exc:
-            _audit(request, principal, "delete", outcome="not_found" if exc.status_code == 404 else "denied", filename=filename)
+            _audit(request, principal, "delete", outcome="not_found" if exc.status_code == 404 else "denied", filename=filename, claim_id=req.claim_id)
             raise
 
         if runtime.settings.ingestion_mode == "async":
-            job = runtime.ingestion_service.submit_delete(tenant_id=runtime.settings.tenant_id, filename=filename)
-            _audit(request, principal, "delete", outcome="queued", filename=filename, job_id=job.job_id)
+            job = runtime.ingestion_service.submit_delete(tenant_id=runtime.settings.tenant_id, filename=filename, claim_id=req.claim_id)
+            _audit(request, principal, "delete", outcome="queued", filename=filename, claim_id=req.claim_id, job_id=job.job_id)
             return JSONResponse(
                 status_code=202,
                 content={
@@ -707,17 +712,18 @@ def register_routes(app, runtime):
                 },
             )
 
-        deleted = runtime.vector_store.delete_document(filename)
+        deleted = runtime.vector_store.delete_document(filename, req.claim_id)
         if not deleted:
-            _audit(request, principal, "delete", outcome="not_found", filename=filename)
+            _audit(request, principal, "delete", outcome="not_found", filename=filename, claim_id=req.claim_id)
             raise HTTPException(status_code=404, detail="Document not found.")
         job = runtime.ingestion_service.record_result(
             tenant_id=runtime.settings.tenant_id,
             filename=filename,
             content=b"",
+            claim_id=req.claim_id,
             status=IngestionStatus.deleted,
         )
-        _audit(request, principal, "delete", outcome="deleted", filename=filename, job_id=job.job_id)
+        _audit(request, principal, "delete", outcome="deleted", filename=filename, claim_id=req.claim_id, job_id=job.job_id)
         return {
             "message": f"Successfully deleted '{filename}'.",
             "job_id": job.job_id,

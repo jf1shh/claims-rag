@@ -373,25 +373,32 @@ class TestSQLiteVectorStore:
         with open(stored_path) as f:
             assert f.read() == "second version"
 
-    def test_cross_claim_same_filename_is_rejected_not_data_loss(self, store, embedder):
-        # Regression: the documents table keys on filename alone, so an
-        # overwrite used to silently REPLACE claim A's document when the same
-        # filename was uploaded to claim B (row, chunks, and physical file
-        # all deleted). Scope-mismatched overwrites must be refused outright.
+    def test_cross_claim_same_filename_coexists_independently(self, store, embedder):
+        # Identity is (claim_id, filename): the same filename in claim A,
+        # claim B and the global scope are three distinct documents, each
+        # with its own content and physical file.
         store.add_document("report.pdf", "pdf", 100, LABOR_TEXT, embedder, claim_id="#CLAIM-A")
-        with pytest.raises(ValueError, match="already exists"):
-            store.add_document("report.pdf", "pdf", 100, GLASS_TEXT, embedder, claim_id="#CLAIM-B")
-        # Claim A's document is untouched (DB + physical file).
+        store.add_document("report.pdf", "pdf", 100, GLASS_TEXT, embedder, claim_id="#CLAIM-B")
+        store.add_document("report.pdf", "pdf", 100, "global guidelines text", embedder)
+
         assert [d["filename"] for d in store.get_claim_documents("#CLAIM-A")] == ["report.pdf"]
-        stored_path = os.path.join(store.storage_dir, store.get_blob_key("report.pdf") or "report.pdf")
-        with open(stored_path) as f:
-            assert f.read() == LABOR_TEXT
-        # Global-vs-claim collisions are refused too (both directions).
-        with pytest.raises(ValueError):
-            store.add_document("report.pdf", "pdf", 100, LABOR_TEXT, embedder)
-        store.add_document("global.pdf", "pdf", 100, LABOR_TEXT, embedder)
-        with pytest.raises(ValueError):
-            store.add_document("global.pdf", "pdf", 100, GLASS_TEXT, embedder, claim_id="#CLAIM-A")
+        assert [d["filename"] for d in store.get_claim_documents("#CLAIM-B")] == ["report.pdf"]
+        assert [d["filename"] for d in store.get_all_documents()] == ["report.pdf"]
+
+        assert store.get_document_content("report.pdf", "#CLAIM-A") == LABOR_TEXT
+        assert store.get_document_content("report.pdf", "#CLAIM-B") == GLASS_TEXT
+        assert store.get_document_content("report.pdf", None) == "global guidelines text"
+
+        for claim_id, text in (("#CLAIM-A", LABOR_TEXT), ("#CLAIM-B", GLASS_TEXT), (None, "global guidelines text")):
+            stored_path = os.path.join(store.storage_dir, store.get_blob_key("report.pdf", claim_id))
+            with open(stored_path) as f:
+                assert f.read() == text
+
+        # Deleting claim A's copy leaves claim B's and the global copy intact.
+        assert store.delete_document("report.pdf", "#CLAIM-A") is True
+        assert store.get_claim_documents("#CLAIM-A") == []
+        assert store.get_document_content("report.pdf", "#CLAIM-B") == GLASS_TEXT
+        assert store.get_document_content("report.pdf", None) == "global guidelines text"
 
     def test_same_scope_overwrite_still_allowed(self, store, embedder):
         store.add_document("report.pdf", "pdf", 100, LABOR_TEXT, embedder, claim_id="#CLAIM-A")
@@ -399,7 +406,7 @@ class TestSQLiteVectorStore:
         # overwrite path used when a handler replaces a dossier file).
         store.add_document("report.pdf", "pdf", 100, GLASS_TEXT, embedder, claim_id="#CLAIM-A")
         assert [d["filename"] for d in store.get_claim_documents("#CLAIM-A")] == ["report.pdf"]
-        stored_path = os.path.join(store.storage_dir, store.get_blob_key("report.pdf") or "report.pdf")
+        stored_path = os.path.join(store.storage_dir, store.get_blob_key("report.pdf", "#CLAIM-A") or "report.pdf")
         with open(stored_path) as f:
             assert f.read() == GLASS_TEXT
 

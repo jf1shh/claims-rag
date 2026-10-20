@@ -73,8 +73,15 @@ def test_claim_and_tenant_boundaries_cover_actual_files(tmp_path):
     rt.vector_store.add_document('private.txt', 'txt', 7, 'PRIVATE', FakeEmbedder(), claim_id='claim-b')
     rt.vector_store.add_document('policy.txt', 'txt', 6, 'POLICY', FakeEmbedder())
     with TestClient(application) as client:
+        # With claim_id given, access is checked before the scoped lookup: a
+        # restricted user is refused (403) whether or not the file exists.
         for path in ('/api/documents/content/private.txt', '/api/documents/download/private.txt'):
-            assert client.get(path, headers={'X-API-Key': 'alice'}).status_code == 403
+            assert client.get(path, params={'claim_id': 'claim-b'}, headers={'X-API-Key': 'alice'}).status_code == 403
+        # Without claim_id, the lookup is scoped to the global set, so
+        # claim-b's "private.txt" is simply not found there (not a 403 --
+        # identity is (claim_id, filename), not filename alone).
+        for path in ('/api/documents/content/private.txt', '/api/documents/download/private.txt'):
+            assert client.get(path, headers={'X-API-Key': 'alice'}).status_code == 404
         assert client.get('/api/documents/content/policy.txt', headers={'X-API-Key': 'alice'}).status_code == 200
         for path in ('/api/documents', '/api/jobs/unknown', '/api/auth/me'):
             assert client.get(path, headers={'X-API-Key': 'outsider'}).status_code == 403

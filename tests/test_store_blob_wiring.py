@@ -51,7 +51,7 @@ def test_add_document_writes_source_bytes_to_s3_under_tenant_scoped_key(s3_db_st
     client, store, blob, local_dir = s3_db_store
     store.add_document("labor.txt", "txt", 100, LABOR_TEXT, _FakeEmbedder(), claim_id="claim-9")
     # Object lives at {tenant}/{scope}/{filename}.
-    body = client.get_object(Bucket=BUCKET, Key="tenant-a/" + store.get_blob_key("labor.txt"))["Body"].read()
+    body = client.get_object(Bucket=BUCKET, Key="tenant-a/" + store.get_blob_key("labor.txt", "claim-9"))["Body"].read()
     assert body.decode() == LABOR_TEXT
     # The local storage_dir must NOT receive a copy (server is stateless re files).
     assert not (local_dir / "labor.txt").exists()
@@ -67,15 +67,15 @@ def test_add_document_global_scopes_key_with_global(s3_db_store):
 def test_get_blob_key_resolves_scope_for_presigned_download(s3_db_store):
     client, store, blob, local_dir = s3_db_store
     store.add_document("labor.txt", "txt", 100, LABOR_TEXT, _FakeEmbedder(), claim_id="claim-9")
-    assert store.get_blob_key("labor.txt").startswith("versions/")
-    url = blob.create_download_url(store.get_blob_key("labor.txt"), 3600)
-    assert "tenant-a/" + store.get_blob_key("labor.txt") in url
+    assert store.get_blob_key("labor.txt", "claim-9").startswith("versions/")
+    url = blob.create_download_url(store.get_blob_key("labor.txt", "claim-9"), 3600)
+    assert "tenant-a/" + store.get_blob_key("labor.txt", "claim-9") in url
 
 
 def test_delete_document_removes_s3_object(s3_db_store):
     client, store, blob, local_dir = s3_db_store
     store.add_document("labor.txt", "txt", 100, LABOR_TEXT, _FakeEmbedder(), claim_id="claim-9")
-    assert store.delete_document("labor.txt")
+    assert store.delete_document("labor.txt", "claim-9")
     keys = [o["Key"] for o in client.list_objects_v2(Bucket=BUCKET).get("Contents", [])]
     assert "tenant-a/claim-9/labor.txt" not in keys
 
@@ -83,7 +83,7 @@ def test_delete_document_removes_s3_object(s3_db_store):
 def test_delete_missing_document_is_noop_and_leaves_blobs(s3_db_store):
     client, store, blob, local_dir = s3_db_store
     store.add_document("labor.txt", "txt", 100, LABOR_TEXT, _FakeEmbedder(), claim_id="claim-9")
-    assert not store.delete_document("nope.txt")
+    assert not store.delete_document("nope.txt", "claim-9")
     # The stored blob is untouched.
-    body = client.get_object(Bucket=BUCKET, Key="tenant-a/" + store.get_blob_key("labor.txt"))["Body"].read()
+    body = client.get_object(Bucket=BUCKET, Key="tenant-a/" + store.get_blob_key("labor.txt", "claim-9"))["Body"].read()
     assert body.decode() == LABOR_TEXT

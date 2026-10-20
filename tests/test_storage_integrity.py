@@ -4,7 +4,6 @@ scope, scope-conflict message leakage, and async upload dedupe.
 Deliberately torch-free, like test_rag_engine.py: a deterministic fake
 embedder stands in for EmbeddingEngine so nothing here downloads a model.
 """
-import logging
 import sqlite3
 
 import numpy as np
@@ -113,30 +112,16 @@ def test_add_document_does_not_hold_the_write_lock_while_embedding(store):
 
 
 # ---------------------------------------------------------------------------
-# M5 -- scope-conflict error must not leak the other scope's claim ID.
+# M5 -- a filename reused across scopes (claim_id, filename identity) must
+# coexist, not collide.
 # ---------------------------------------------------------------------------
 
-def test_scope_conflict_message_names_no_other_scope(store, embedder):
+def test_same_filename_in_different_claims_coexists(store, embedder):
     store.add_document("report.pdf", "pdf", 100, LABOR_TEXT, embedder, claim_id="#2026-55912")
-    with pytest.raises(ValueError) as excinfo:
-        store.add_document("report.pdf", "pdf", 100, GLASS_TEXT, embedder, claim_id="#2026-99999")
+    store.add_document("report.pdf", "pdf", 100, GLASS_TEXT, embedder, claim_id="#2026-99999")
 
-    message = str(excinfo.value)
-    assert "already exists" in message
-    assert "#2026-55912" not in message
-    assert "global guidelines" not in message
-
-
-def test_scope_conflict_logs_the_detail_at_warning(store, embedder, caplog):
-    store.add_document("report.pdf", "pdf", 100, LABOR_TEXT, embedder, claim_id="#2026-55912")
-    with caplog.at_level(logging.WARNING, logger="backend.rag_engine"):
-        with pytest.raises(ValueError):
-            store.add_document("report.pdf", "pdf", 100, GLASS_TEXT, embedder, claim_id="#2026-99999")
-
-    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
-    assert warnings
-    assert "#2026-55912" in warnings[0].getMessage()
-    assert "#2026-99999" in warnings[0].getMessage()
+    assert store.get_document_content("report.pdf", "#2026-55912") == LABOR_TEXT
+    assert store.get_document_content("report.pdf", "#2026-99999") == GLASS_TEXT
 
 
 # ---------------------------------------------------------------------------
