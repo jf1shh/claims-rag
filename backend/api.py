@@ -6,6 +6,7 @@ import threading
 import time
 import uuid
 import weakref
+import anyio
 from dataclasses import replace
 from fastapi import UploadFile, File, Form, HTTPException, Request, Depends
 from fastapi.responses import JSONResponse, FileResponse, RedirectResponse, StreamingResponse
@@ -21,6 +22,34 @@ from backend.rbac import require_permission
 from backend.rate_limit import RateLimitExceeded
 from backend.ingestion import IngestionStatus
 from config import REPO_ROOT
+
+
+class _TimeBoxedStream(StreamingResponse):
+    """SSE response with a hard wall-clock cap, so a client that keeps the
+    connection open but stops reading (which blocks Starlette's ``send``
+    forever) can't hold the chat concurrency slot and the upstream LLM
+    response indefinitely. On timeout, closes the underlying sync generator
+    directly so its ``finally`` runs and the slot is released. If a worker
+    thread happens to be inside ``next()`` on that generator at the exact
+    instant we try to close it, ``close()`` raises ValueError ("generator
+    already executing"); in that case we leave it alone and let the thread's
+    own completion, or ``weakref.finalize`` once the generator is collected,
+    release the slot -- the caller's idempotent finish guard makes either
+    path run exactly once."""
+
+    def __init__(self, generator, max_seconds, *args, **kwargs):
+        super().__init__(generator, *args, **kwargs)
+        self._raw_generator = generator
+        self._max_seconds = max_seconds
+
+    async def __call__(self, scope, receive, send):
+        with anyio.move_on_after(self._max_seconds) as cancel_scope:
+            await super().__call__(scope, receive, send)
+        if cancel_scope.cancelled_caught:
+            try:
+                self._raw_generator.close()
+            except ValueError:
+                pass
 
 
 class ChatRequest(BaseModel):
@@ -790,7 +819,11 @@ def register_routes(app, runtime):
 
         stream = gen()
         weakref.finalize(stream, _finish, None)
-        return StreamingResponse(stream, media_type="text/event-stream",
+        # MAX_STREAM_SECONDS bounds the whole SSE response, not a single call the
+        # way request_timeout_seconds does -- default 300s (2.5x the default
+        # request_timeout_seconds) leaves room for slow local-LLM token generation
+        # while still capping a stalled-reader slot leak to a few minutes.
+        return _TimeBoxedStream(stream, runtime.settings.max_stream_seconds, media_type="text/event-stream",
                                  headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 

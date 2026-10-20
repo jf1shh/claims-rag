@@ -285,6 +285,78 @@ def test_given_stream_closed_early_then_one_aborted_audit_record_and_slot_releas
         r2.read()
 
 
+def test_given_stream_that_yields_forever_when_wall_clock_cap_hits_then_aborted_and_slot_released(
+    monkeypatch, tmp_path
+):
+    # CR-SEC-FIX-C.1: TestClient's in-process ASGI transport buffers the whole
+    # response before returning, so it can't reproduce a stalled real-socket
+    # reader directly -- but an endlessly yielding stream exercises the same
+    # underlying failure (an unbounded generator holding the chat slot and the
+    # upstream LLM response forever); only the wall-clock cap, not anything
+    # the client does, can end it.
+    sink = JsonlAuditSink(tmp_path / "audit.jsonl")
+    monkeypatch.setattr(app_module, "_audit_sink", sink)
+    monkeypatch.setattr(
+        app_module, "settings",
+        replace(app_module.settings, max_concurrent_per_principal=1, max_concurrent_chat=1,
+                max_stream_seconds=1),
+    )
+
+    class ForeverRouter:
+        def run_query_stream(self, **kwargs):
+            while True:
+                yield {"type": "chunk", "text": "x"}
+
+    monkeypatch.setattr(app_module, "agentic_router", ForeverRouter())
+    client = TestClient(app)
+
+    # TestClient's in-process transport already ran the whole ASGI call (and
+    # hit the 1s cap) by the time this returns -- there is nothing left to
+    # read.
+    with client.stream("POST", "/api/chat/stream", json={"query": "q", "engine": "simulated"}) as r:
+        assert r.status_code == 200
+
+    events = [json.loads(line) for line in sink.path.read_text().splitlines() if line.strip()]
+    chat_events = [e for e in events if e["event"] == "chat"]
+    assert len(chat_events) == 1
+    assert chat_events[0]["outcome"] == "aborted"
+
+    # Cap 1: the slot from the forever-stream must be free again.
+    monkeypatch.setattr(app_module, "agentic_router", _StubStreamRouter())
+    with client.stream("POST", "/api/chat/stream", json={"query": "q2", "engine": "simulated"}) as r2:
+        assert r2.status_code == 200
+        r2.read()
+
+
+def test_given_stream_that_completes_before_the_wall_clock_cap_then_slot_released_once(
+    monkeypatch, tmp_path
+):
+    # Normal-completion counterpart to the forever-stream test above: the cap
+    # must not interfere with (or double-release) an ordinary, fast stream.
+    sink = JsonlAuditSink(tmp_path / "audit.jsonl")
+    monkeypatch.setattr(app_module, "_audit_sink", sink)
+    monkeypatch.setattr(
+        app_module, "settings",
+        replace(app_module.settings, max_concurrent_per_principal=1, max_concurrent_chat=1),
+    )
+    monkeypatch.setattr(app_module, "agentic_router", _StubStreamRouter())
+    client = TestClient(app)
+
+    with client.stream("POST", "/api/chat/stream", json={"query": "q", "engine": "simulated"}) as r:
+        assert r.status_code == 200
+        r.read()
+
+    events = [json.loads(line) for line in sink.path.read_text().splitlines() if line.strip()]
+    chat_events = [e for e in events if e["event"] == "chat"]
+    assert len(chat_events) == 1
+    assert chat_events[0]["outcome"] == "completed"
+
+    # Cap 1: a second request succeeds, proving the slot was released exactly once.
+    with client.stream("POST", "/api/chat/stream", json={"query": "q2", "engine": "simulated"}) as r2:
+        assert r2.status_code == 200
+        r2.read()
+
+
 def test_given_stream_body_never_started_then_slot_released_and_aborted_audit(monkeypatch, tmp_path):
     # A disconnect before the first next() means the generator never starts, so its
     # own finally never runs; the weakref.finalize fallback must still release.
@@ -301,7 +373,7 @@ def test_given_stream_body_never_started_then_slot_released_and_aborted_audit(mo
     )
     monkeypatch.setattr(app_module, "agentic_router", _StubStreamRouter())
     # Drop the body iterator without ever iterating it.
-    monkeypatch.setattr(api_module, "StreamingResponse", lambda stream, **kwargs: JSONResponse({}))
+    monkeypatch.setattr(api_module, "_TimeBoxedStream", lambda stream, max_seconds, **kwargs: JSONResponse({}))
     client = TestClient(app)
 
     assert client.post("/api/chat/stream", json={"query": "q", "engine": "simulated"}).status_code == 200

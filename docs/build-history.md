@@ -823,3 +823,24 @@ existing California and Texas regulation docs.
   - `crag check`: 988 passed, 17 skipped, 1 xfailed; gate 0 blocking.
   - Postgres suite: 1004 passed.
   - Ruff: clean.
+
+### 2026-10-20 — Security review CR-SEC-1020 closed (PR #24 follow-up)
+
+- An Opus read-only review of `3b98400..f433740` found 0 critical/high, 2 medium and 6 low. It confirmed the 2026-10-19 fixes, except #5, which is only partly done (filename existence across scopes; open, needs a schema change).
+- The work was split into three Sonnet scopes, run one writer at a time:
+  - A covered the SIU leak, false indicators, live routing and wording.
+  - B covered the figure-check tiers and normalization.
+  - C covered the stream wall-clock cap and the media budget.
+- **Debugging history:**
+  - Scope B's money regex flagged correct figures.
+    - "$865 more" was read as $865m, because a detached `m` was taken as a scale.
+    - "$1,000, and" was read as malformed, because a trailing comma joined the number.
+    - "$500-$800" was read as −$800, because the range dash was taken as a sign.
+  - Fixed in review:
+    - Scale abbreviations must be attached and end at a word boundary.
+    - Comma groups need digits.
+    - A sign dash must not follow a word, digit or symbol.
+  - Regression tests added.
+- Scope C first read `MAX_STREAM_SECONDS` from the environment on every request, because the worker could not edit `config.py`. It was moved into `Settings`.
+  - A misplaced test override then slowed the suite from 8 s to 306 s. It was fixed.
+- Verified: `crag check` 1026 passed, 17 skipped, 1 xfailed, gate 0 blocking; Postgres suite 1042 passed; ruff clean.

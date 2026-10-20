@@ -81,6 +81,30 @@ def test_given_total_expansion_over_cap_when_checked_then_rejected(tmp_path):
         check_container(path, max_bytes=2_000_000, max_chars=10_000_000)
 
 
+# --- CR-SEC-FIX-C.2: media exemption needs its own budget --------------------
+
+
+def test_given_media_over_its_own_budget_when_checked_then_rejected(tmp_path):
+    path = tmp_path / "bomb.docx"
+    # Zeros compress away to a tiny file on disk (clearing the byte-limit and
+    # *10 overall caps), but the declared size still exceeds the new
+    # media-only budget (max_bytes * 4) for a recognized media extension.
+    media = b"\x00" * 9_000_000
+    _write_zip(path, [("word/media/image1.jpg", media, zipfile.ZIP_DEFLATED)])
+    with pytest.raises(DocumentLimitError, match="expanded size limit"):
+        check_container(path, max_bytes=2_000_000, max_chars=100_000)
+
+
+def test_given_renamed_text_part_under_media_path_when_checked_then_still_counts_as_text(tmp_path):
+    path = tmp_path / "bomb.docx"
+    # word/document.xml disguised under /media/ with a non-media extension:
+    # must still count against the text cap, not get the media exemption.
+    disguised = b"x" * 5000
+    _write_zip(path, [("word/media/document.dat", disguised, zipfile.ZIP_DEFLATED)])
+    with pytest.raises(DocumentLimitError, match="expanded size limit"):
+        check_container(path, max_bytes=10_000_000, max_chars=1000)
+
+
 # --- Finding 3: .xls dropped from the upload allowlist ----------------------
 
 

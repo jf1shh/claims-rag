@@ -17,6 +17,15 @@ class DocumentLimitError(ValueError):
     pass
 
 
+# Entries under /media/ only skip the text cap when they are a recognized
+# image/binary media type. A part renamed to look like it's under /media/ but
+# with any other extension (e.g. a disguised document.xml) is still text.
+MEDIA_EXTENSIONS = {
+    'png', 'jpg', 'jpeg', 'gif', 'bmp', 'tif', 'tiff', 'emf', 'wmf', 'svg',
+    'bin', 'wdp', 'jfif',
+}
+
+
 def check_container(path, max_bytes, max_chars):
     if Path(path).stat().st_size > max_bytes:
         raise DocumentLimitError('Document exceeds byte limit.')
@@ -27,15 +36,22 @@ def check_container(path, max_bytes, max_chars):
                 raise DocumentLimitError('Document archive exceeds expanded size limit.')
             total_size = 0
             text_size = 0
+            media_size = 0
             for info in entries:
                 total_size += info.file_size
                 name = info.filename.replace('\\', '/').lower()
+                extension = name.rsplit('.', 1)[-1] if '.' in name else ''
                 # Media (images/embedded binaries, already compressed) is excluded
-                # from the text-expansion cap so a photo-heavy DOCX isn't rejected;
-                # it still counts toward the overall zip-bomb cap below.
-                if name.endswith(('.xml', '.rels', '.txt')) or '/media/' not in name:
+                # from the text-expansion cap so a photo-heavy DOCX isn't rejected,
+                # but it gets its own budget below -- without one, a media-only zip
+                # bomb (declared-size-only, since it never hits the text cap) was
+                # only caught by the much looser *10 overall cap.
+                if '/media/' in name and extension in MEDIA_EXTENSIONS:
+                    media_size += info.file_size
+                else:
                     text_size += info.file_size
-            if text_size > max_chars * 4 or total_size > max_bytes * 10:
+            if (text_size > max_chars * 4 or total_size > max_bytes * 10
+                    or media_size > max_bytes * 4):
                 raise DocumentLimitError('Document archive exceeds expanded size limit.')
 
 

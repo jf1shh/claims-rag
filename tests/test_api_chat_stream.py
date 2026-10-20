@@ -1,8 +1,11 @@
 import json
+import anyio
 import pytest
 from fastapi.testclient import TestClient
+from starlette.responses import StreamingResponse
 from backend.app import runtime as app_module
 from backend.app import app
+from backend.api import _TimeBoxedStream
 from backend.audit import JsonlAuditSink
 
 
@@ -153,3 +156,48 @@ def test_chat_stream_pipeline_failure_before_synthesis_still_emits_final_and_aud
     chat = [e for e in events if e["event"] == "chat"]
     assert len(chat) == 1
     assert chat[0]["status"] == "error"
+
+
+# --- CR-SEC-FIX-C.1: _TimeBoxedStream unit-level race coverage ---------------
+#
+# Component-level tests for the specific race the dispatcher called out: a
+# worker thread caught mid-`next()` when the wall-clock cap fires. Simulated
+# directly against _TimeBoxedStream (rather than through a real app call) so
+# the race is deterministic instead of depending on thread-scheduling luck.
+
+
+class _RacingGenerator:
+    """Stands in for a sync generator whose next() is actively executing in a
+    worker thread at the exact moment the cap tries to close it."""
+
+    def close(self):
+        raise ValueError("generator already executing")
+
+
+def test_timeboxed_stream_timeout_swallows_close_race_without_raising(monkeypatch):
+    async def _hang_forever(self, scope, receive, send):
+        await anyio.sleep_forever()
+
+    monkeypatch.setattr(StreamingResponse, "__call__", _hang_forever)
+    response = _TimeBoxedStream(_RacingGenerator(), 0.01, media_type="text/event-stream")
+
+    async def run():
+        # Must not raise, even though _RacingGenerator.close() always does.
+        await response({"type": "http"}, None, None)
+
+    anyio.run(run)
+
+
+def test_timeboxed_stream_normal_completion_does_not_touch_the_generator(monkeypatch):
+    async def _finish_immediately(self, scope, receive, send):
+        return
+
+    monkeypatch.setattr(StreamingResponse, "__call__", _finish_immediately)
+    response = _TimeBoxedStream(_RacingGenerator(), 300, media_type="text/event-stream")
+
+    async def run():
+        # Completes well inside the cap: close() (which would raise) must
+        # never be called.
+        await response({"type": "http"}, None, None)
+
+    anyio.run(run)

@@ -144,6 +144,8 @@ class Settings:
     max_query_chars: int = 10_000
     max_top_k: int = 50
     request_timeout_seconds: int = 120
+    # Wall-clock cap on a whole /api/chat/stream response (a stalled reader must not hold a slot).
+    max_stream_seconds: int = 300
     simulation_mode: bool = True
     auth_providers: tuple[str, ...] = ("development",)  # "development" | "oidc" | "service-accounts" (Phase 4.1)
     oidc_issuer: str | None = None
@@ -254,6 +256,7 @@ class Settings:
             max_query_chars=_int(env.get("MAX_QUERY_CHARS"), 10_000, "MAX_QUERY_CHARS"),
             max_top_k=_int(env.get("MAX_TOP_K"), 50, "MAX_TOP_K"),
             request_timeout_seconds=_int(env.get("REQUEST_TIMEOUT_SECONDS"), 120, "REQUEST_TIMEOUT_SECONDS"),
+            max_stream_seconds=_int(env.get("MAX_STREAM_SECONDS"), 300, "MAX_STREAM_SECONDS"),
             simulation_mode=_bool(env.get("SIMULATION_MODE"), True),
             auth_providers=tuple(
                 provider.strip().lower()
