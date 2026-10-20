@@ -4,7 +4,9 @@ os.environ["HF_HUB_OFFLINE"] = "1"
 os.environ["TRANSFORMERS_OFFLINE"] = "1"
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 
+import logging
 import sqlite3
+import threading
 import time
 from abc import ABC, abstractmethod
 import numpy as np
@@ -23,6 +25,8 @@ import pandas as pd
 # enterprise migration (docs/enterprise-migration.md) replaces this SQLite
 # backend behind the VectorStore interface.
 # ---------------------------------------------------------------------------
+logger = logging.getLogger(__name__)
+
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DB_PATH = os.environ.get("RAG_DB_PATH") or os.path.join(REPO_ROOT, "rag_store.db")
 STORED_DOCUMENTS_DIR = os.environ.get("STORED_DOCUMENTS_DIR") or os.path.join(REPO_ROOT, "stored_documents")
@@ -294,6 +298,13 @@ class SQLiteVectorStore(VectorStore):
         # avoids re-reading every embedding BLOB and recomputing corpus norms
         # on each query (the primary CPU bottleneck as the corpus scales).
         self._vector_cache = None
+        # Guards _vector_cache and _vector_cache_generation. A build reads
+        # rows without holding the lock (that's the whole point of the
+        # cache), so an invalidation can land mid-build; the generation
+        # counter lets the build detect that race and discard its result
+        # instead of installing a matrix that's already stale.
+        self._vector_cache_lock = threading.Lock()
+        self._vector_cache_generation = 0
         self._init_db()
 
     def _connect(self):
@@ -302,17 +313,35 @@ class SQLiteVectorStore(VectorStore):
         DELETE CASCADE clauses silently never fire on a raw connect() --
         deleting a document orphaned its parent/child chunk rows instead of
         cascading (verified empirically). Every connection in this class must
-        go through here."""
-        conn = sqlite3.connect(self.db_path)  # sole raw connect in this class
+        go through here. timeout=30 covers the busy wait for the now-short
+        write window in add_document/delete_document (chunking/embedding no
+        longer happens while the write transaction is open, but 30s gives
+        concurrent writers slack instead of the 5s default)."""
+        conn = sqlite3.connect(self.db_path, timeout=30)  # sole raw connect in this class
         conn.execute("PRAGMA foreign_keys = ON")
         return conn
 
     def _invalidate_vector_cache(self):
-        self._vector_cache = None
+        with self._vector_cache_lock:
+            self._vector_cache_generation += 1
+            self._vector_cache = None
 
     def _build_vector_cache(self):
         """Loads all child embeddings once, L2-normalizes them, and caches the
-        matrix plus parallel metadata arrays for fast masked cosine search."""
+        matrix plus parallel metadata arrays for fast masked cosine search.
+
+        Reads the database without holding the lock, so an add/delete can
+        invalidate the cache while this build is in flight. The generation
+        check below detects that and discards the now-stale result instead
+        of installing it -- otherwise a build racing an invalidation could
+        overwrite the None with a matrix missing the new document or still
+        containing a deleted one, and that staleness would persist until the
+        next write. The built result is still returned to the caller either
+        way: this one search is entitled to use it even if it won't be cached.
+        """
+        with self._vector_cache_lock:
+            generation = self._vector_cache_generation
+
         conn = self._connect()
         cursor = conn.cursor()
         cursor.execute("""
@@ -347,7 +376,7 @@ class SQLiteVectorStore(VectorStore):
         else:
             matrix = np.zeros((0, 384), dtype=np.float32)
 
-        self._vector_cache = {
+        built = {
             "matrix": matrix,
             "contents": contents,
             "filenames": filenames,
@@ -357,7 +386,11 @@ class SQLiteVectorStore(VectorStore):
             "claim_ids": np.array(claim_ids, dtype=object),
             "global_mask": np.array([cid is None for cid in claim_ids], dtype=bool),
         }
-        return self._vector_cache
+
+        with self._vector_cache_lock:
+            if self._vector_cache_generation == generation:
+                self._vector_cache = built
+        return built
 
     def _init_db(self):
         conn = self._connect()
@@ -418,10 +451,30 @@ class SQLiteVectorStore(VectorStore):
 
         A failed stage or transaction leaves the previous indexed version intact.
         Unreferenced staged blobs can be reclaimed by the maintenance command.
+
+        Chunking and embedding run BEFORE any write statement -- embedding a
+        large document can take seconds, and running it inside the write
+        transaction held SQLite's write lock that whole time, so any
+        concurrent upload/delete hit "database is locked" against the default
+        busy timeout. The write transaction below only covers the scope
+        check and the inserts themselves.
         """
         from backend.source_storage import stage_source
         filename = safe_filename(filename)
         os.makedirs(self.storage_dir, exist_ok=True)
+
+        # 1. Generate parent/child chunks and embeddings up front, with no
+        # transaction open.
+        parent_chunks = TextChunker.chunk(text, chunk_size=1200, chunk_overlap=200)
+        parent_payloads = []
+        for p_idx, p_text in enumerate(parent_chunks):
+            child_chunks = TextChunker.chunk(p_text, chunk_size=250, chunk_overlap=50)
+            embeddings = embedding_engine.embed_chunks(child_chunks) if child_chunks else []
+            child_payloads = [
+                (c_text, np.array(embedding, dtype=np.float32).tobytes())
+                for c_text, embedding in zip(child_chunks, embeddings, strict=True)
+            ]
+            parent_payloads.append((p_idx, p_text, child_payloads))
 
         conn = self._connect()
         cursor = conn.cursor()
@@ -433,7 +486,8 @@ class SQLiteVectorStore(VectorStore):
             # global). Otherwise uploading "report.pdf" to claim B would
             # silently delete claim A's "report.pdf" -- cross-claim data loss
             # (verified empirically: the row, its chunks, and the physical
-            # file are all replaced).
+            # file are all replaced). Must run against current DB state inside
+            # this transaction, i.e. after embedding above.
             cursor.execute("SELECT id, claim_id FROM documents WHERE filename = ?", (filename,))
             existing = cursor.fetchone()
             if existing:
@@ -441,10 +495,19 @@ class SQLiteVectorStore(VectorStore):
                 if existing_claim != claim_id:
                     existing_scope = f"claim {existing_claim}" if existing_claim else "global guidelines"
                     new_scope = f"claim {claim_id}" if claim_id else "global guidelines"
+                    # The client-facing message must not name the other
+                    # scope's claim ID -- an adjuster restricted to claim A
+                    # would otherwise learn claim B's ID just by uploading a
+                    # same-named file (verified: this string reaches job
+                    # error_message / the 400 detail). The detail is still
+                    # logged for operators.
+                    logger.warning(
+                        "Scope-mismatched overwrite rejected for %r: existing=%s new=%s",
+                        filename, existing_scope, new_scope,
+                    )
                     raise ValueError(
-                        f"'{filename}' already exists in {existing_scope}; refusing to overwrite it "
-                        f"from {new_scope}. Rename the uploaded file (or delete the existing one) first "
-                        "-- claim folders and global guidelines must not overwrite each other."
+                        f"A document named '{filename}' already exists outside this folder. "
+                        "Rename the file and upload it again."
                     )
                 doc_id = existing[0]
                 # Delete FTS index
@@ -460,35 +523,20 @@ class SQLiteVectorStore(VectorStore):
             )
             doc_id = cursor.lastrowid
 
-            # 1. Generate Parent Chunks
-            parent_chunks = TextChunker.chunk(text, chunk_size=1200, chunk_overlap=200)
-
-            # 2. Process each Parent Chunk
-            for p_idx, p_text in enumerate(parent_chunks):
-                # Insert parent
+            # 2. Insert the already-computed parent/child chunks and embeddings.
+            for p_idx, p_text, child_payloads in parent_payloads:
                 cursor.execute(
                     "INSERT INTO parent_chunks (document_id, chunk_index, content) VALUES (?, ?, ?)",
                     (doc_id, p_idx, p_text)
                 )
                 p_id = cursor.lastrowid
 
-                # Insert parent into FTS5
                 cursor.execute(
                     "INSERT INTO parent_chunks_fts (rowid, content) VALUES (?, ?)",
                     (p_id, p_text)
                 )
 
-                # Generate Child Chunks for this parent
-                child_chunks = TextChunker.chunk(p_text, chunk_size=250, chunk_overlap=50)
-                if not child_chunks:
-                    continue
-
-                # Generate embeddings for children
-                embeddings = embedding_engine.embed_chunks(child_chunks)
-
-                # Insert children and embeddings
-                for c_text, embedding in zip(child_chunks, embeddings, strict=True):
-                    emb_bytes = np.array(embedding, dtype=np.float32).tobytes()
+                for c_text, emb_bytes in child_payloads:
                     cursor.execute(
                         "INSERT INTO child_chunks (parent_id, content, embedding) VALUES (?, ?, ?)",
                         (p_id, c_text, emb_bytes)
@@ -663,7 +711,9 @@ class SQLiteVectorStore(VectorStore):
         cursor = conn.cursor()
 
         # --- 1. Vector Search (Child Chunks) Scoped by claim_id ---
-        cache = self._vector_cache or self._build_vector_cache()
+        with self._vector_cache_lock:
+            cache = self._vector_cache
+        cache = cache or self._build_vector_cache()
         matrix = cache["matrix"]
 
         vector_ranked = []

@@ -93,10 +93,16 @@ class SqliteJobStore:
         return _row_to_job(row)
 
     def find_by_dedupe_key(self, tenant_id: str, dedupe_key: str) -> IngestionJob | None:
+        """Returns the newest job for this dedupe key. No UNIQUE index backs
+        (tenant_id, idempotency_key) -- re-uploading the same content after
+        the first job finished creates a second row with the same key -- so
+        this must always pick the most recent one, not whichever SQLite
+        happens to return first."""
         conn = self._connect()
         try:
             row = conn.execute(
-                "SELECT * FROM ingestion_jobs WHERE tenant_id = ? AND idempotency_key = ?",
+                "SELECT * FROM ingestion_jobs WHERE tenant_id = ? AND idempotency_key = ? "
+                "ORDER BY created_at DESC LIMIT 1",
                 (tenant_id, dedupe_key),
             ).fetchone()
         finally:
