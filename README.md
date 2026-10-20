@@ -65,9 +65,20 @@ Today the claims tools run in the demo's labelled simulation mode, which works w
 
 ### Golden set: does it find the right documents and answer correctly?
 
-28 claims questions, each with a reference answer checked against the source documents. They cover labor rates, OEM parts, total loss, deductibles, rental, glass, fraud/SIU, subrogation, supplement review, salvage, diminished value, betterment, liability and storage/towing. Scored with Ragas by a local judge model, so nothing goes to a hosted API.
+34 claims questions, each with a reference answer checked against the source documents. They cover labor rates, OEM parts, total loss, deductibles, rental, glass, fraud/SIU, subrogation, supplement review, salvage, diminished value, betterment, liability and storage/towing; six of them (added 2026-10-20) are claim-scoped audit-button questions answered with the computed coverage, SIU and subrogation sections. Scored with Ragas by a local judge model, so nothing goes to a hosted API.
 
-Latest: **two full runs on 2026-10-16**, judge and generator `Qwen3-Coder-30B-A3B-Instruct-GGUF` on Lemonade, all 28 questions scored on every metric in both runs with no scoring failures.
+Latest: **one full run on 2026-10-20**, 34 questions, same judge and generator (`Qwen3-Coder-30B-A3B-Instruct-GGUF` on Lemonade), corpus re-seeded to 48 documents. 34/34 scored on every metric except faithfulness (33/34; the judge failed on one answer).
+
+| Metric | Plain vector search | Hybrid + reranking (all 34) | Hybrid, original 28 | Hybrid, new 6 |
+|---|---|---|---|---|
+| Context precision | 0.764 | **0.793** | 0.850 | 0.528 |
+| Context recall | 0.934 | **0.977** | 0.991 | 0.911 |
+| Faithfulness | — | **0.835** | 0.838 | 0.816 |
+| Reference-fact coverage | — | **0.853** | 0.823 | 0.992 |
+
+On the original 28, retrieval matches 2026-10-16 (recall identical, precision 0.850 against 0.865). Coverage there is 0.823 against 0.862, and nearly all of that drop is one answer (`rostova-hydrolock-coverage`, 1.0 → 0.0). It scored 1.0 in both 2026-10-16 runs, and two replays after this run answered it correctly, so it reads as a one-off bad generation; the other 27 average 0.853 against 0.857. The six new questions answer almost perfectly (coverage 0.992) because the computed section carries the facts, but their retrieval precision is low (0.528): the audit phrasings pull in neighbouring SOPs. Hybrid beat plain search on precision in 9 of 34 questions and lost in 4. Wall time (3087 s) is inflated: the run shared the CPU with test suites. Results: `eval/results-2026-10-20-34row.json`.
+
+Previous: **two full runs on 2026-10-16**, judge and generator `Qwen3-Coder-30B-A3B-Instruct-GGUF` on Lemonade, all 28 questions scored on every metric in both runs with no scoring failures.
 
 | Metric | What it checks | Plain vector search | Hybrid search + reranking |
 |---|---|---|---|

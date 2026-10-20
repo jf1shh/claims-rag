@@ -120,7 +120,7 @@ As of September 6, the authoritative state is [portfolio-hardening.md](docs/port
 > - `tests/test_golden_tool_references.py` runs each reference through the figure check against the computed section and claim dossier, and pins its verdict line. A tool change that leaves a reference stale fails CI.
 > - Re-seed: the generators, `ingest_all.py`, then `scripts/rebuild_golden_source_docs.py` give 48 documents. That is a superset of the old 41: it adds `SOP_Coverage_Verification.pdf` and the Chen, Webb and Brooks evidence files.
 > - Fixed: `subrogation_triage` reimbursed a pro rata share of the full deductible even when damages were below it. Webb showed $700 reimbursed out of a $605.50 recovery. The deductible is now capped at the damages, so reimbursement is $605.50.
-> - Verified: `crag check` 1056 passed, gate 0 blocking; Postgres suite 1072 passed. The 34-row set has not yet been scored by the RAGAS eval (needs Lemonade).
+> - Verified: `crag check` 1056 passed, gate 0 blocking; Postgres suite 1072 passed. 34-row RAGAS run (2026-10-20, Qwen3-Coder on Lemonade, `eval/results-2026-10-20-34row.json`): hybrid P/R 0.793/0.977, faithfulness 0.835 (33/34 scored), correctness 0.853. Original 28: retrieval unchanged (P 0.850, R 0.991); correctness 0.823, of which the drop is one one-off answer (`rostova-hydrolock-coverage`, correct on two replays). New 6: correctness 0.992 but hybrid precision 0.528 (audit phrasings retrieve neighbouring SOPs; a retrieval-tuning item). Wall time 3087 s, inflated by concurrent test runs.
 >
 > **Next:** score the 34-row golden set live (`gpu-preflight`, then `eval/run_eval.py`). Owner decisions: pin `starlette`; per-scope document keys `(claim_id, filename)`.
 

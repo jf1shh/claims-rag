@@ -1,6 +1,7 @@
 # Pinned to the versions this project is developed and evaluated against.
 # Runtime
 fastapi==0.139.0
+starlette==1.9.0  # fastapi does not pin it; CI and local drifted (PR #25)
 uvicorn==0.51.0
 pypdf==6.21.1
 reportlab==5.0.1
