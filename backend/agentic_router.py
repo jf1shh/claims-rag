@@ -1403,8 +1403,9 @@ class AgenticRAGRouter:
                                     vehicle=claim["vehicle"], loss_year=evidence.get("loss_year", 2026),
                                     endorsements=claim["endorsements"])
         damages = supp["original_approved"] + sum((s["approved"] for s in supp["supplements"] if not s["flags"]), ct.ZERO)
+        deductible = self._policy_deductible(claim)
         result = ct.subrogation_triage(state=ct.facility_state(claim["facility"]), loss_date=evidence.get("loss_date"),
-                                       damages=damages, deductible=self._policy_deductible(claim),
+                                       damages=damages, deductible=deductible,
                                        liability=evidence.get("subrogation", {}))
         logs.append(f"🧮 [Tool] subrogation_triage: {result['status']}")
         out = [f"### ⚖️ Subrogation Triage: {name} ({cid})",
@@ -1433,7 +1434,10 @@ class AgenticRAGRouter:
                     f"* Recoverable share: {share * 100:.0f}% of damages {ct.fmt(damages)} = "
                     f"{ct.fmt(result['expected_recovery'])} expected recovery."]
             if result["deductible_reimbursed"] is not None:
-                out.append(f"* Deductible reimbursed pro rata: {share * 100:.0f}% of the deductible = "
+                paid = result["deductible_borne"]
+                of = "the deductible" if paid == deductible else (
+                    f"the {ct.fmt(paid)} the insured paid (damages are below the {ct.fmt(deductible)} deductible)")
+                out.append(f"* Deductible reimbursed pro rata: {share * 100:.0f}% of {of} = "
                            f"{ct.fmt(result['deductible_reimbursed'])}.")
         if result["forum"]:
             out.append(f"* Forum: {result['forum']}.")

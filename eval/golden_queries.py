@@ -283,4 +283,90 @@ GOLDEN_QUERIES = [
                       "responsibility.",
         "source": "SOP_Vehicle_Storage_Fees.txt",
     },
+
+    # ---- P5 (2026-10-20): claim-scoped coverage, SIU and subrogation tool answers. ----
+    # Each query is the frontend's audit-button phrasing (frontend/app.js), so the live path
+    # attaches the computed claims_tools section (_detect_live_audit_type). References were
+    # checked against that computed section and the stored text after the 2026-10-20 re-seed
+    # (generators + ingest_all.py + scripts/rebuild_golden_source_docs.py, 48 documents).
+    {
+        "id": "sterling-coverage-verification",
+        "claim_id": "#2026-99382",
+        "query": "Verify coverage for claim #2026-99382 (2023 Tesla Model Y, Larkspur Collision (Los Angeles, CA)): "
+                 "policy period on the loss date, the driver, the peril and coverage part, and notice of loss, citing "
+                 "the Coverage Verification SOP.",
+        "reference": "All four checks pass (advisory): the January 12, 2026 loss date is within the policy period "
+                      "2025-01-01 to 2027-01-01; Matthew Sterling is listed on the declarations page; the rear-end "
+                      "collision is a collision peril and Plan B carries collision coverage; and the loss was reported "
+                      "the same day, within the 30-day notice requirement.",
+        "source": "SOP_Coverage_Verification.pdf",
+    },
+    {
+        "id": "chen-siu-checklist",
+        "claim_id": "#2026-30291",
+        "query": "Run the SIU indicator checklist for claim #2026-30291 (2022 Honda Civic Sport). Screen the Fraud Red "
+                 "Flags SOP's chronology, paper-accident, pre-existing-damage and duplicate-invoice indicators, cite "
+                 "each one, and say whether a referral to SIU is indicated. This is a cited checklist, not a decision.",
+        "reference": "One indicator is present: pre-existing damage. The passenger-side key scratches show rust "
+                      "oxidation in the scratch channels, consistent with damage older than the January 18, 2026 "
+                      "break-in. Chronology, paper-accident and duplicate-invoice indicators are absent (the claim was "
+                      "reported 443 days after policy inception). A referral to SIU is indicated within 3 business "
+                      "days of detection, without informing the policyholder; the referral is the adjuster's decision.",
+        "source": ["SOP_Claims_Fraud_Red_Flags.pdf", "inspection_photos_Chen.pdf"],
+    },
+    {
+        "id": "brooks-siu-checklist",
+        "claim_id": "#2026-84410",
+        "query": "Run the SIU indicator checklist for claim #2026-84410 (2019 Dodge Charger R/T). Screen the Fraud Red "
+                 "Flags SOP's chronology, paper-accident, pre-existing-damage and duplicate-invoice indicators, cite "
+                 "each one, and say whether a referral to SIU is indicated. This is a cited checklist, not a decision.",
+        "reference": "Three indicators are present. Chronology: the claim was reported 6 days after the February 20, "
+                      "2026 policy inception, within 10 days. Paper accident: a single-vehicle collision at about 2:40 "
+                      "AM on a rural road with no police report and no independent witness. Pre-existing damage: "
+                      "left rear quarter panel rust-through, outside the front-impact direction of force. No duplicate "
+                      "invoice was found. A referral to SIU is indicated within 3 business days of detection; the "
+                      "referral is the adjuster's decision.",
+        "source": ["SOP_Claims_Fraud_Red_Flags.pdf", "loss_statement_Brooks.pdf", "inspection_photos_Brooks.pdf"],
+    },
+    {
+        "id": "rostova-siu-flag-unexplained",
+        "claim_id": "#2026-55912",
+        "query": "Run the SIU indicator checklist for claim #2026-55912 (2020 BMW 330i xDrive). Screen the Fraud Red "
+                 "Flags SOP's chronology, paper-accident, pre-existing-damage and duplicate-invoice indicators, cite "
+                 "each one, and say whether a referral to SIU is indicated. This is a cited checklist, not a decision.",
+        "reference": "None of the four SOP indicators is present on this claim. The claim record's status is 'SIU "
+                      "Flagged', but the record does not document a reason for the flag. The restart attempts after "
+                      "the engine stalled raise a consequential-damage coverage question, not a fraud indicator.",
+        "source": "SOP_Claims_Fraud_Red_Flags.pdf",
+        "note": "Hallucination probe: a grounded answer must not invent a fraud reason for the SIU flag.",
+    },
+    {
+        "id": "webb-subrogation-triage",
+        "claim_id": "#2026-71845",
+        "query": "Triage claim #2026-71845 (2021 Toyota Camry SE, Lone Star Collision (Dallas, TX)) for subrogation. "
+                 "Using the police report, statements and the Subrogation and Liability SOPs, say whether the claim "
+                 "should be referred to the Subrogation Unit, cite the evidence, and show the expected recovery and "
+                 "deductible reimbursement.",
+        "reference": "Refer to the Subrogation Unit (the adjuster's decision). FastFreight Logistics' commercial box "
+                      "truck is assessed 70% at fault and the insured 30%, which meets the 25% threshold, and a "
+                      "commercial vehicle is itself a referral cause; the police report, witness statement and "
+                      "telematics give more than the two evidence types required. Texas applies modified comparative "
+                      "fault with a 51% bar, so 70% of the $865.00 damages gives a $605.50 expected recovery. The "
+                      "damages are below the $1,000 deductible, so the pro rata reimbursement is 70% of the $865.00 "
+                      "the insured paid, $605.50. The forum is inter-company arbitration, the referral is due "
+                      "2026-03-12, and the insured is notified in writing within 10 business days of any recovery.",
+        "source": ["SOP_Subrogation_Recovery.pdf", "police_report_Webb.pdf"],
+    },
+    {
+        "id": "jenkins-subrogation-no-indicator",
+        "claim_id": "#2026-10492",
+        "query": "Triage claim #2026-10492 (2024 Ford F-150 SuperCrew, Apex Auto Body (San Francisco, CA)) for "
+                 "subrogation. Using the police report, statements and the Subrogation and Liability SOPs, say whether "
+                 "the claim should be referred to the Subrogation Unit, cite the evidence, and show the expected "
+                 "recovery and deductible reimbursement.",
+        "reference": "No subrogation indicator is on file. Hail is a weather peril and no responsible third party is "
+                      "identified; there is no third party at 25% or more fault and no defective-part, public road "
+                      "hazard or commercial-vehicle cause, so no recovery or deductible reimbursement is computed.",
+        "source": "SOP_Subrogation_Recovery.pdf",
+    },
 ]

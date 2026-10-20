@@ -848,3 +848,11 @@ existing California and Texas regulation docs.
   - Cause: CI resolved Starlette 1.9.0, while local has 1.8.0, and `fastapi==0.139.0` does not pin Starlette. The 1.9.0 `TestClient` streams for real instead of buffering the whole body. So when the client left, the app was cancelled mid-send and the sync generator stayed suspended. Its `finally` (audit and slot release) then waited on garbage collection. A real client disconnect behind uvicorn has the same gap.
   - Ruled out: the GC timing alone. With `gc.disable()` on Starlette 1.8, the tests still passed.
   - Fix: `_TimeBoxedStream.__call__` now closes the raw generator in a `finally` on every exit, not only on timeout. Verified on Starlette 1.9.0 (scratch `PYTHONPATH` overlay, 3 runs) and on 1.8.0. Both suites pass: SQLite 1026, Postgres 1042.
+
+### 2026-10-20 — P5 claim-scoped golden queries (coverage, SIU, subrogation)
+
+- Six golden rows (28 → 34) use the frontend's audit-button phrasings. References were taken from the computed section and checked against the stored text after the re-seed.
+- **Debugging history:**
+  - `ingest_all.py` drops its tables first and then needs `sample_guidelines/`. Run alone, it left 13 documents. The right order is `generate_auto_pdfs.py`, `create_sample_files.py`, `ingest_all.py`, then `scripts/rebuild_golden_source_docs.py`. Diff the document set against a backup afterwards.
+  - Writing the Webb reference exposed a tool bug: damages $865, deductible $1,000, and $700 "reimbursed" out of a $605.50 recovery. `subrogation_triage` now caps the deductible at the damages, and a parametrized test asserts that reimbursement never exceeds recovery. The Webb test had pinned the wrong $700.
+- `tests/test_golden_tool_references.py` uses the figure check to keep the references in step with the tools. A mutation check confirmed that a stale `$700.00` fails it.

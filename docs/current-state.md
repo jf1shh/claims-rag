@@ -113,7 +113,16 @@ As of September 6, the authoritative state is [portfolio-hardening.md](docs/port
 > - Verified: `crag check` 1026 passed, gate 0 blocking; Postgres suite 1042 passed.
 > - **Open (owner decision):** the 2026-10-19 #5 fix is partial. "A document named X already exists outside this folder" still confirms a filename exists in another scope, because `documents.filename` is unique across all scopes. The real fix is per-scope keys `(claim_id, filename)`, a schema change.
 >
-> **Next:** re-seed plus golden queries for subrogation, coverage and SIU. See `HANDOFF.md`.
+> PR #25 merged as 26d82b4. Its first CI run failed because CI resolved Starlette 1.9.0 (local had 1.8.0), whose TestClient streams for real. `_TimeBoxedStream` now closes the generator on every exit, so a client disconnect writes the audit record and frees the slot at once.
+
+> **P5 done 2026-10-20** (branch `fix/security-hardening`): 6 claim-scoped golden queries (28 → 34) that use the audit-button phrasings, so the live path attaches the computed section.
+> - Coverage: Sterling. SIU: Chen, Brooks and Rostova (the unexplained-flag probe). Subrogation: Webb and Jenkins (no indicator).
+> - `tests/test_golden_tool_references.py` runs each reference through the figure check against the computed section and claim dossier, and pins its verdict line. A tool change that leaves a reference stale fails CI.
+> - Re-seed: the generators, `ingest_all.py`, then `scripts/rebuild_golden_source_docs.py` give 48 documents. That is a superset of the old 41: it adds `SOP_Coverage_Verification.pdf` and the Chen, Webb and Brooks evidence files.
+> - Fixed: `subrogation_triage` reimbursed a pro rata share of the full deductible even when damages were below it. Webb showed $700 reimbursed out of a $605.50 recovery. The deductible is now capped at the damages, so reimbursement is $605.50.
+> - Verified: `crag check` 1056 passed, gate 0 blocking; Postgres suite 1072 passed. The 34-row set has not yet been scored by the RAGAS eval (needs Lemonade).
+>
+> **Next:** score the 34-row golden set live (`gpu-preflight`, then `eval/run_eval.py`). Owner decisions: pin `starlette`; per-scope document keys `(claim_id, filename)`.
 
 > **License changed 2026-10-17**: MIT → AGPL-3.0 (owner decision; `LICENSE`, README badge and a new License section). Code copied before the change stays under MIT.
 
