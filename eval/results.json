@@ -4,11 +4,11 @@
     "n_queries": 34,
     "naive_precision_avg": 0.764,
     "naive_recall_avg": 0.934,
-    "hybrid_precision_avg": 0.793,
-    "hybrid_recall_avg": 0.977,
-    "faithfulness_avg": 0.835,
-    "correctness_avg": 0.853,
-    "elapsed_seconds": 3087.3,
+    "hybrid_precision_avg": 0.796,
+    "hybrid_recall_avg": 0.983,
+    "faithfulness_avg": 0.857,
+    "correctness_avg": 0.835,
+    "elapsed_seconds": 3144.6,
     "metric_samples": {
       "naive_precision": {
         "scored": 34,
@@ -27,12 +27,12 @@
         "failed": 0
       },
       "faithfulness": {
-        "scored": 33,
-        "failed": 1
+        "scored": 32,
+        "failed": 2
       },
       "correctness": {
-        "scored": 34,
-        "failed": 0
+        "scored": 33,
+        "failed": 1
       }
     },
     "correctness_mode": "recall (reference-fact coverage)"
@@ -46,8 +46,8 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.9999999999,
       "hybrid_recall": 1.0,
-      "faithfulness": 1.0,
-      "correctness": 1.0,
+      "faithfulness": 0.75,
+      "correctness": 0.5,
       "naive_top_filenames": [
         "SOP_Auto_Repair_Labor_Rates.pdf",
         "SOP_Supplement_Review.pdf",
@@ -92,8 +92,8 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.7499999999625,
       "hybrid_recall": 1.0,
-      "faithfulness": 1.0,
-      "correctness": 0.5,
+      "faithfulness": 0.75,
+      "correctness": 0.33,
       "naive_top_filenames": [
         "DUI_Exclusion_Directive.txt",
         "Rider_Roadside_Assistance_Plus.pdf",
@@ -115,7 +115,7 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.9999999999,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.8571428571428571,
+      "faithfulness": 1.0,
       "correctness": 0.43,
       "naive_top_filenames": [
         "Rider_OEM_Parts_Guarantee.pdf",
@@ -138,8 +138,8 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.9999999999,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.6666666666666666,
-      "correctness": 0.83,
+      "faithfulness": 0.75,
+      "correctness": 0.87,
       "naive_top_filenames": [
         "Endorsement_Custom_Equipment_Form402.pdf",
         "Auto_Deductibles_And_Limits.xlsx",
@@ -162,7 +162,7 @@
       "hybrid_precision": 0.9999999999,
       "hybrid_recall": 1.0,
       "faithfulness": 0.9,
-      "correctness": 0.78,
+      "correctness": 0.8,
       "naive_top_filenames": [
         "Endorsement_Windshield_Zero_Deductible.docx",
         "Case_Study_Hail_Damage_PlanA.pdf",
@@ -184,7 +184,7 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.99999999995,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.75,
+      "faithfulness": 0.6666666666666666,
       "correctness": 0.67,
       "naive_top_filenames": [
         "Endorsement_Rental_Car_Upgrade.docx",
@@ -207,8 +207,8 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.9999999999,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.7777777777777778,
-      "correctness": 0.8,
+      "faithfulness": 1.0,
+      "correctness": 0.75,
       "naive_top_filenames": [
         "Adjuster_Guide_Rollover_Claims.docx",
         "Guideline_Diminished_Value.docx",
@@ -230,7 +230,7 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.9999999999,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.7142857142857143,
+      "faithfulness": 0.5,
       "correctness": 1.0,
       "naive_top_filenames": [
         "SOP_Claims_Fraud_Red_Flags.pdf",
@@ -299,8 +299,8 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.6388888888675925,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.8181818181818182,
-      "correctness": 1.0,
+      "faithfulness": 0.8,
+      "correctness": 0.67,
       "naive_top_filenames": [
         "Case_Study_Hail_Damage_PlanA.pdf",
         "Case_Study_Stolen_Honda_Civic.pdf",
@@ -322,8 +322,8 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.499999999975,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.8,
-      "correctness": 1.0,
+      "faithfulness": 0.84,
+      "correctness": 0.86,
       "naive_top_filenames": [
         "shop_email_thread_Sterling.pdf",
         "SOP_Auto_Repair_Labor_Rates.pdf",
@@ -368,8 +368,8 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.99999999995,
       "hybrid_recall": 1.0,
-      "faithfulness": 1.0,
-      "correctness": 0.5,
+      "faithfulness": 0.76,
+      "correctness": 0.87,
       "naive_top_filenames": [
         "Case_Study_Hail_Damage_PlanA.pdf",
         "dent_photos_description_Jenkins.pdf",
@@ -391,8 +391,8 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.0,
       "hybrid_recall": 1.0,
-      "faithfulness": 1.0,
-      "correctness": 0.83,
+      "faithfulness": 0.9375,
+      "correctness": 0.5,
       "naive_top_filenames": [
         "Endorsement_Custom_Equipment_Form402.pdf",
         "Rider_Roadside_Assistance_Plus.pdf",
@@ -437,8 +437,8 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.9999999999,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.25,
-      "correctness": 0.0,
+      "faithfulness": 0.96,
+      "correctness": 0.85,
       "naive_top_filenames": [
         "Case_Study_Engine_Hydro_Lock.pdf",
         "Adjuster_Guide_Rollover_Claims.docx",
@@ -460,8 +460,8 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.0,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.9473684210526315,
-      "correctness": 0.82,
+      "faithfulness": 1.0,
+      "correctness": 0.91,
       "naive_top_filenames": [
         "DUI_Exclusion_Directive.txt",
         "Case_Study_Rear_End_Collision.pdf",
@@ -506,8 +506,8 @@
       "naive_recall": 0.6666666666666666,
       "hybrid_precision": 0.9999999999,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.7777777777777778,
-      "correctness": 1.0,
+      "faithfulness": 0.6666666666666666,
+      "correctness": 0.89,
       "naive_top_filenames": [
         "Case_Study_Stolen_Honda_Civic.pdf",
         "Case_Study_Rear_End_Collision.pdf",
@@ -552,8 +552,8 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.7499999999625,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.5,
-      "correctness": 0.83,
+      "faithfulness": 0.8888888888888888,
+      "correctness": 0.67,
       "naive_top_filenames": [
         "SOP_Total_Loss_Valuation.pdf",
         "SOP_Vehicle_Storage_Fees.txt",
@@ -575,7 +575,7 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.9999999999,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.96,
+      "faithfulness": 1.0,
       "correctness": 1.0,
       "naive_top_filenames": [
         "Guideline_Diminished_Value.docx",
@@ -621,7 +621,7 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.8333333332916666,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.5882352941176471,
+      "faithfulness": 0.6470588235294118,
       "correctness": 1.0,
       "naive_top_filenames": [
         "Texas_Auto_Insurance_Code_2026.pdf",
@@ -688,9 +688,9 @@
       "query": "Verify coverage for claim #2026-99382 (2023 Tesla Model Y, Larkspur Collision (Los Angeles, CA)): policy period on the loss date, the driver, the peril and coverage part, and notice of loss, citing the Coverage Verification SOP.",
       "naive_precision": 0.49999999995,
       "naive_recall": 1.0,
-      "hybrid_precision": 0.3333333333,
+      "hybrid_precision": 0.4166666666458333,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.6,
+      "faithfulness": 0.6615384615384615,
       "correctness": 1.0,
       "naive_top_filenames": [
         "shop_email_thread_Sterling.pdf",
@@ -702,7 +702,7 @@
         "shop_email_thread_Sterling.pdf",
         "police_report_Sterling.pdf",
         "Case_Study_Rear_End_Collision.pdf",
-        "tesla_rear_collision_description.txt"
+        "SOP_Coverage_Verification.pdf"
       ]
     },
     {
@@ -713,7 +713,7 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.99999999995,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.7419354838709677,
+      "faithfulness": 0.8947368421052632,
       "correctness": 1.0,
       "naive_top_filenames": [
         "Case_Study_Stolen_Honda_Civic.pdf",
@@ -736,7 +736,7 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.49999999995,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.8269230769230769,
+      "faithfulness": null,
       "correctness": 1.0,
       "naive_top_filenames": [
         "SOP_Claims_Fraud_Red_Flags.pdf",
@@ -759,7 +759,7 @@
       "naive_recall": 0.3333333333333333,
       "hybrid_precision": 0.3333333333,
       "hybrid_recall": 0.6666666666666666,
-      "faithfulness": 0.9523809523809523,
+      "faithfulness": null,
       "correctness": 1.0,
       "naive_top_filenames": [
         "engine_diagnostic_report_Rostova.pdf",
@@ -780,10 +780,10 @@
       "query": "Triage claim #2026-71845 (2021 Toyota Camry SE, Lone Star Collision (Dallas, TX)) for subrogation. Using the police report, statements and the Subrogation and Liability SOPs, say whether the claim should be referred to the Subrogation Unit, cite the evidence, and show the expected recovery and deductible reimbursement.",
       "naive_precision": 0.7499999999625,
       "naive_recall": 1.0,
-      "hybrid_precision": 0.9999999999,
-      "hybrid_recall": 0.8,
-      "faithfulness": null,
-      "correctness": 0.95,
+      "hybrid_precision": 0.7499999999625,
+      "hybrid_recall": 1.0,
+      "faithfulness": 0.9538461538461539,
+      "correctness": 0.94,
       "naive_top_filenames": [
         "SOP_Subrogation_Recovery.pdf",
         "Case_Study_Rear_End_Collision.pdf",
@@ -793,8 +793,8 @@
       "hybrid_top_filenames": [
         "police_report_Webb.pdf",
         "witness_statement_Webb.pdf",
-        "dashcam_summary_Webb.pdf",
-        "Case_Study_Rear_End_Collision.pdf"
+        "SOP_Liability_Determination.pdf",
+        "SOP_Subrogation_Recovery.pdf"
       ]
     },
     {
@@ -803,10 +803,10 @@
       "query": "Triage claim #2026-10492 (2024 Ford F-150 SuperCrew, Apex Auto Body (San Francisco, CA)) for subrogation. Using the police report, statements and the Subrogation and Liability SOPs, say whether the claim should be referred to the Subrogation Unit, cite the evidence, and show the expected recovery and deductible reimbursement.",
       "naive_precision": 0.9999999999,
       "naive_recall": 1.0,
-      "hybrid_precision": 0.0,
+      "hybrid_precision": 0.249999999975,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.96,
-      "correctness": 1.0,
+      "faithfulness": 0.9354838709677419,
+      "correctness": null,
       "naive_top_filenames": [
         "SOP_Subrogation_Recovery.pdf",
         "dent_photos_description_Jenkins.pdf",
@@ -816,8 +816,8 @@
       "hybrid_top_filenames": [
         "dent_photos_description_Jenkins.pdf",
         "Case_Study_Hail_Damage_PlanA.pdf",
-        "f150_hail_damage_description.txt",
-        "Case_Study_Rear_End_Collision.pdf"
+        "SOP_Liability_Determination.pdf",
+        "SOP_Subrogation_Recovery.pdf"
       ]
     }
   ]

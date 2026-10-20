@@ -67,7 +67,18 @@ Today the claims tools run in the demo's labelled simulation mode, which works w
 
 34 claims questions, each with a reference answer checked against the source documents. They cover labor rates, OEM parts, total loss, deductibles, rental, glass, fraud/SIU, subrogation, supplement review, salvage, diminished value, betterment, liability and storage/towing; six of them (added 2026-10-20) are claim-scoped audit-button questions answered with the computed coverage, SIU and subrogation sections. Scored with Ragas by a local judge model, so nothing goes to a hosted API.
 
-Latest: **one full run on 2026-10-20**, 34 questions, same judge and generator (`Qwen3-Coder-30B-A3B-Instruct-GGUF` on Lemonade), corpus re-seeded to 48 documents. 34/34 scored on every metric except faithfulness (33/34; the judge failed on one answer).
+Latest: **re-scored on 2026-10-20 with named-document pinning** (a query that names a reference document by title, such as "the Subrogation and Liability SOPs", gets that document into the results even when the reranker scores it lower). Same 34 questions, judge, generator and 48-document corpus as the run below. Faithfulness scored 32/34 and coverage 33/34 (judge failures); everything else 34/34.
+
+| Metric | Plain vector search | Hybrid + reranking (all 34) | Hybrid, original 28 | Hybrid, new 6 |
+|---|---|---|---|---|
+| Context precision | 0.764 | **0.796** | 0.850 | 0.542 |
+| Context recall | 0.934 | **0.983** | 0.991 | 0.944 |
+| Faithfulness | — | **0.857** | 0.857 | 0.861 |
+| Reference-fact coverage | — | **0.835** | 0.808 | 0.988 |
+
+Pinning fired only on the new six, as intended, and retrieval on the original 28 matched the run below on every question. On the new six, recall rose from 0.911 to 0.944 (`webb-subrogation-triage` 0.8 → 1.0) and precision from 0.528 to 0.542. The precision gain is small because Ragas weights precision by rank, and a pinned document takes one of the bottom slots. Coverage on the original 28 moved by question in both directions (−0.015 overall) with identical retrieval, so it is generation noise. `rostova-hydrolock-coverage` recovered (0.0 → 0.85), as its replays predicted. Hybrid beat plain search on precision in 8 of 34 questions and lost in 4. Results: `eval/results-2026-10-20-34row-pinned.json`.
+
+Earlier the same day: **one full run on 2026-10-20**, 34 questions, same judge and generator (`Qwen3-Coder-30B-A3B-Instruct-GGUF` on Lemonade), corpus re-seeded to 48 documents. 34/34 scored on every metric except faithfulness (33/34; the judge failed on one answer).
 
 | Metric | Plain vector search | Hybrid + reranking (all 34) | Hybrid, original 28 | Hybrid, new 6 |
 |---|---|---|---|---|
