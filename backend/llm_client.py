@@ -132,6 +132,7 @@ class OpenAICompatibleClient(ChatClient):
         # comment on complete() above for why comparing against
         # self.planning_model is a bug when PLANNING_MODEL is unset.
         timeout = self.plan_timeout if stage == "planning" else self.timeout
+        resp = None
         try:
             resp = self._http.post(
                 f"{self.base_url}/v1/chat/completions",
@@ -163,6 +164,13 @@ class OpenAICompatibleClient(ChatClient):
             raise
         except Exception as exc:
             raise ChatClientError("LLM stream failed") from exc
+        finally:
+            # Releases the upstream connection whether the stream finished,
+            # errored, or the caller closed it early (GeneratorExit) --
+            # otherwise a disconnected client leaks the open HTTP response.
+            close = getattr(resp, "close", None)
+            if callable(close):
+                close()
 
     def models(self) -> list[str]:
         now = self._clock()

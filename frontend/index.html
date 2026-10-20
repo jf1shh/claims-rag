@@ -63,7 +63,7 @@
                     
                     <!-- Upload Dropzone -->
                     <div class="upload-zone" id="upload-zone">
-                        <input type="file" id="file-input" accept=".pdf,.docx,.xlsx,.xls,.txt" style="display: none;">
+                        <input type="file" id="file-input" accept=".pdf,.docx,.xlsx,.txt" style="display: none;">
                         <div class="upload-content">
                             <span class="upload-icon">📥</span>
                             <p class="upload-title">Drag & drop files</p>
@@ -195,6 +195,13 @@
                         <h3>🛡️ Adjuster Copilot Audits</h3>
                         <p class="audit-desc">Select an audit parameter to run a context-aware RAG policy query</p>
                         <div class="audit-actions-grid">
+                            <button class="btn btn-audit" id="btn-audit-coverage">
+                                <span class="btn-icon">🛡️</span>
+                                <div class="btn-label-group">
+                                    <span class="title">Verify Coverage</span>
+                                    <span class="subtitle">Policy period, driver, peril</span>
+                                </div>
+                            </button>
                             <button class="btn btn-audit" id="btn-audit-labor">
                                 <span class="btn-icon">⚡</span>
                                 <div class="btn-label-group">
@@ -221,6 +228,13 @@
                                 <div class="btn-label-group">
                                     <span class="title">Explain Total Loss</span>
                                     <span class="subtitle">Show the state threshold math</span>
+                                </div>
+                            </button>
+                            <button class="btn btn-audit" id="btn-audit-subrogation">
+                                <span class="btn-icon">⚖️</span>
+                                <div class="btn-label-group">
+                                    <span class="title">Triage Subrogation</span>
+                                    <span class="subtitle">Flag recovery potential and evidence</span>
                                 </div>
                             </button>
                             <button class="btn btn-audit" id="btn-audit-fraud">

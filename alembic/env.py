@@ -21,7 +21,9 @@ if REPO_ROOT not in sys.path:
 config = context.config
 
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # Keep loggers created before migrations run (in-process upgrades, the test suite):
+    # the default disable_existing_loggers=True silences backend.* security warnings.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 _dsn = os.environ.get("POSTGRES_DSN") or config.get_main_option("sqlalchemy.url")
 # POSTGRES_DSN is a plain postgresql:// URL (no driver). Force the psycopg v3

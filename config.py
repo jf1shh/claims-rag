@@ -50,6 +50,10 @@ class Settings:
     app_env: str = "development"
     log_level: str = "INFO"
     cors_origins: tuple[str, ...] = ("http://localhost:8000", "http://127.0.0.1:8000")
+    # Starlette TrustedHostMiddleware allowlist, only wired in when the development
+    # auth provider is active (see app_factory.py) -- a request can otherwise reach
+    # the dev admin identity over any Host header, including via DNS rebinding.
+    allowed_hosts: tuple[str, ...] = ("localhost", "127.0.0.1", "[::1]", "testserver")
     rag_db_path: Path = REPO_ROOT / "rag_store.db"
     stored_documents_dir: Path = REPO_ROOT / "stored_documents"
     jobs_db_path: Path = REPO_ROOT / "jobs.db"
@@ -131,6 +135,12 @@ class Settings:
     max_document_chars: int = 2_000_000
     rate_limit_max_requests: int = 60  # Phase 4.4 per-principal rate limiting
     rate_limit_window_seconds: float = 60.0
+    # Non-blocking concurrency gates (distinct from the rate limiter, which caps
+    # requests per minute, not how many run at once). max_concurrent_per_principal
+    # is shared across chat, chat/stream, and uploads, keyed tenant:subject.
+    max_concurrent_chat: int = 8
+    max_concurrent_uploads: int = 4
+    max_concurrent_per_principal: int = 2
     max_query_chars: int = 10_000
     max_top_k: int = 50
     request_timeout_seconds: int = 120
@@ -168,15 +178,25 @@ class Settings:
     @classmethod
     def from_env(cls, environ: Mapping[str, str] | None = None) -> "Settings":
         env = os.environ if environ is None else environ
+        app_env = env.get("APP_ENV", "development").strip().lower()
         origins = tuple(
             origin.strip()
             for origin in env.get("CORS_ORIGINS", "http://localhost:8000,http://127.0.0.1:8000").split(",")
             if origin.strip()
         )
+        default_allowed_hosts = (
+            "localhost,127.0.0.1,[::1],testserver" if app_env in {"development", "test"} else "*"
+        )
+        allowed_hosts = tuple(
+            host.strip()
+            for host in env.get("ALLOWED_HOSTS", default_allowed_hosts).split(",")
+            if host.strip()
+        )
         return cls(
-            app_env=env.get("APP_ENV", "development").strip().lower(),
+            app_env=app_env,
             log_level=env.get("LOG_LEVEL", "INFO").strip().upper(),
             cors_origins=origins,
+            allowed_hosts=allowed_hosts,
             rag_db_path=Path(env.get("RAG_DB_PATH", str(REPO_ROOT / "rag_store.db"))).expanduser(),
             stored_documents_dir=Path(env.get("STORED_DOCUMENTS_DIR", str(REPO_ROOT / "stored_documents"))).expanduser(),
             jobs_db_path=Path(env.get("JOBS_DB_PATH", str(REPO_ROOT / "jobs.db"))).expanduser(),
@@ -228,6 +248,9 @@ class Settings:
             max_document_chars=_int(env.get("MAX_DOCUMENT_CHARS"), 2_000_000, "MAX_DOCUMENT_CHARS"),
             rate_limit_max_requests=_int(env.get("RATE_LIMIT_MAX_REQUESTS"), 60, "RATE_LIMIT_MAX_REQUESTS"),
             rate_limit_window_seconds=_float(env.get("RATE_LIMIT_WINDOW_SECONDS"), 60.0, "RATE_LIMIT_WINDOW_SECONDS"),
+            max_concurrent_chat=_int(env.get("MAX_CONCURRENT_CHAT"), 8, "MAX_CONCURRENT_CHAT"),
+            max_concurrent_uploads=_int(env.get("MAX_CONCURRENT_UPLOADS"), 4, "MAX_CONCURRENT_UPLOADS"),
+            max_concurrent_per_principal=_int(env.get("MAX_CONCURRENT_PER_PRINCIPAL"), 2, "MAX_CONCURRENT_PER_PRINCIPAL"),
             max_query_chars=_int(env.get("MAX_QUERY_CHARS"), 10_000, "MAX_QUERY_CHARS"),
             max_top_k=_int(env.get("MAX_TOP_K"), 50, "MAX_TOP_K"),
             request_timeout_seconds=_int(env.get("REQUEST_TIMEOUT_SECONDS"), 120, "REQUEST_TIMEOUT_SECONDS"),
@@ -264,6 +287,8 @@ class Settings:
             raise ValueError("APP_ENV must be development, test, staging, or production")
         if not self.cors_origins:
             raise ValueError("CORS_ORIGINS must contain at least one origin")
+        if not self.allowed_hosts:
+            raise ValueError("ALLOWED_HOSTS must contain at least one host")
         for origin in self.cors_origins:
             parsed = urlparse(origin)
             if parsed.scheme not in {"http", "https"} or not parsed.netloc:

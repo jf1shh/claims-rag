@@ -96,7 +96,18 @@ class IngestionService:
 
         existing = self._find_existing(key)
         if existing is not None:
-            return existing
+            # An explicit idempotency key always returns the same job (that's
+            # the idempotency contract: replay must be a no-op forever). A
+            # content-checksum key only dedupes while the earlier upload is
+            # still in flight -- otherwise re-uploading the same bytes after
+            # the first job finished (or failed) indexed nothing and a failed
+            # job could never be retried with the same file.
+            if idempotency_key is not None or existing.status in (
+                IngestionStatus.queued,
+                IngestionStatus.parsing,
+                IngestionStatus.embedding,
+            ):
+                return existing
 
         job = IngestionJob(
             job_id=f"job_{uuid.uuid4().hex}",

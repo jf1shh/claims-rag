@@ -10,13 +10,20 @@
 # Lemonade (the LLM) is a native host service, not something this image can
 # contain -- point LLM_BASE_URL at the host (see docker-compose.yml) or leave
 # LLM_PROVIDER unset/SIMULATION_MODE=true to run without a live model.
+#
+# APP_ENV defaults to production below, so `docker run` with no configuration
+# refuses to start (production validation rejects the no-credential development
+# auth provider) instead of serving the admin-with-no-credential dev identity on
+# whatever interface/port it's exposed on. docker-compose.yml overrides APP_ENV
+# back to development for local use and binds 127.0.0.1 only.
 
 FROM python:3.12-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     HF_HOME=/app/.cache/huggingface \
-    PIP_NO_CACHE_DIR=1
+    PIP_NO_CACHE_DIR=1 \
+    APP_ENV=production
 
 WORKDIR /app
 

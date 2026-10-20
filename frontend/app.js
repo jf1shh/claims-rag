@@ -185,12 +185,14 @@ const claimPolicyDeductible = document.getElementById('claim-policy-deductible')
 const claimPolicyEndorsements = document.getElementById('claim-policy-endorsements');
 const claimEstimateBody = document.getElementById('claim-estimate-body');
 
+const btnAuditCoverage = document.getElementById('btn-audit-coverage');
 const btnAuditLabor = document.getElementById('btn-audit-labor');
 const btnAuditOEM = document.getElementById('btn-audit-oem');
 const btnAuditFraud = document.getElementById('btn-audit-fraud');
 const btnAuditLetter = document.getElementById('btn-audit-letter');
 const btnAuditSupplement = document.getElementById('btn-audit-supplement');
 const btnAuditTotalLoss = document.getElementById('btn-audit-total-loss');
+const btnAuditSubrogation = document.getElementById('btn-audit-subrogation');
 
 const claimDocsList = document.getElementById('claim-docs-list');
 const claimUploadZone = document.getElementById('claim-upload-zone');
@@ -338,7 +340,7 @@ function setupBrowseButton() {
 
 async function handleFileUpload(file) {
     const ext = file.name.split('.').pop().toLowerCase();
-    if (!['pdf', 'docx', 'xlsx', 'xls', 'txt'].includes(ext)) {
+    if (!['pdf', 'docx', 'xlsx', 'txt'].includes(ext)) {
         alert('Unsupported file format. Please upload PDF, DOCX, Excel, or Text documents.');
         return;
     }
@@ -1163,12 +1165,14 @@ function setupClaimsCases() {
     loadCaseFolder(activeCase);
 
     // Setup Audit Button Click Listeners
+    btnAuditCoverage.addEventListener('click', () => triggerAudit('coverage'));
     btnAuditLabor.addEventListener('click', () => triggerAudit('labor'));
     btnAuditOEM.addEventListener('click', () => triggerAudit('oem'));
     btnAuditFraud.addEventListener('click', () => triggerAudit('fraud'));
     btnAuditLetter.addEventListener('click', () => triggerAudit('letter'));
     btnAuditSupplement.addEventListener('click', () => triggerAudit('supplement'));
     btnAuditTotalLoss.addEventListener('click', () => triggerAudit('total_loss'));
+    btnAuditSubrogation.addEventListener('click', () => triggerAudit('subrogation'));
 }
 
 function loadCaseFolder(c) {
@@ -1250,6 +1254,9 @@ async function triggerAudit(type) {
     let queryText = "";
     
     switch (type) {
+        case 'coverage':
+            queryText = `Verify coverage for claim ${activeCase.id} (${activeCase.vehicle}, ${activeCase.facility}): policy period on the loss date, the driver, the peril and coverage part, and notice of loss, citing the Coverage Verification SOP.`;
+            break;
         case 'labor':
             queryText = `For claim ${activeCase.id} involving vehicle ${activeCase.vehicle} being repaired at ${activeCase.facility}: Check the regional labor rate schedules for 2026. Compare the standard capped rates for Sheet Metal, Frame, Painting, and Mechanical work against the shop charges in our estimate. Highlight any repair lines that exceed the allowable cap limits.`;
             break;
@@ -1264,6 +1271,9 @@ async function triggerAudit(type) {
             break;
         case 'total_loss':
             queryText = `Explain whether claim ${activeCase.id} (${activeCase.vehicle}, ${activeCase.facility}) is a total loss under the state rule in the Total Loss Valuation SOP. Show the threshold math, include any supported supplements in the repair cost, check the valuation sources on file, and list what follows a total loss declaration.`;
+            break;
+        case 'subrogation':
+            queryText = `Triage claim ${activeCase.id} (${activeCase.vehicle}, ${activeCase.facility}) for subrogation. Using the police report, statements and the Subrogation and Liability SOPs, say whether the claim should be referred to the Subrogation Unit, cite the evidence, and show the expected recovery and deductible reimbursement.`;
             break;
         case 'letter':
             queryText = `Draft a formal, professional Claim Decision and Payout Settlement Letter to the policyholder ${activeCase.insured} for claim ${activeCase.id}. In the letter, explain the vehicle damage assessed (${activeCase.vehicle}), apply the deductible (${activeCase.deductible}), outline covered repairs, list any disallowed charges, and note if subrogation is being pursued against the third party. Quote the corresponding policy sections.`;

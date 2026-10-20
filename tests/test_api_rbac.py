@@ -111,14 +111,14 @@ def test_given_supervisor_when_listing_claims_then_all_claims_are_returned(enfor
     token = enforced("sup-1", ["supervisor"])
     response = TestClient(app).get("/api/claims", headers=_auth(token))
     assert response.status_code == 200
-    assert len(response.json()) == 4
+    assert len(response.json()) == 6
 
 
 def test_given_siu_when_listing_claims_then_all_claims_are_returned(enforced):
     token = enforced("siu-1", ["siu"])
     response = TestClient(app).get("/api/claims", headers=_auth(token))
     assert response.status_code == 200
-    assert len(response.json()) == 4
+    assert len(response.json()) == 6
 
 
 # --- claim-scoped document access --------------------------------------------
@@ -292,5 +292,5 @@ def test_given_development_default_when_listing_claims_then_all_returned():
     # the development principal is admin+adjuster: pre-4.2 behavior intact.
     client = TestClient(app)
     assert client.get("/api/claims").status_code == 200
-    assert len(client.get("/api/claims").json()) == 4
+    assert len(client.get("/api/claims").json()) == 6
     assert client.get("/api/documents").status_code == 200

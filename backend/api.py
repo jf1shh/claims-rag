@@ -2,8 +2,10 @@
 import os
 import json
 import tempfile
+import threading
 import time
 import uuid
+import weakref
 from dataclasses import replace
 from fastapi import UploadFile, File, Form, HTTPException, Request, Depends
 from fastapi.responses import JSONResponse, FileResponse, RedirectResponse, StreamingResponse
@@ -11,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from typing import Optional
 from backend.rag_engine import EmbeddingEngine, safe_filename
-from backend.document_limits import parse_bounded, DocumentLimitError
+from backend.document_limits import parse_bounded, DocumentLimitError, CONTENT_TYPES
 from backend.agentic_router import CLAIMS_DATA
 from backend.health import live_status, ready_status
 from backend.authn import AuthenticationError
@@ -47,10 +49,33 @@ class SearchRequest(BaseModel):
         return self
 
 
-_CONTENT_TYPES = {
-    "pdf": "application/pdf", "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-    "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "xls": "application/vnd.ms-excel", "txt": "text/plain",
-}
+class _ConcurrencyGate:
+    """Non-blocking in-flight-request counter, keyed by caller-chosen strings.
+    Unlike SlidingWindowRateLimiter (requests per time window), this tracks how
+    many requests are concurrently in progress right now, so a handful of slow
+    chat/upload requests can't starve the thread pool for every other caller.
+    The limit is passed in at acquire time (not fixed at construction) so tests
+    can swap settings without rebuilding the gate."""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._counts: dict[str, int] = {}
+
+    def acquire(self, key: str, limit: int) -> bool:
+        with self._lock:
+            count = self._counts.get(key, 0)
+            if count >= limit:
+                return False
+            self._counts[key] = count + 1
+            return True
+
+    def release(self, key: str) -> None:
+        with self._lock:
+            count = self._counts.get(key, 0)
+            if count <= 1:
+                self._counts.pop(key, None)
+            else:
+                self._counts[key] = count - 1
 
 
 def register_routes(app, runtime):
@@ -63,7 +88,13 @@ def register_routes(app, runtime):
     @app.middleware("http")
     async def request_id_middleware(request: Request, call_next):
         supplied = request.headers.get("X-Request-ID", "")
-        request_id = supplied if supplied and len(supplied) <= 128 and supplied.isascii() and supplied.isprintable() else f"req_{uuid.uuid4().hex}"
+        # The server always mints its own id; a client-supplied one is kept
+        # separately so a caller can't choose the id that becomes the audit
+        # record's identity, while still being able to correlate its own logs.
+        request.state.client_request_id = (
+            supplied if supplied and len(supplied) <= 128 and supplied.isascii() and supplied.isprintable() else None
+        )
+        request_id = f"req_{uuid.uuid4().hex}"
         request.state.request_id = request_id
         response = await call_next(request)
         response.headers["X-Request-ID"] = request_id
@@ -72,6 +103,26 @@ def register_routes(app, runtime):
         if request.url.path.startswith("/api/"):
             response.headers["Cache-Control"] = "no-store"
         return response
+
+    # Non-blocking concurrency gates (Phase M4): distinct from _rate_limit_429,
+    # which caps requests per minute, not how many are in flight at once. One
+    # gate instance per app, long-lived across requests.
+    _chat_gate = _ConcurrencyGate()
+    _upload_gate = _ConcurrencyGate()
+    _principal_gate = _ConcurrencyGate()
+
+    def _acquire_slot(principal, global_gate: "_ConcurrencyGate", global_key: str, global_limit: int):
+        principal_key = f"{principal.tenant_id}:{principal.subject}"
+        if not _principal_gate.acquire(principal_key, runtime.settings.max_concurrent_per_principal):
+            raise HTTPException(status_code=429, detail="Too many requests in progress.")
+        if not global_gate.acquire(global_key, global_limit):
+            _principal_gate.release(principal_key)
+            raise HTTPException(status_code=503, detail="Service is at capacity.", headers={"Retry-After": "5"})
+        return principal_key
+
+    def _release_slot(principal_key: str, global_gate: "_ConcurrencyGate", global_key: str):
+        _principal_gate.release(principal_key)
+        global_gate.release(global_key)
 
 
     def _get_embedding_engine():
@@ -240,6 +291,7 @@ def register_routes(app, runtime):
             {
                 "event": event,
                 "request_id": request.state.request_id,
+                "client_request_id": getattr(request.state, "client_request_id", None),
                 "tenant_id": principal.tenant_id,
                 "subject": principal.subject,
                 **fields,
@@ -339,13 +391,21 @@ def register_routes(app, runtime):
     @app.post("/api/upload")
     def upload_document(request: Request, file: UploadFile = File(...), principal=Depends(get_current_tenant)):  # noqa: B008
         require_permission_403(principal, "documents:upload")
-        return process_upload(request, file, principal)
+        principal_key = _acquire_slot(principal, _upload_gate, "upload", runtime.settings.max_concurrent_uploads)
+        try:
+            return process_upload(request, file, principal)
+        finally:
+            _release_slot(principal_key, _upload_gate, "upload")
 
     @app.post("/api/upload-claim-file")
     def upload_claim_document(request: Request, claim_id: str = Form(...), file: UploadFile = File(...), principal=Depends(get_current_tenant)):  # noqa: B008
         require_permission_403(principal, "claims:write")
         require_claim_access_403(principal, claim_id)
-        return process_upload(request, file, principal, claim_id)
+        principal_key = _acquire_slot(principal, _upload_gate, "upload", runtime.settings.max_concurrent_uploads)
+        try:
+            return process_upload(request, file, principal, claim_id)
+        finally:
+            _release_slot(principal_key, _upload_gate, "upload")
 
     def process_upload(request, file, principal, claim_id=None):
 
@@ -363,9 +423,14 @@ def register_routes(app, runtime):
         if not file.filename:
             _audit(request, principal, "upload", outcome="failed", filename=None, reason="missing filename")
             raise HTTPException(status_code=400, detail="Missing filename.")
-        file_ext = file.filename.split(".")[-1].lower()
-        if file_ext not in ["pdf", "docx", "xlsx", "xls", "txt"]:
-            _audit(request, principal, "upload", outcome="failed", filename=file.filename, reason="unsupported format")
+        try:
+            filename = safe_filename(file.filename)
+        except ValueError:
+            _audit(request, principal, "upload", outcome="failed", filename=file.filename, reason="invalid filename")
+            raise HTTPException(status_code=400, detail="Invalid filename.") from None
+        file_ext = filename.split(".")[-1].lower()
+        if file_ext not in ["pdf", "docx", "xlsx", "txt"]:
+            _audit(request, principal, "upload", outcome="failed", filename=filename, reason="unsupported format")
             raise HTTPException(
                 status_code=400,
                 detail="Unsupported file format. Please upload PDF, DOCX, Excel, or Text documents."
@@ -373,7 +438,7 @@ def register_routes(app, runtime):
 
         content = file.file.read(runtime.settings.max_upload_bytes + 1)
         if len(content) > runtime.settings.max_upload_bytes:
-            _audit(request, principal, "upload", outcome="failed", filename=file.filename, reason="upload exceeds size limit")
+            _audit(request, principal, "upload", outcome="failed", filename=filename, reason="upload exceeds size limit")
             raise HTTPException(
                 status_code=413,
                 detail=f"File exceeds the maximum upload size of {runtime.settings.max_upload_bytes // (1024 * 1024)} MB.",
@@ -381,10 +446,10 @@ def register_routes(app, runtime):
 
         if runtime.settings.ingestion_mode == "async":
             if not content:
-                _audit(request, principal, "upload", outcome="failed", filename=file.filename, reason="empty document")
+                _audit(request, principal, "upload", outcome="failed", filename=filename, reason="empty document")
                 raise HTTPException(status_code=400, detail="Document appears to be empty or unreadable.")
-            response = _enqueue_upload(content, file.filename, file_ext, claim_id=claim_id)
-            _audit(request, principal, "upload", outcome="queued", filename=file.filename, claim_id=claim_id,
+            response = _enqueue_upload(content, filename, file_ext, claim_id=claim_id)
+            _audit(request, principal, "upload", outcome="queued", filename=filename, claim_id=claim_id,
                    job_id=json.loads(response.body)["job_id"])
             return response
 
@@ -421,7 +486,7 @@ def register_routes(app, runtime):
             db_start = time.time()
             file_size = os.path.getsize(tmp_path)
             doc_id, parent_count = runtime.vector_store.add_document(
-                filename=file.filename,
+                filename=filename,
                 file_type=file_ext,
                 file_size=file_size,
                 text=text,
@@ -437,17 +502,17 @@ def register_routes(app, runtime):
             # contract), keeping sync and async response shapes compatible.
             job = runtime.ingestion_service.record_result(
                 tenant_id=runtime.settings.tenant_id,
-                filename=file.filename,
+                filename=filename,
                 content=content,
                 document_id=str(doc_id),
             claim_id=claim_id,
             )
 
-            _audit(request, principal, "upload", outcome="indexed", filename=file.filename, claim_id=claim_id,
+            _audit(request, principal, "upload", outcome="indexed", filename=filename, claim_id=claim_id,
                    file_size=file_size, chunks_count=parent_count, job_id=job.job_id)
 
             return {
-                "filename": file.filename,
+                "filename": filename,
             "claim_id": claim_id,
                 "chunks_count": parent_count,
                 "total_time_ms": round(total_time, 1),
@@ -461,17 +526,17 @@ def register_routes(app, runtime):
         except HTTPException as exc:
             # Deliberate 4xx responses (empty document, corrupt file, scope
             # conflict) must not be re-wrapped by the generic handler into a 500.
-            _audit(request, principal, "upload", outcome="failed", filename=file.filename, reason=str(exc.detail))
+            _audit(request, principal, "upload", outcome="failed", filename=filename, reason=str(exc.detail))
             raise
         except ValueError as e:
             # safe_filename() rejections and the per-scope filename-conflict guard
             # in add_document() are client errors, not server failures.
-            _audit(request, principal, "upload", outcome="failed", filename=file.filename, reason=str(e))
+            _audit(request, principal, "upload", outcome="failed", filename=filename, reason=str(e))
             raise HTTPException(status_code=400, detail="Document processing failed.") from None
         except Exception:
             import traceback
             traceback.print_exc()
-            _audit(request, principal, "upload", outcome="failed", filename=file.filename, reason="internal error")
+            _audit(request, principal, "upload", outcome="failed", filename=filename, reason="internal error")
             raise HTTPException(status_code=500, detail="Document processing failed.") from None
         finally:
             # Clean up temp file
@@ -558,36 +623,42 @@ def register_routes(app, runtime):
         require_permission_403(principal, "documents:delete")
         _rate_limit_429(principal)
         try:
-            safe_filename(req.filename)
+            filename = safe_filename(req.filename)
         except ValueError:
             _audit(request, principal, "delete", outcome="failed", filename=req.filename, reason="invalid filename")
             raise HTTPException(status_code=400, detail="Invalid filename.") from None
 
+        try:
+            authorize_document(principal, filename)
+        except HTTPException as exc:
+            _audit(request, principal, "delete", outcome="not_found" if exc.status_code == 404 else "denied", filename=filename)
+            raise
+
         if runtime.settings.ingestion_mode == "async":
-            job = runtime.ingestion_service.submit_delete(tenant_id=runtime.settings.tenant_id, filename=req.filename)
-            _audit(request, principal, "delete", outcome="queued", filename=req.filename, job_id=job.job_id)
+            job = runtime.ingestion_service.submit_delete(tenant_id=runtime.settings.tenant_id, filename=filename)
+            _audit(request, principal, "delete", outcome="queued", filename=filename, job_id=job.job_id)
             return JSONResponse(
                 status_code=202,
                 content={
                     "job_id": job.job_id,
                     "status": job.status.value,
-                    "filename": req.filename,
+                    "filename": filename,
                 },
             )
 
-        deleted = runtime.vector_store.delete_document(req.filename)
+        deleted = runtime.vector_store.delete_document(filename)
         if not deleted:
-            _audit(request, principal, "delete", outcome="not_found", filename=req.filename)
+            _audit(request, principal, "delete", outcome="not_found", filename=filename)
             raise HTTPException(status_code=404, detail="Document not found.")
         job = runtime.ingestion_service.record_result(
             tenant_id=runtime.settings.tenant_id,
-            filename=req.filename,
+            filename=filename,
             content=b"",
             status=IngestionStatus.deleted,
         )
-        _audit(request, principal, "delete", outcome="deleted", filename=req.filename, job_id=job.job_id)
+        _audit(request, principal, "delete", outcome="deleted", filename=filename, job_id=job.job_id)
         return {
-            "message": f"Successfully deleted '{req.filename}'.",
+            "message": f"Successfully deleted '{filename}'.",
             "job_id": job.job_id,
             "status": job.status.value,
         }
@@ -602,66 +673,96 @@ def register_routes(app, runtime):
         if req.claim_id:
             require_permission_403(principal, "claims:read")
             require_claim_access_403(principal, req.claim_id)
-        result = runtime.agentic_router.run_query(
-            query_text=req.query,
-            claim_id=req.claim_id,
-            engine=req.engine,
-            embedding_engine=runtime._get_embedding_engine(),
-            vector_store=runtime.vector_store,
-            reranking_engine=runtime._reranker,
-            llm_client=runtime._llm_client,
-            caps=runtime.settings,
-        )
-        result = conflict_result(provenance_result(guard_result(result, req.claim_id)), req.query)
-        _audit(
-            request,
-            principal,
-            "chat",
-            query=req.query,
-            claim_id=req.claim_id,
-            engine=req.engine,
-            answer=result.get("answer"),
-            sources=[source.get("filename") for source in result.get("sources", [])],
-            **guard_audit_fields(result),
-        )
-        return project_result(request, result)
+        principal_key = _acquire_slot(principal, _chat_gate, "chat", runtime.settings.max_concurrent_chat)
+        try:
+            result = runtime.agentic_router.run_query(
+                query_text=req.query,
+                claim_id=req.claim_id,
+                engine=req.engine,
+                embedding_engine=runtime._get_embedding_engine(),
+                vector_store=runtime.vector_store,
+                reranking_engine=runtime._reranker,
+                llm_client=runtime._llm_client,
+                caps=runtime.settings,
+            )
+            result = conflict_result(provenance_result(guard_result(result, req.claim_id)), req.query)
+            _audit(
+                request,
+                principal,
+                "chat",
+                query=req.query,
+                claim_id=req.claim_id,
+                engine=req.engine,
+                answer=result.get("answer"),
+                sources=[source.get("filename") for source in result.get("sources", [])],
+                **guard_audit_fields(result),
+            )
+            return project_result(request, result)
+        finally:
+            _release_slot(principal_key, _chat_gate, "chat")
 
 
     @app.post("/api/chat/stream", dependencies=[Depends(get_current_tenant)])
     def chat_stream(request: Request, req: ChatRequest, principal=Depends(get_current_tenant)):  # noqa: B008 - idiomatic FastAPI dependency injection
-        """SSE counterpart to /api/chat: same auth/RBAC/rate-limit checks run
-        synchronously before the generator starts (so a 401/403/429 is a normal
-        HTTP status, not something swallowed once the stream has begun), then
-        streams synthesis chunks and audits the assembled final answer exactly
-        once, on the `final` event -- never per-chunk."""
+        """SSE counterpart to /api/chat: same auth/RBAC/rate-limit/concurrency checks
+        run synchronously before the generator starts (so a 401/403/429/503 is a
+        normal HTTP status, not something swallowed once the stream has begun).
+        The concurrency slot is held for the generator's whole life and released in
+        its `finally`, and the audit record is written there too -- exactly once,
+        whether the stream reaches `final` or the client disconnects first."""
         require_permission_403(principal, "documents:read")
         _rate_limit_429(principal)
         validate_chat(req)
         if req.claim_id:
             require_permission_403(principal, "claims:read")
             require_claim_access_403(principal, req.claim_id)
+        principal_key = _acquire_slot(principal, _chat_gate, "chat", runtime.settings.max_concurrent_chat)
+        finished = threading.Event()
+
+        def _finish(final_event):
+            # Idempotent: called from gen()'s finally and, via weakref.finalize,
+            # when a generator that never started (disconnect before the first
+            # next()) is collected -- its finally would never run, leaking the slot.
+            if finished.is_set():
+                return
+            finished.set()
+            try:
+                _audit(request, principal, "chat",
+                       query=req.query, claim_id=req.claim_id,
+                       engine=(final_event or {}).get("engine", req.engine),
+                       answer=(final_event or {}).get("answer"),
+                       sources=[s.get("filename") for s in ((final_event or {}).get("sources") or [])],
+                       status=(final_event or {}).get("status"),
+                       outcome="completed" if final_event is not None else "aborted",
+                       **guard_audit_fields(final_event or {}))
+            finally:
+                _release_slot(principal_key, _chat_gate, "chat")
 
         def gen():
-            for event in runtime.agentic_router.run_query_stream(
-                    query_text=req.query, claim_id=req.claim_id, engine=req.engine,
-                    embedding_engine=runtime._get_embedding_engine(), vector_store=runtime.vector_store,
-                    reranking_engine=runtime._reranker, llm_client=runtime._llm_client, caps=runtime.settings):
-                if event["type"] == "chunk":
-                    yield f"data: {json.dumps({'text': event['text']})}\n\n"
-                elif event["type"] == "final":
-                    # Chunks already streamed cannot be recalled; the final event's answer
-                    # replaces the streamed bubble (frontend finalizeStreamingBubble), so a
-                    # withheld answer is withdrawn from view once generation completes.
-                    event = project_result(request, conflict_result(provenance_result(guard_result(event, req.claim_id)), req.query))
-                    _audit(request, principal, "chat",
-                           query=req.query, claim_id=req.claim_id, engine=event.get("engine"),
-                           answer=event.get("answer"),
-                           sources=[s.get("filename") for s in (event.get("sources") or [])],
-                           status=event.get("status"), **guard_audit_fields(event))
-                    yield f"data: {json.dumps({k: v for k, v in event.items() if k != 'type'})}\n\n"
-            yield "data: [DONE]\n\n"
+            final_event = None
+            try:
+                for event in runtime.agentic_router.run_query_stream(
+                        query_text=req.query, claim_id=req.claim_id, engine=req.engine,
+                        embedding_engine=runtime._get_embedding_engine(), vector_store=runtime.vector_store,
+                        reranking_engine=runtime._reranker, llm_client=runtime._llm_client, caps=runtime.settings):
+                    if event["type"] == "chunk":
+                        yield f"data: {json.dumps({'text': event['text']})}\n\n"
+                    elif event["type"] == "final":
+                        # Chunks already streamed cannot be recalled; the final event's answer
+                        # replaces the streamed bubble (frontend finalizeStreamingBubble), so a
+                        # withheld answer is withdrawn from view once generation completes.
+                        final_event = project_result(request, conflict_result(provenance_result(guard_result(event, req.claim_id)), req.query))
+                        yield f"data: {json.dumps({k: v for k, v in final_event.items() if k != 'type'})}\n\n"
+                yield "data: [DONE]\n\n"
+            finally:
+                # Runs exactly once, whether the loop above finished normally,
+                # raised, or was torn down early by GeneratorExit (client
+                # disconnect) -- so every stream leaves exactly one audit record.
+                _finish(final_event)
 
-        return StreamingResponse(gen(), media_type="text/event-stream",
+        stream = gen()
+        weakref.finalize(stream, _finish, None)
+        return StreamingResponse(stream, media_type="text/event-stream",
                                  headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
 
@@ -690,7 +791,7 @@ def register_routes(app, runtime):
 
 
     def _content_type(file_ext: str) -> str:
-        return _CONTENT_TYPES.get(file_ext, "application/octet-stream")
+        return CONTENT_TYPES.get(file_ext, "application/octet-stream")
 
 
     @app.post("/api/eval/search", dependencies=[Depends(get_current_tenant)])

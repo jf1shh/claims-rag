@@ -91,33 +91,204 @@ CLAIMS_DATA = [
             { "cat": "Mechanical", "op": "Flush Oil Lines and Cooling System", "rate": "$110/hr", "qty": "4.0 hrs", "total": "$440" },
             { "cat": "Electrical", "op": "Replace Submerged ECU & Sensors", "rate": "Flat", "qty": "1 Unit", "total": "$2,000" }
         ]
+    },
+    {
+        "id": "#2026-71845",
+        "status": "Open",
+        "insured": "Marcus Webb",
+        "vehicle": "2021 Toyota Camry SE",
+        "facility": "Lone Star Collision (Dallas, TX)",
+        "totalEst": "$865",
+        "plan": "Plan A (Standard)",
+        "deductible": "$1,000 Collision Deductible",
+        "endorsements": ["Premium Rental Upgrade"],
+        "estimate": [
+            { "cat": "Body", "op": "Replace Rear Bumper Cover", "rate": "$60/hr", "qty": "5.0 hrs", "total": "$300" },
+            { "cat": "Paint", "op": "Refinish Rear Bumper Cover", "rate": "$60/hr", "qty": "4.0 hrs", "total": "$240" },
+            { "cat": "Frame", "op": "Pull Trunk Floor Panel (Alignment)", "rate": "$75/hr", "qty": "3.0 hrs", "total": "$225" },
+            { "cat": "Mechanical", "op": "Replace Rear Parking Sensor", "rate": "$100/hr", "qty": "1.0 hrs", "total": "$100" }
+        ]
+    },
+    {
+        "id": "#2026-84410",
+        "status": "Open",
+        "insured": "Tyler Brooks",
+        "vehicle": "2019 Dodge Charger R/T",
+        "facility": "Sunbelt Body Works (Miami, FL)",
+        "totalEst": "$920",
+        "plan": "Plan C (Basic)",
+        "deductible": "$2,000 Collision Deductible",
+        "endorsements": [],
+        "estimate": [
+            { "cat": "Body", "op": "Replace Front Bumper Cover", "rate": "$60/hr", "qty": "4.0 hrs", "total": "$240" },
+            { "cat": "Body", "op": "Replace Hood Panel", "rate": "$60/hr", "qty": "3.0 hrs", "total": "$180" },
+            { "cat": "Mechanical", "op": "Replace Radiator Support", "rate": "$100/hr", "qty": "2.0 hrs", "total": "$200" },
+            { "cat": "Body", "op": "Repair Rust-Through on Left Rear Quarter Panel", "rate": "$60/hr", "qty": "5.0 hrs", "total": "$300" }
+        ]
     }
 ]
 
 
 # Facts the claims tools need that are findings, not math: which estimate lines are custom
 # equipment (from the receipts), and which are excluded by an SIU or coverage finding.
-# All four claims are 2026 losses (claim IDs and police/telematics dates).
+# All four claims are 2026 losses (claim IDs and police/telematics dates). `subrogation` holds the
+# liability facts for subrogation_triage, each taken from the claim dossier text (ingest_all.py).
 CLAIM_EVIDENCE: Dict[str, Dict[str, Any]] = {
-    "#2026-99382": {"loss_year": 2026},
-    "#2026-10492": {"loss_year": 2026},
+    "#2026-99382": {
+        "loss_year": 2026,
+        "loss_date": "2026-01-12",
+        "reported": "2026-01-12",
+        "peril": "collision",
+        "driver": "Matthew Sterling",
+        "policy": {
+            "effective": "2025-01-01", "expiration": "2027-01-01", "cancelled": None, "lapses": [],
+            "listed_drivers": ["Matthew Sterling"], "excluded_drivers": [], "permissive": {},
+            "source": "claim record",
+        },
+        "subrogation": {
+            "third_party": "Vehicle 2 (other driver; towed from the scene)",
+            "third_party_source": "police_report_Sterling.pdf",
+            "third_party_fault": None,
+            "fault_source": None,
+            "collision": "rear_end",
+            "collision_source": "police_report_Sterling.pdf",
+            "insured_position": "lead",
+            "rebuttal": [],
+            "causes": [],
+            "evidence": [
+                {"type": "police_report", "source": "police_report_Sterling.pdf",
+                 "detail": "Vehicle 2 rear-ended the stopped Tesla at approximately 18 mph"},
+                {"type": "telematics", "source": "police_report_Sterling.pdf",
+                 "detail": "Telemetry Log Notes: 0 mph, brake pressure 100%, stationary 8.4 s before impact"},
+                {"type": "photos", "source": "tesla_rear_collision.png", "detail": "rear collision damage photo"},
+            ],
+            "first_payment": None,
+        },
+    },
+    "#2026-10492": {
+        "loss_year": 2026,
+        "loss_date": "2026-01-25",
+        "reported": "2026-01-26",
+        "peril": "hail",
+        "driver": "Sarah Jenkins",
+        "policy": {
+            "effective": "2024-06-01", "expiration": "2026-06-01", "cancelled": None, "lapses": [],
+            "listed_drivers": ["Sarah Jenkins"], "excluded_drivers": [], "permissive": {},
+            "source": "claim record",
+        },
+        "subrogation": {
+            "third_party": None,
+            "causes": [],
+            "evidence": [{"type": "photos", "source": "dent_photos_description_Jenkins.pdf",
+                          "detail": "hail dents on hood and roof; windshield crack"}],
+            "first_payment": None,
+            "note": "hail is a weather peril; no responsible third party is on file",
+        },
+    },
     "#2026-30291": {
         "loss_year": 2026,
+        "loss_date": "2026-01-18",
+        "reported": "2026-01-18",
+        "peril": "theft",
+        "driver": "David Chen",
+        "policy": {
+            "effective": "2024-11-01", "expiration": "2026-11-01", "cancelled": None, "lapses": [],
+            "listed_drivers": ["David Chen"], "excluded_drivers": [], "permissive": {},
+            "source": "claim record",
+        },
+        "subrogation": {
+            "third_party": None,
+            "causes": [],
+            "evidence": [{"type": "police_report", "source": "police_theft_report_Chen.pdf",
+                          "detail": "No suspect information at this time"}],
+            "first_payment": None,
+            "note": "re-check if a suspect is identified or property is recovered",
+        },
         "custom_ops": ["Replace 4x Sport Wheels & Tires", "Replace Stolen Infotainment Console"],
         "custom_source": "custom_equipment_receipts_Chen.xlsx",
         "excluded": {
             "Repair Passenger Side Key Scratches":
-                "pre-existing rust oxidation (SOP_Claims_Fraud_Red_Flags.pdf)",
+                "pre-existing rust oxidation (inspection_photos_Chen.pdf; SOP_Claims_Fraud_Red_Flags.pdf)",
         },
     },
     "#2026-55912": {
         "loss_year": 2026,
+        "loss_date": "2026-01-20",
+        "reported": "2026-01-21",
+        "peril": "flood",
+        "driver": "Elena Rostova",
+        "policy": {
+            "effective": "2024-03-01", "expiration": "2027-03-01", "cancelled": None, "lapses": [],
+            "listed_drivers": ["Elena Rostova"], "excluded_drivers": [], "permissive": {},
+            "source": "claim record",
+        },
+        "subrogation": {
+            "third_party": None,
+            "causes": [],
+            "evidence": [{"type": "telematics", "source": "telematics_log_Rostova.pdf",
+                          "detail": "single vehicle drove into standing water at 45 mph"}],
+            "first_payment": None,
+            "note": "a public-road-hazard referral would need evidence of a public-entity maintenance failure; "
+                    "none is on file",
+        },
         "exclude_all": "driver-induced consequential damage from restart attempts (Case_Study_Engine_Hydro_Lock.pdf)",
         # Synthetic valuation reports on file (P4 total-loss explainer demo): one primary, one secondary.
         "valuations": [
             {"source": "CCC ONE Market Valuation Report", "acv": "$14,200"},
             {"source": "Kelley Blue Book", "acv": "$13,600"},
         ],
+    },
+    "#2026-71845": {
+        "loss_year": 2026,
+        "loss_date": "2026-02-03",
+        "reported": "2026-02-04",
+        "peril": "collision",
+        "driver": "Marcus Webb",
+        "policy": {
+            "effective": "2025-01-15", "expiration": "2027-01-15", "cancelled": None, "lapses": [],
+            "listed_drivers": ["Marcus Webb"], "excluded_drivers": [], "permissive": {},
+            "source": "claim record",
+        },
+        "subrogation": {
+            "third_party": "FastFreight Logistics (commercial box truck)",
+            "third_party_source": "police_report_Webb.pdf",
+            "third_party_fault": Decimal("0.70"),
+            "fault_source": "police_report_Webb.pdf",
+            "collision": "rear_end",
+            "collision_source": "police_report_Webb.pdf",
+            "insured_position": "lead",
+            "rebuttal": ["unsafe lane change (police_report_Webb.pdf)"],
+            "causes": [{"cause": "commercial_vehicle", "source": "police_report_Webb.pdf"}],
+            "evidence": [
+                {"type": "police_report", "source": "police_report_Webb.pdf",
+                 "detail": "officer assigns 30% fault to Webb for an unsafe lane change and 70% to the truck "
+                           "driver for following too closely"},
+                {"type": "witness_statement", "source": "witness_statement_Webb.pdf",
+                 "detail": "independent witness confirms the truck was following too closely"},
+                {"type": "telematics", "source": "dashcam_summary_Webb.pdf",
+                 "detail": "truck dash camera shows the lane change 1.2 seconds before impact, truck at 41 mph"},
+            ],
+            "first_payment": "2026-02-10",
+        },
+    },
+    "#2026-84410": {
+        "loss_year": 2026,
+        "loss_date": "2026-02-25",
+        "reported": "2026-02-26",
+        "peril": "single_vehicle",
+        "driver": "Tyler Brooks",
+        "policy": {
+            "effective": "2026-02-20", "expiration": "2027-02-20", "cancelled": None, "lapses": [],
+            "listed_drivers": ["Tyler Brooks"], "excluded_drivers": [], "permissive": {},
+            "source": "claim record",
+        },
+        "subrogation": {
+            "third_party": None,
+            "causes": [],
+            "evidence": [],
+            "first_payment": None,
+            "note": "single-vehicle loss: no responsible third party is on file",
+        },
     },
 }
 
@@ -837,6 +1008,12 @@ class AgenticRAGRouter:
         if audit_type == "supplement":
             return self._supplement_answer(claim, evidence, logs)
 
+        if audit_type == "subrogation":
+            return self._subrogation_answer(claim, evidence, logs)
+
+        if audit_type == "coverage":
+            return self._coverage_answer(claim, evidence, logs)
+
         if audit_type == "labor":
             out += [f"### ⚡ Labor Rate Audit: {name} ({cid})",
                     f"**Result: {'OVER CAP' if labor['status'] == 'over_cap' else 'WITHIN CAP'}** "
@@ -970,6 +1147,127 @@ class AgenticRAGRouter:
         out += ["", "*Advisory review for the adjuster; not a coverage decision.*"]
         return out + ct.render_inputs([result])
 
+    # Keyword routing for the simulated agent, first match wins. Whole words only: "separate" is not a
+    # rate, "capacity" is not a cap. An explicit total-loss question may mention supplements (they
+    # count toward repair cost); a supplement question may mention salvage or ACV in passing. So:
+    # "total loss" wins, then "supplement", then subrogation, then ACV/salvage alone.
+    AUDIT_KEYWORDS = [
+        ("total_loss", re.compile(r"\btotal[- ]loss(?:es)?\b|\btotall?ed\b")),
+        ("supplement", re.compile(r"\bsupplements?\b")),
+        ("subrogation", re.compile(r"\bsubrogat\w*|\brecover(?:y|ies)? from\b")),
+        # Explicit coverage phrasing only: other buttons' queries mention "coverage" in passing
+        # (OEM rider, settlement letter) and must keep their own route.
+        ("coverage", re.compile(r"\bverify(?:ing)? coverage\b|\bcoverage (?:check|verification)\b"
+                                r"|\b(?:is|was|are|were) (?:\w+ ){0,6}covered\b|\bin force\b"
+                                r"|\bexcluded driver\b|\bpermissive\b")),
+        ("total_loss", re.compile(r"\bacv\b|\bsalvage\b")),
+        ("labor", re.compile(r"\blabou?rs?\b|\brates?\b|\bcaps?\b|\bcapped\b")),
+        ("oem", re.compile(r"\boems?\b|\baftermarket\b|\blkq\b")),
+        ("fraud", re.compile(r"\bfraud(?:s|ulent)?\b|\bred flags?\b|\bsiu\b")),
+        ("letter", re.compile(r"\bletters?\b|\bsettlements?\b|\bdecisions?\b")),
+    ]
+    LETTER_REQUEST = re.compile(r"\bletters?\b")
+
+    @classmethod
+    def _detect_audit_type(cls, query_text: str) -> str:
+        q_lower = query_text.lower()
+        for audit_type, pattern in cls.AUDIT_KEYWORDS:
+            # A settlement letter may say whether subrogation is pursued; it is still a letter.
+            if audit_type == "subrogation" and cls.LETTER_REQUEST.search(q_lower):
+                continue
+            if pattern.search(q_lower):
+                return audit_type
+        return "general"
+
+    SUBROGATION_VERDICTS = {
+        "refer": "Refer to the Subrogation Unit (adjuster decision)",
+        "refer_after_evidence": "Refer after evidence: complete the liability file first",
+        "no_indicator": "No subrogation indicator on file",
+    }
+
+    COVERAGE_VERDICTS = {
+        "verified": "Coverage verified for this loss",
+        "coverage_question": "Coverage question for the adjuster",
+        "incomplete": "Incomplete: more information is needed before coverage can be verified",
+    }
+
+    def _coverage_answer(self, claim: Dict[str, Any], evidence: Dict[str, Any], logs: List[str]) -> List[str]:
+        """Coverage verification: policy period, driver, peril/coverage part and notice, from claims_tools."""
+        name, cid = claim["insured"], claim["id"]
+        result = ct.coverage_check(loss_date=evidence.get("loss_date"), reported=evidence.get("reported"),
+                                   peril=evidence.get("peril"), plan=claim["plan"], policy=evidence.get("policy", {}),
+                                   driver=evidence.get("driver"))
+        logs.append(f"🧮 [Tool] coverage_check: {result['status']} ({result['coverage_part']})")
+        out = [f"### 🛡️ Coverage Verification: {name} ({cid})",
+               f"**{self.COVERAGE_VERDICTS[result['status']]}**", "",
+               "| Check | Result | Detail |", "| --- | --- | --- |"]
+        for row in result["checks"]:
+            out.append(f"| {row['check'].title()} | {row['result'].upper()} | {row['detail']} |")
+        out += ["", "*Advisory coverage check for the adjuster; not a coverage decision.*"]
+        return out + ct.render_inputs([result])
+
+    @staticmethod
+    def _policy_deductible(claim: Dict[str, Any]):
+        """The policy's stated deductible, else the plan table value; None when neither resolves."""
+        try:
+            return ct.money(claim["deductible"])
+        except (KeyError, ValueError):
+            letter, coverage = ct.plan_letter(claim.get("plan", "")), ct.coverage_of(claim.get("deductible", ""))
+            return ct.DEDUCTIBLES.get((letter, coverage))
+
+    def _subrogation_answer(self, claim: Dict[str, Any], evidence: Dict[str, Any], logs: List[str]) -> List[str]:
+        """Subrogation triage: referral criteria, liability evidence and recovery math from claims_tools."""
+        name, cid = claim["insured"], claim["id"]
+        # Damages are what the carrier pays for the repair: the original estimate at the SOP caps plus
+        # supplements that pass review (held supplements are not counted).
+        supp = ct.supplement_review(original=claim["estimate"], supplements=claim.get("supplements", []),
+                                    vehicle=claim["vehicle"], loss_year=evidence.get("loss_year", 2026),
+                                    endorsements=claim["endorsements"])
+        damages = supp["original_approved"] + sum((s["approved"] for s in supp["supplements"] if not s["flags"]), ct.ZERO)
+        result = ct.subrogation_triage(state=ct.facility_state(claim["facility"]), loss_date=evidence.get("loss_date"),
+                                       damages=damages, deductible=self._policy_deductible(claim),
+                                       liability=evidence.get("subrogation", {}))
+        logs.append(f"🧮 [Tool] subrogation_triage: {result['status']}")
+        out = [f"### ⚖️ Subrogation Triage: {name} ({cid})",
+               f"**{self.SUBROGATION_VERDICTS[result['status']]}**", ""]
+        tp_fault = result["third_party_fault"]
+        if result["fault_basis"] == "presumption":
+            out.append(f"* Fault basis: **presumption, not an assessment**. In a rear-end collision the following "
+                       f"driver is presumed at fault ({ct.LIABILITY_SOP}, section 1); nothing on file rebuts it, so "
+                       f"the third party is treated as {tp_fault * 100:.0f}% at fault.")
+        elif result["fault_basis"] == "assessed":
+            out.append(f"* Fault basis: assessed on file, third party {tp_fault * 100:.0f}% / insured "
+                       f"{result['insured_fault'] * 100:.0f}%.")
+        else:
+            out.append("* Fault basis: no fault assessment or presumption on file.")
+        out.append(f"* Third party: {result['third_party'] or 'none identified'}.")
+        out += ["", "**Criteria checked**", ""]
+        out += [f"* Indicator: {item}." for item in result["indicators"]] or [
+            f"* No third party at {ct.SUBRO_FAULT_THRESHOLD * 100:.0f}% or more fault, and no defective-part, "
+            "public road hazard or commercial-vehicle cause on file."]
+        out.append(f"* Liability evidence types on file: {', '.join(result['evidence_types']) or 'none'} "
+                   f"(the SOP needs at least {ct.MIN_LIABILITY_EVIDENCE}).")
+        if result["recoverable_share"] is not None:
+            share = result["recoverable_share"]
+            out += ["", "**Recovery math**", "",
+                    f"* Rule: {result['rule']}.",
+                    f"* Recoverable share: {share * 100:.0f}% of damages {ct.fmt(damages)} = "
+                    f"{ct.fmt(result['expected_recovery'])} expected recovery."]
+            if result["deductible_reimbursed"] is not None:
+                out.append(f"* Deductible reimbursed pro rata: {share * 100:.0f}% of the deductible = "
+                           f"{ct.fmt(result['deductible_reimbursed'])}.")
+        if result["forum"]:
+            out.append(f"* Forum: {result['forum']}.")
+            out.append(f"* Referral due: {result['referral_due']} ({ct.SUBRO_REFERRAL_DAYS} days after the first "
+                       "physical damage payment)." if result["referral_due"] else
+                       f"* Referral clock: not started; the {ct.SUBRO_REFERRAL_DAYS}-day clock starts at the first "
+                       "physical damage payment.")
+        out.append(f"* {result['notice']}")
+        if result["flags"]:
+            out += ["", "**Flags**", ""] + [f"* {flag}." for flag in result["flags"]]
+        out += ["", "*Advisory triage for the adjuster, who decides on the referral; not a liability or coverage decision.*"]
+        return out + ct.render_inputs([result])
+
     @staticmethod
     def _amount_after(text: str, word: str):
         """'ACV of $14,000' -> Decimal('14000'); None when the query does not state it."""
@@ -1003,27 +1301,7 @@ class AgenticRAGRouter:
         logs.append("📋 [Sub-Task 1] Parsing active case details & estimate rows...")
         logs.append("📋 [Sub-Task 2] Retrieving regional guidelines and deductible endorsements...")
 
-        # Detect audit parameter type
-        q_lower = query_text.lower()
-        audit_type = "general"
-        # An explicit total-loss question may mention supplements (they count toward repair cost);
-        # a supplement question may mention salvage or ACV in passing. So: "total loss" wins, then
-        # "supplement", then ACV/salvage alone.
-        if "total loss" in q_lower or "totaled" in q_lower:
-            audit_type = "total_loss"
-        elif "supplement" in q_lower:
-            audit_type = "supplement"
-        elif "acv" in q_lower or "salvage" in q_lower:
-            audit_type = "total_loss"
-        elif "labor" in q_lower or "rate" in q_lower or "cap" in q_lower:
-            audit_type = "labor"
-        elif "oem" in q_lower or "aftermarket" in q_lower or "lkq" in q_lower:
-            audit_type = "oem"
-        elif "fraud" in q_lower or "red flag" in q_lower or "siu" in q_lower:
-            audit_type = "fraud"
-        elif "letter" in q_lower or "settlement" in q_lower or "decision" in q_lower:
-            audit_type = "letter"
-
+        audit_type = self._detect_audit_type(query_text)
         logs.append(f"🔍 [Agentic Planner] Detected audit parameter: {audit_type.upper()}")
 
         answer_parts = []
@@ -1075,7 +1353,7 @@ class AgenticRAGRouter:
         elif claim_id == "#2026-30291": # David Chen
             if audit_type == "fraud":
                 logs.append("⚙️ [Tool Exec] policy_search: Found SOP_Claims_Fraud_Red_Flags.pdf")
-                logs.append("⚙️ [Tool Exec] dossier_search: Found custom_equipment_receipts_Chen.xlsx and recovery photos")
+                logs.append("⚙️ [Tool Exec] dossier_search: Found inspection_photos_Chen.pdf")
                 logs.append("🔍 [Reflection] Checking oxidation on passenger side key scratches: Rust present (pre-existing damage).")
                 answer_parts.extend([
                     "### 🔍 SIU Fraud Red Flags Audit: David Chen (#2026-30291)",
@@ -1083,7 +1361,7 @@ class AgenticRAGRouter:
                     "",
                     "1. **Wear & Tear Investigation**:",
                     "   * The estimate lists **$600.00** to repair key scratches on the passenger side panel.",
-                    "   * The investigator notes (*custom_equipment_receipts_Chen.xlsx*) and photos show the key scratches have extensive deep rust oxidation.",
+                    "   * The inspection photo log (*inspection_photos_Chen.pdf*) shows the key scratches have rust oxidation in the scratch channels, consistent with damage older than the break-in.",
                     "   * Under *SOP_Claims_Fraud_Red_Flags.pdf*, oxidized rust proves the damage is pre-existing (at least 6 months old) and did not occur during the recent theft. Key scratch repair is **Denied**.",
                     "2. **Theft Recovery Check**:",
                     "   * Police report confirms vehicle recovery with no key scratching noted on recovery scene inventory.",
