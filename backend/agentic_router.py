@@ -1,4 +1,5 @@
 import json
+import logging
 import re
 from decimal import Decimal
 import time
@@ -6,6 +7,8 @@ from typing import Optional, List, Dict, Any
 
 from backend import claims_tools as ct
 from backend.llm_client import ChatClientError
+
+logger = logging.getLogger(__name__)
 
 CLAIMS_DATA = [
     {
@@ -402,6 +405,7 @@ class AgenticRAGRouter:
         query_text: str,
         claim_id: Optional[str],
         caps: Any = None,
+        tool_section: Optional[str] = None,
     ) -> tuple:
         """Builds (system_prompt, user_prompt, top_matches, filenames) with
         bounded, injection-delimited context. `caps` carries the Settings
@@ -434,6 +438,8 @@ class AgenticRAGRouter:
         sandwich = f"{SANDWICH_REMINDER}\n\n" if "sandwich" in defenses else ""
 
         claim_context = self._get_claim_context_markdown(claim_id) if claim_id else ""
+        # The computed section sits outside the source character budget, like the claim dossier.
+        computed = f"<computed_figures>\n{tool_section}\n</computed_figures>\n\n" if tool_section else ""
         overhead = (f"Active Claim ID: {claim_id if claim_id else 'None (Global Scope)'}\n\n"
                     f"{claim_context}\n\nHere are the matching reference sources from the policy guidelines:\n\n"
                     f"<user_query>{query_text}</user_query>\n\n{sandwich}Generate your structured response:")
@@ -459,6 +465,14 @@ class AgenticRAGRouter:
         )
         if "datamark" in defenses:
             system_prompt += " " + DATAMARK_SYSTEM_NOTE
+        if tool_section:
+            system_prompt += (
+                " The <computed_figures> block was calculated by the claims tools from the claim record "
+                "and the cited SOPs. Treat its figures as authoritative: do not recompute, round or alter "
+                "them, and quote any amount, percentage or date exactly as it appears there. The full "
+                "computed section is shown to the user beneath your answer, so explain it rather than "
+                "re-tabulating it."
+            )
 
         def _escape_source_field(value: Any) -> str:
             # Neutralize characters that would let a document's own content
@@ -541,6 +555,7 @@ class AgenticRAGRouter:
         user_prompt = (
             f"Active Claim ID: {claim_id if claim_id else 'None (Global Scope)'}\n\n"
             f"{claim_context}\n\n"
+            f"{computed}"
             f"Here are the matching reference sources from the policy guidelines:\n{source_text}\n"
             f"<user_query>{query_text}</user_query>\n\n"
             f"{sandwich}Generate your structured response:"
@@ -740,6 +755,10 @@ class AgenticRAGRouter:
             query_text, claim_id, vector_store, embedding_engine,
             reranking_engine, llm_client, caps, logs, start_time,
         )
+        tool_section = self._live_tool_section(claim_id, query_text, logs)
+        # api.tools_result appends the section after the guard/provenance chain, so it is
+        # carried on every live result -- including refusals -- but never on the simulated fallback.
+        tools = {"tool_section": tool_section} if tool_section is not None else {}
 
         # Hard stop: never let the LLM synthesize freely with zero retrieved
         # context. Without this, an ungrounded call reliably fabricates both
@@ -762,18 +781,19 @@ class AgenticRAGRouter:
                 "sources": [],
                 "claim_dossier": None,
                 "engine": "lm-studio (agentic)",
-                "pipeline_logs": logs
+                "pipeline_logs": logs,
+                **tools,
             }
 
         # Step 4: Final LLM Synthesis
         logs.append("✍️ [Step 2: Synthesis] Invoking local LLM to generate context-grounded audit response...")
 
         system_prompt, user_prompt, top_matches, _filenames = self._assemble_context(
-            claim_chunks, all_matches, query_text, claim_id, caps
+            claim_chunks, all_matches, query_text, claim_id, caps, tool_section=tool_section
         )
 
         if not top_matches:
-            return self._no_context(logs)
+            return {**self._no_context(logs), **tools}
 
         # claim_dossier is a load-bearing response field (eval/run_eval.py
         # scores Faithfulness against it; see this project's CLAUDE.md Phase
@@ -795,7 +815,7 @@ class AgenticRAGRouter:
             )
         except ChatClientError as e:
             if not getattr(caps, "simulation_mode", True):
-                return self._unavailable(logs)
+                return {**self._unavailable(logs), **tools}
             logs.append(f"❌ [Synthesis Error] LLM generation failed: {e}. Falling back to simulation.")
             return self._run_simulated_agent(query_text, claim_id, vector_store, embedding_engine, reranking_engine, logs, start_time)
 
@@ -821,7 +841,8 @@ class AgenticRAGRouter:
             # folded into `sources` since it isn't a search result.
             "claim_dossier": claim_context if claim_context else None,
             "engine": "lm-studio (agentic)",
-            "pipeline_logs": logs
+            "pipeline_logs": logs,
+            **tools,
         }
 
     def run_query_stream(
@@ -850,7 +871,8 @@ class AgenticRAGRouter:
         start_time = time.time()
 
         def _final(answer: str, sources: List[Dict[str, Any]], eng: str, status: str = "ok",
-                   ttf_ms: Optional[float] = None) -> Dict[str, Any]:
+                   ttf_ms: Optional[float] = None, tool_section: Optional[str] = None,
+                   claim_dossier: Optional[str] = None) -> Dict[str, Any]:
             # `ttf_ms` documents time-to-FIRST-token. Callers that streamed at
             # least one token before finishing/failing pass the timestamp of
             # that first token explicitly; paths that never streamed a token
@@ -859,7 +881,7 @@ class AgenticRAGRouter:
             # measure, so they fall back to total elapsed time here.
             if ttf_ms is None:
                 ttf_ms = round((time.time() - start_time) * 1000, 1)
-            return {
+            final = {
                 "type": "final",
                 "answer": answer,
                 "sources": sources,
@@ -868,6 +890,11 @@ class AgenticRAGRouter:
                 "ttf_ms": ttf_ms,
                 "status": status,
             }
+            if tool_section is not None:
+                final["tool_section"] = tool_section
+            if claim_dossier is not None:
+                final["claim_dossier"] = claim_dossier
+            return final
 
         logs.append(f"🧠 [Agentic Coordinator] Initializing planner for query: '{query_text}'")
         if claim_id:
@@ -900,6 +927,9 @@ class AgenticRAGRouter:
                 query_text, claim_id, vector_store, embedding_engine,
                 reranking_engine, llm_client, caps, logs, start_time,
             )
+            # Same computed section as _run_online_agent, carried on every live final event.
+            tool_section = self._live_tool_section(claim_id, query_text, logs)
+            tools = {"tool_section": tool_section} if tool_section is not None else {}
 
             # Refuse an empty retrieval; evidence is checked again after context trimming.
             if not claim_chunks and not all_matches:
@@ -908,18 +938,18 @@ class AgenticRAGRouter:
                     "I couldn't find any supporting documents for this question in the available guidelines"
                     + (f" or claim {claim_id} dossier" if claim_id else "") + ". "
                     "Please rephrase the question or confirm the relevant policy/claim documents have been uploaded.",
-                    [], "lm-studio (agentic)", "refused",
+                    [], "lm-studio (agentic)", "refused", tool_section=tool_section,
                 )
                 return
 
             logs.append("✍️ [Step 2: Synthesis] Invoking local LLM to generate context-grounded audit response (streaming)...")
 
             system_prompt, user_prompt, top_matches, filenames = self._assemble_context(
-                claim_chunks, all_matches, query_text, claim_id, caps
+                claim_chunks, all_matches, query_text, claim_id, caps, tool_section=tool_section
             )
 
             if not top_matches:
-                yield {"type": "final", **self._no_context(logs)}
+                yield {"type": "final", **self._no_context(logs), **tools}
                 return
 
             chunks: List[str] = []
@@ -940,7 +970,7 @@ class AgenticRAGRouter:
             except Exception as exc:  # noqa: BLE001 -- surfaced to the caller as a partial + error final event, or a simulated fallback below
                 if not chunks:
                     if not getattr(caps, "simulation_mode", True):
-                        yield {"type": "final", **self._unavailable(logs)}
+                        yield {"type": "final", **self._unavailable(logs), **tools}
                         return
                     # Nothing was streamed yet -- mirror _run_online_agent's
                     # ChatClientError handling and fall back to a real,
@@ -971,6 +1001,7 @@ class AgenticRAGRouter:
                     "lm-studio (agentic)",
                     "error",
                     ttf_ms=ttf,
+                    tool_section=tool_section,
                 )
                 return
 
@@ -992,6 +1023,9 @@ class AgenticRAGRouter:
                 ],
                 "lm-studio (agentic)",
                 ttf_ms=ttf,
+                tool_section=tool_section,
+                # Same load-bearing field as _run_online_agent, so the figure check sees the same evidence.
+                claim_dossier=(self._get_claim_context_markdown(claim_id) if claim_id else "") or None,
             )
         except Exception as exc:  # noqa: BLE001 -- a pipeline failure *before* synthesis started (e.g. embed_query/search_similarity/get_claim_chunks raising). Without this the generator would propagate the exception straight out of chat_stream's SSE loop: a truncated response with no [DONE] and no audit event (the _audit() call in app.py only fires on the "final" event). Never leak the raw exception text to the client -- see ChatClientError's docstring convention.
             logs.append(f"❌ [Pipeline Error] Retrieval/planning failed before synthesis could begin: {type(exc).__name__}.")
@@ -1057,6 +1091,22 @@ class AgenticRAGRouter:
             pass
 
         return fallback_plan
+
+    def _live_tool_section(self, claim_id: Optional[str], query_text: str, logs: List[str]) -> Optional[str]:
+        """The simulated path's computed claim answer, for the live path to ground on and append.
+        None when there is no known claim or no audit type; a tool error never fails the request."""
+        claim = next((c for c in CLAIMS_DATA if c["id"] == claim_id), None) if claim_id else None
+        if claim is None:
+            return None
+        audit_type = self._detect_audit_type(query_text)
+        if audit_type == "general":
+            return None
+        try:
+            return "\n".join(self._computed_claim_answer(claim, audit_type, query_text, logs))
+        except Exception as exc:  # noqa: BLE001 -- the live answer still goes out, just without computed figures
+            logger.warning("live tool section failed for claim %s (%s): %s", claim_id, audit_type, type(exc).__name__)
+            logs.append(f"⚠️ [Tool] Computed figures unavailable ({type(exc).__name__}); answering from sources only.")
+            return None
 
     def _computed_claim_answer(self, claim: Dict[str, Any], audit_type: str, query_text: str,
                                logs: List[str]) -> List[str]:

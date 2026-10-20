@@ -94,7 +94,16 @@ As of September 6, the authoritative state is [portfolio-hardening.md](docs/port
 
 > **P4 supplement review done 2026-10-18** (branch `feat/p4-supplement-review`): `backend/claims_tools.py` `supplement_review` checks each supplement line (labor caps, betterment per `Guideline_Betterment_Adjustments.docx`, parts standard) and each supplement (photos, work before submission, reinspection over $1,500 single or 25% cumulative, 2-business-day due date) per `SOP_Supplement_Review.pdf`. Two demo claims carry synthetic supplements; the router's `supplement` audit type and a UI button render a cited, advisory table. Like P1, it runs in simulation mode only. **Total-loss explainer done 2026-10-18** (branch `feat/p4-total-loss-explainer`): `total_loss_explain` replaces the total-loss answer; repair cost = original at the SOP caps + supported documented supplements, held ones reported as pending (it was the billed itemized total). **Next:** P4 subrogation triage; per-role LLM endpoints stay queued.
 
-> **Security hardening and adjuster tools done 2026-10-20** (branch `fix/security-hardening`, PR #22). Every 2026-10-19 security-review finding is closed. Subrogation triage, coverage verification and the SIU indicator checklist are computed, cited and advisory (simulation mode), and the settlement letter uses draft wording. Verified: `crag check` 970 passed, gate 0 blocking; Postgres suite 986 passed; parity PASS. Next: tools on the live LLM path with a figure check, re-seed plus golden queries, then a fresh security review. See `HANDOFF.md`.
+> **Security hardening and adjuster tools done 2026-10-20** (branch `fix/security-hardening`, PR #22). Every 2026-10-19 security-review finding is closed. Subrogation triage, coverage verification and the SIU indicator checklist are computed, cited and advisory (simulation mode), and the settlement letter uses draft wording. Verified: `crag check` 970 passed, gate 0 blocking; Postgres suite 986 passed; parity PASS. PR #22 merged as 39dfad5, and PR #23 (SIU and docs) merged as 01c53cc.
+
+> **Computed tools on the live LLM path done 2026-10-20** (branch `fix/security-hardening`). Applies to a live (`lm-studio`) answer on a known claim with an audit-type query.
+> - The router computes the same cited tool section as simulation mode. The prompt gives it to the model as authoritative `<computed_figures>`.
+> - `api.tools_result` appends the section after the guard, provenance and conflict checks, so redaction cannot strip its citations.
+> - New `backend/figure_check.py` compares every money amount, percentage and date in the model's prose with the computed section, the retrieved sources and the claim dossier, exact after normalization. Unmatched figures get a visible "Figure check" line and a `figure_check` field.
+> - `/api/chat` and the stream behave the same. A tool error drops the section with a WARNING and never fails the request.
+> - Verified: `crag check` 988 passed, gate 0 blocking; Postgres suite 1004 passed.
+>
+> **Next:** re-seed plus golden queries for subrogation, coverage and SIU, then a fresh security review. See `HANDOFF.md`.
 
 > **License changed 2026-10-17**: MIT → AGPL-3.0 (owner decision; `LICENSE`, README badge and a new License section). Code copied before the change stays under MIT.
 
