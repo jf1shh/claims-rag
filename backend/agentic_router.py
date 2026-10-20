@@ -97,12 +97,55 @@ CLAIMS_DATA = [
 
 # Facts the claims tools need that are findings, not math: which estimate lines are custom
 # equipment (from the receipts), and which are excluded by an SIU or coverage finding.
-# All four claims are 2026 losses (claim IDs and police/telematics dates).
+# All four claims are 2026 losses (claim IDs and police/telematics dates). `subrogation` holds the
+# liability facts for subrogation_triage, each taken from the claim dossier text (ingest_all.py).
 CLAIM_EVIDENCE: Dict[str, Dict[str, Any]] = {
-    "#2026-99382": {"loss_year": 2026},
-    "#2026-10492": {"loss_year": 2026},
+    "#2026-99382": {
+        "loss_year": 2026,
+        "loss_date": "2026-01-12",
+        "subrogation": {
+            "third_party": "Vehicle 2 (other driver; towed from the scene)",
+            "third_party_source": "police_report_Sterling.pdf",
+            "third_party_fault": None,
+            "fault_source": None,
+            "collision": "rear_end",
+            "collision_source": "police_report_Sterling.pdf",
+            "insured_position": "lead",
+            "rebuttal": [],
+            "causes": [],
+            "evidence": [
+                {"type": "police_report", "source": "police_report_Sterling.pdf",
+                 "detail": "Vehicle 2 rear-ended the stopped Tesla at approximately 18 mph"},
+                {"type": "telematics", "source": "police_report_Sterling.pdf",
+                 "detail": "Telemetry Log Notes: 0 mph, brake pressure 100%, stationary 8.4 s before impact"},
+                {"type": "photos", "source": "tesla_rear_collision.png", "detail": "rear collision damage photo"},
+            ],
+            "first_payment": None,
+        },
+    },
+    "#2026-10492": {
+        "loss_year": 2026,
+        "loss_date": None,  # the hail inspection log carries no loss date
+        "subrogation": {
+            "third_party": None,
+            "causes": [],
+            "evidence": [{"type": "photos", "source": "dent_photos_description_Jenkins.pdf",
+                          "detail": "hail dents on hood and roof; windshield crack"}],
+            "first_payment": None,
+            "note": "hail is a weather peril; no responsible third party is on file",
+        },
+    },
     "#2026-30291": {
         "loss_year": 2026,
+        "loss_date": "2026-01-18",
+        "subrogation": {
+            "third_party": None,
+            "causes": [],
+            "evidence": [{"type": "police_report", "source": "police_theft_report_Chen.pdf",
+                          "detail": "No suspect information at this time"}],
+            "first_payment": None,
+            "note": "re-check if a suspect is identified or property is recovered",
+        },
         "custom_ops": ["Replace 4x Sport Wheels & Tires", "Replace Stolen Infotainment Console"],
         "custom_source": "custom_equipment_receipts_Chen.xlsx",
         "excluded": {
@@ -112,6 +155,16 @@ CLAIM_EVIDENCE: Dict[str, Dict[str, Any]] = {
     },
     "#2026-55912": {
         "loss_year": 2026,
+        "loss_date": "2026-01-20",
+        "subrogation": {
+            "third_party": None,
+            "causes": [],
+            "evidence": [{"type": "telematics", "source": "telematics_log_Rostova.pdf",
+                          "detail": "single vehicle drove into standing water at 45 mph"}],
+            "first_payment": None,
+            "note": "a public-road-hazard referral would need evidence of a public-entity maintenance failure; "
+                    "none is on file",
+        },
         "exclude_all": "driver-induced consequential damage from restart attempts (Case_Study_Engine_Hydro_Lock.pdf)",
         # Synthetic valuation reports on file (P4 total-loss explainer demo): one primary, one secondary.
         "valuations": [
@@ -837,6 +890,9 @@ class AgenticRAGRouter:
         if audit_type == "supplement":
             return self._supplement_answer(claim, evidence, logs)
 
+        if audit_type == "subrogation":
+            return self._subrogation_answer(claim, evidence, logs)
+
         if audit_type == "labor":
             out += [f"### ⚡ Labor Rate Audit: {name} ({cid})",
                     f"**Result: {'OVER CAP' if labor['status'] == 'over_cap' else 'WITHIN CAP'}** "
@@ -970,6 +1026,101 @@ class AgenticRAGRouter:
         out += ["", "*Advisory review for the adjuster; not a coverage decision.*"]
         return out + ct.render_inputs([result])
 
+    # Keyword routing for the simulated agent, first match wins. Whole words only: "separate" is not a
+    # rate, "capacity" is not a cap. An explicit total-loss question may mention supplements (they
+    # count toward repair cost); a supplement question may mention salvage or ACV in passing. So:
+    # "total loss" wins, then "supplement", then subrogation, then ACV/salvage alone.
+    AUDIT_KEYWORDS = [
+        ("total_loss", re.compile(r"\btotal[- ]loss(?:es)?\b|\btotall?ed\b")),
+        ("supplement", re.compile(r"\bsupplements?\b")),
+        ("subrogation", re.compile(r"\bsubrogat\w*|\brecover(?:y|ies)? from\b")),
+        ("total_loss", re.compile(r"\bacv\b|\bsalvage\b")),
+        ("labor", re.compile(r"\blabou?rs?\b|\brates?\b|\bcaps?\b|\bcapped\b")),
+        ("oem", re.compile(r"\boems?\b|\baftermarket\b|\blkq\b")),
+        ("fraud", re.compile(r"\bfraud(?:s|ulent)?\b|\bred flags?\b|\bsiu\b")),
+        ("letter", re.compile(r"\bletters?\b|\bsettlements?\b|\bdecisions?\b")),
+    ]
+    LETTER_REQUEST = re.compile(r"\bletters?\b")
+
+    @classmethod
+    def _detect_audit_type(cls, query_text: str) -> str:
+        q_lower = query_text.lower()
+        for audit_type, pattern in cls.AUDIT_KEYWORDS:
+            # A settlement letter may say whether subrogation is pursued; it is still a letter.
+            if audit_type == "subrogation" and cls.LETTER_REQUEST.search(q_lower):
+                continue
+            if pattern.search(q_lower):
+                return audit_type
+        return "general"
+
+    SUBROGATION_VERDICTS = {
+        "refer": "Refer to the Subrogation Unit (adjuster decision)",
+        "refer_after_evidence": "Refer after evidence: complete the liability file first",
+        "no_indicator": "No subrogation indicator on file",
+    }
+
+    @staticmethod
+    def _policy_deductible(claim: Dict[str, Any]):
+        """The policy's stated deductible, else the plan table value; None when neither resolves."""
+        try:
+            return ct.money(claim["deductible"])
+        except (KeyError, ValueError):
+            letter, coverage = ct.plan_letter(claim.get("plan", "")), ct.coverage_of(claim.get("deductible", ""))
+            return ct.DEDUCTIBLES.get((letter, coverage))
+
+    def _subrogation_answer(self, claim: Dict[str, Any], evidence: Dict[str, Any], logs: List[str]) -> List[str]:
+        """Subrogation triage: referral criteria, liability evidence and recovery math from claims_tools."""
+        name, cid = claim["insured"], claim["id"]
+        # Damages are what the carrier pays for the repair: the original estimate at the SOP caps plus
+        # supplements that pass review (held supplements are not counted).
+        supp = ct.supplement_review(original=claim["estimate"], supplements=claim.get("supplements", []),
+                                    vehicle=claim["vehicle"], loss_year=evidence.get("loss_year", 2026),
+                                    endorsements=claim["endorsements"])
+        damages = supp["original_approved"] + sum((s["approved"] for s in supp["supplements"] if not s["flags"]), ct.ZERO)
+        result = ct.subrogation_triage(state=ct.facility_state(claim["facility"]), loss_date=evidence.get("loss_date"),
+                                       damages=damages, deductible=self._policy_deductible(claim),
+                                       liability=evidence.get("subrogation", {}))
+        logs.append(f"🧮 [Tool] subrogation_triage: {result['status']}")
+        out = [f"### ⚖️ Subrogation Triage: {name} ({cid})",
+               f"**{self.SUBROGATION_VERDICTS[result['status']]}**", ""]
+        tp_fault = result["third_party_fault"]
+        if result["fault_basis"] == "presumption":
+            out.append(f"* Fault basis: **presumption, not an assessment**. In a rear-end collision the following "
+                       f"driver is presumed at fault ({ct.LIABILITY_SOP}, section 1); nothing on file rebuts it, so "
+                       f"the third party is treated as {tp_fault * 100:.0f}% at fault.")
+        elif result["fault_basis"] == "assessed":
+            out.append(f"* Fault basis: assessed on file, third party {tp_fault * 100:.0f}% / insured "
+                       f"{result['insured_fault'] * 100:.0f}%.")
+        else:
+            out.append("* Fault basis: no fault assessment or presumption on file.")
+        out.append(f"* Third party: {result['third_party'] or 'none identified'}.")
+        out += ["", "**Criteria checked**", ""]
+        out += [f"* Indicator: {item}." for item in result["indicators"]] or [
+            f"* No third party at {ct.SUBRO_FAULT_THRESHOLD * 100:.0f}% or more fault, and no defective-part, "
+            "public road hazard or commercial-vehicle cause on file."]
+        out.append(f"* Liability evidence types on file: {', '.join(result['evidence_types']) or 'none'} "
+                   f"(the SOP needs at least {ct.MIN_LIABILITY_EVIDENCE}).")
+        if result["recoverable_share"] is not None:
+            share = result["recoverable_share"]
+            out += ["", "**Recovery math**", "",
+                    f"* Rule: {result['rule']}.",
+                    f"* Recoverable share: {share * 100:.0f}% of damages {ct.fmt(damages)} = "
+                    f"{ct.fmt(result['expected_recovery'])} expected recovery."]
+            if result["deductible_reimbursed"] is not None:
+                out.append(f"* Deductible reimbursed pro rata: {share * 100:.0f}% of the deductible = "
+                           f"{ct.fmt(result['deductible_reimbursed'])}.")
+        if result["forum"]:
+            out.append(f"* Forum: {result['forum']}.")
+            out.append(f"* Referral due: {result['referral_due']} ({ct.SUBRO_REFERRAL_DAYS} days after the first "
+                       "physical damage payment)." if result["referral_due"] else
+                       f"* Referral clock: not started; the {ct.SUBRO_REFERRAL_DAYS}-day clock starts at the first "
+                       "physical damage payment.")
+        out.append(f"* {result['notice']}")
+        if result["flags"]:
+            out += ["", "**Flags**", ""] + [f"* {flag}." for flag in result["flags"]]
+        out += ["", "*Advisory triage for the adjuster, who decides on the referral; not a liability or coverage decision.*"]
+        return out + ct.render_inputs([result])
+
     @staticmethod
     def _amount_after(text: str, word: str):
         """'ACV of $14,000' -> Decimal('14000'); None when the query does not state it."""
@@ -1003,27 +1154,7 @@ class AgenticRAGRouter:
         logs.append("📋 [Sub-Task 1] Parsing active case details & estimate rows...")
         logs.append("📋 [Sub-Task 2] Retrieving regional guidelines and deductible endorsements...")
 
-        # Detect audit parameter type
-        q_lower = query_text.lower()
-        audit_type = "general"
-        # An explicit total-loss question may mention supplements (they count toward repair cost);
-        # a supplement question may mention salvage or ACV in passing. So: "total loss" wins, then
-        # "supplement", then ACV/salvage alone.
-        if "total loss" in q_lower or "totaled" in q_lower:
-            audit_type = "total_loss"
-        elif "supplement" in q_lower:
-            audit_type = "supplement"
-        elif "acv" in q_lower or "salvage" in q_lower:
-            audit_type = "total_loss"
-        elif "labor" in q_lower or "rate" in q_lower or "cap" in q_lower:
-            audit_type = "labor"
-        elif "oem" in q_lower or "aftermarket" in q_lower or "lkq" in q_lower:
-            audit_type = "oem"
-        elif "fraud" in q_lower or "red flag" in q_lower or "siu" in q_lower:
-            audit_type = "fraud"
-        elif "letter" in q_lower or "settlement" in q_lower or "decision" in q_lower:
-            audit_type = "letter"
-
+        audit_type = self._detect_audit_type(query_text)
         logs.append(f"🔍 [Agentic Planner] Detected audit parameter: {audit_type.upper()}")
 
         answer_parts = []

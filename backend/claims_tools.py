@@ -110,6 +110,36 @@ SALVAGE_TRANSFER_DAYS = 3
 # Lines the SOP treats as safety parts for the "OEM for safety components" rule.
 SAFETY_CATEGORIES = {"Safety", "Frame"}
 
+SUBRO_SOP = "SOP_Subrogation_Recovery.pdf"
+LIABILITY_SOP = "SOP_Liability_Determination.pdf"
+# SOP_Subrogation_Recovery.pdf, section 1: refer when a third party is 25% or more at fault, or the
+# loss was caused by one of these; refer within 30 days of the first physical damage payment.
+SUBRO_FAULT_THRESHOLD = Decimal("0.25")
+SUBRO_CAUSES = {
+    "defective_part": "a defective part",
+    "public_road_hazard": "a road hazard maintained by a public entity",
+    "commercial_vehicle": "a commercial vehicle",
+}
+SUBRO_REFERRAL_DAYS = 30
+# Section 2: written notice to the insured within 10 business days of any recovery.
+SUBRO_NOTICE_BUSINESS_DAYS = 10
+# Section 3: $100,000 or less goes to inter-company arbitration; above it, Subrogation Counsel.
+ARBITRATION_LIMIT = Decimal("100000")
+# SOP_Liability_Determination.pdf, section 1: a liability decision cites at least two of these.
+# "telematics" covers telematics or dash-camera data.
+LIABILITY_EVIDENCE_TYPES = ("police_report", "driver_statements", "witness_statement", "photos", "telematics")
+MIN_LIABILITY_EVIDENCE = 2
+# Section 2: comparative fault by state. Florida's bar applies only from `since`; the SOP gives no
+# rule for earlier Florida losses.
+COMPARATIVE_FAULT: Dict[str, Dict[str, Any]] = {
+    "CA": {"kind": "pure", "text": "pure comparative fault: recovery is reduced by the claimant's own "
+                                   "percentage of fault, even at 99%"},
+    "TX": {"kind": "modified", "bar": Decimal("0.50"),
+           "text": "modified comparative fault with a 51% bar: a claimant more than 50% at fault recovers nothing"},
+    "FL": {"kind": "modified", "bar": Decimal("0.50"), "since": "2023-03-24",
+           "text": "modified comparative fault with a 51% bar for accidents on or after March 24, 2023"},
+}
+
 ZERO = Decimal("0")
 
 
@@ -620,6 +650,158 @@ def total_loss_explain(*, original: Iterable[Dict[str, Any]], supplements: Itera
         inputs.append(cite("owner retains salvage", "salvage value deducted from the payout", TOTAL_LOSS_SOP,
                            "3. Salvage & Title Branding"))
     return result
+
+
+def _pct(share: Decimal) -> str:
+    return f"{share * 100:.0f}%"
+
+
+def _comparative_rule(state: Optional[str], loss_date: Optional[str]) -> tuple:
+    """(rule or None, flag or None) for the loss state and date."""
+    rule = COMPARATIVE_FAULT.get(state or "")
+    if rule is None:
+        return None, f"{LIABILITY_SOP} has no comparative-fault rule for {state or 'an unknown state'}"
+    if "since" in rule:
+        if loss_date is None:
+            return None, f"loss date not on file; the {state} rule applies only to accidents on or after {rule['since']}"
+        if loss_date < rule["since"]:
+            return None, (f"{LIABILITY_SOP} gives no comparative-fault rule for {state} accidents before "
+                          f"{rule['since']}; recovery share needs counsel input")
+    return rule, None
+
+
+def subrogation_triage(*, state: Optional[str], loss_date: Optional[str], damages: Decimal,
+                       deductible: Optional[Decimal], liability: Dict[str, Any]) -> Dict[str, Any]:
+    """Screen a claim for subrogation: referral criteria, liability evidence, recovery math, forum.
+
+    Third-party fault is the assessment on file, or the rear-end presumption when the insured was
+    the lead car and nothing rebuts it. Recovery is computed only when both the fault share and the
+    state's comparative-fault rule are known. The referral itself is the adjuster's decision.
+    """
+    third_party = liability.get("third_party")
+    tp_fault = liability.get("third_party_fault")
+    rebuttal = list(liability.get("rebuttal") or [])
+    causes = list(liability.get("causes") or [])
+    evidence = list(liability.get("evidence") or [])
+    first_payment = liability.get("first_payment")
+    collision_source = liability.get("collision_source", DOSSIER)
+    inputs = [cite("loss state", state or "unknown", DOSSIER, "repair facility"),
+              cite("loss date", loss_date or "not on file", DOSSIER),
+              cite("damages", fmt(damages), DOSSIER, "estimate at SOP caps + supported supplements"),
+              cite("deductible", fmt(deductible) if deductible is not None else "not on file", DOSSIER, "policy"),
+              cite("identified third party", third_party or "none", liability.get("third_party_source", DOSSIER))]
+    flags: List[str] = []
+    indicators: List[str] = []
+
+    # Fault: an assessment on file wins; otherwise the SOP's rear-end presumption, if unrebutted.
+    fault_basis = None
+    rear_end = liability.get("collision") == "rear_end"
+    position = liability.get("insured_position")
+    if rear_end:
+        inputs.append(cite("collision", f"rear-end; insured vehicle {position or 'position unknown'}", collision_source))
+    if tp_fault is not None:
+        tp_fault = Decimal(str(tp_fault))
+        fault_basis = "assessed"
+        inputs.append(cite("third-party fault (assessed)", _pct(tp_fault), liability.get("fault_source") or DOSSIER))
+    elif rear_end and position in ("lead", "following") and not rebuttal:
+        tp_fault = Decimal("1") if position == "lead" else ZERO
+        fault_basis = "presumption"
+        inputs.append(cite("rear-end presumption", "the following driver is presumed at fault (rebuttable)",
+                           LIABILITY_SOP, "1. Evidence Required"))
+    elif rear_end and rebuttal:
+        inputs.append(cite("rebuttal evidence", "; ".join(rebuttal), collision_source))
+        flags.append(f"rear-end presumption rebutted by {'; '.join(rebuttal)}; liability needs an assessment")
+    elif third_party:
+        flags.append("third-party fault is not assessed on file; liability needs an assessment")
+    insured_fault = Decimal("1") - tp_fault if tp_fault is not None else None
+    fault_unknown = tp_fault is None and bool(third_party)
+
+    if tp_fault is not None:
+        inputs.append(cite("referral fault threshold", f"third party {_pct(SUBRO_FAULT_THRESHOLD)} or more at fault",
+                           SUBRO_SOP, "1. Referral Criteria"))
+        if tp_fault >= SUBRO_FAULT_THRESHOLD:
+            indicators.append(f"third party {_pct(tp_fault)} at fault ({fault_basis}), at or above "
+                              f"{_pct(SUBRO_FAULT_THRESHOLD)}")
+    for item in causes:
+        label = SUBRO_CAUSES[item["cause"]]
+        indicators.append(f"loss caused by {label}")
+        inputs.append(cite(f"cause: {label}", "established on file", item["source"]))
+    if causes:
+        inputs.append(cite("referral causes", "defective part, public-entity road hazard or commercial vehicle",
+                           SUBRO_SOP, "1. Referral Criteria"))
+    if indicators and not third_party:
+        flags.append("responsible party not identified: recovery needs an identified third party")
+
+    # Liability evidence: at least two distinct types before a liability decision.
+    for item in evidence:
+        if item["type"] not in LIABILITY_EVIDENCE_TYPES:
+            raise ValueError(f"unknown evidence type {item['type']!r}")
+        inputs.append(cite(f"evidence: {item['type'].replace('_', ' ')}", item.get("detail", ""), item["source"]))
+    evidence_types = sorted({item["type"] for item in evidence})
+    needs_liability = bool(indicators) or fault_unknown
+    short_evidence = len(evidence_types) < MIN_LIABILITY_EVIDENCE
+    if needs_liability:
+        inputs.append(cite("liability evidence", f"at least {MIN_LIABILITY_EVIDENCE} of: police report, statements "
+                           "from both drivers, witness statement, photos, telematics or dash-camera data",
+                           LIABILITY_SOP, "1. Evidence Required"))
+        if short_evidence:
+            missing = [t.replace("_", " ") for t in LIABILITY_EVIDENCE_TYPES if t not in evidence_types]
+            flags.append(f"{len(evidence_types)} liability evidence type(s) on file; the SOP needs at least "
+                         f"{MIN_LIABILITY_EVIDENCE}. Not on file: {', '.join(missing)}")
+
+    if not needs_liability:
+        status = "no_indicator"
+    elif short_evidence or fault_unknown or not third_party:
+        status = "refer_after_evidence"
+    else:
+        status = "refer"
+
+    # Recovery math: only with a known fault share and a known comparative-fault rule.
+    rule = share = expected = reimbursed = None
+    if tp_fault is not None:
+        rule, rule_flag = _comparative_rule(state, loss_date)
+        if rule_flag:
+            flags.append(rule_flag)
+        else:
+            inputs.append(cite(f"{state} comparative fault", rule["text"], LIABILITY_SOP,
+                               "2. Comparative Fault by State (demo table)"))
+            share = tp_fault
+            if rule["kind"] == "modified" and insured_fault > rule["bar"]:
+                share = ZERO
+                flags.append(f"insured is {_pct(insured_fault)} at fault: the {state} 51% bar blocks any recovery")
+            expected = (damages * share).quantize(Decimal("0.01"))
+            if deductible is not None:
+                reimbursed = (deductible * share).quantize(Decimal("0.01"))
+                inputs.append(cite("deductible reimbursement", "same percentage of the deductible as of damages "
+                                   "recovered (pro rata)", SUBRO_SOP, "2. Deductible Reimbursement"))
+    if deductible is None and needs_liability:
+        flags.append("deductible not on file: reimbursement cannot be computed")
+
+    forum = referral_due = None
+    if status != "no_indicator":
+        basis = expected if expected is not None else damages
+        forum = "inter-company arbitration" if basis <= ARBITRATION_LIMIT else "Subrogation Counsel review"
+        inputs.append(cite("forum", f"{fmt(ARBITRATION_LIMIT)} or less: inter-company arbitration; above: "
+                           "Subrogation Counsel", SUBRO_SOP, "3. Inter-Company Arbitration"))
+        inputs.append(cite("referral deadline", f"{SUBRO_REFERRAL_DAYS} days from the first physical damage payment",
+                           SUBRO_SOP, "1. Referral Criteria"))
+        inputs.append(cite("first physical damage payment", first_payment or "not on file", DOSSIER, "payments"))
+        if first_payment:
+            referral_due = (date.fromisoformat(first_payment) + timedelta(days=SUBRO_REFERRAL_DAYS)).isoformat()
+        else:
+            flags.append(f"no physical damage payment on file: the {SUBRO_REFERRAL_DAYS}-day referral clock starts "
+                         "at the first physical damage payment")
+    notice = (f"Notify the insured in writing within {SUBRO_NOTICE_BUSINESS_DAYS} business days of any recovery "
+              f"({SUBRO_SOP}, section 2).")
+    inputs.append(cite("recovery notice", f"written, within {SUBRO_NOTICE_BUSINESS_DAYS} business days", SUBRO_SOP,
+                       "2. Deductible Reimbursement"))
+    if liability.get("note"):
+        flags.append(liability["note"])
+    return {"tool": "subrogation_triage", "status": status, "third_party": third_party, "fault_basis": fault_basis,
+            "third_party_fault": tp_fault, "insured_fault": insured_fault, "indicators": indicators,
+            "flags": flags, "evidence_types": evidence_types, "rule": rule["text"] if rule else None,
+            "recoverable_share": share, "expected_recovery": expected, "deductible_reimbursed": reimbursed,
+            "forum": forum, "referral_due": referral_due, "notice": notice, "inputs": inputs}
 
 
 def render_inputs(results: Iterable[Dict[str, Any]]) -> List[str]:
