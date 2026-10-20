@@ -9,8 +9,8 @@ the SQLite implementation forwards:
 
   * `(tenant_id, claim_id, filename)` unique, NULLS NOT DISTINCT -- a
     cross-claim filename collision is impossible in the schema, not just in
-    app code (the schema-level fix the per-scope overwrite guard was only a
-    stopgap for in SQLite).
+    app code. SQLite enforces the same scoping via `ix_documents_scope`
+    instead of a runtime guard.
   * `tenant_id` on every row with row-level security keyed on the
     `app.tenant_id` GUC. RLS is defense in depth -- this store *also* filters
     by tenant_id in SQL -- and it is proven by tests/test_postgres_store.py via
@@ -128,42 +128,18 @@ class PostgresVectorStore:
 
         conn = self._connect()
         try:
-            # Scope guard (parity with SQLite). Because the schema now allows the
-            # same filename in different scopes, an overwrite must only clobber
-            # the SAME scope -- never a sibling claim's or the global set's copy.
-            existing = conn.execute(
+            # Overwrite only the existing row in the SAME scope -- the schema's
+            # (tenant_id, claim_id, filename) NULLS NOT DISTINCT unique index
+            # already makes a cross-scope collision impossible, so this is a
+            # plain scoped delete-then-insert, not a guard.
+            conn.execute(
                 """
-                SELECT id, claim_id FROM documents
+                DELETE FROM documents
                 WHERE tenant_id = %s AND filename = %s
+                  AND claim_id IS NOT DISTINCT FROM %s
                 """,
-                (self.tenant_id, filename),
-            ).fetchall()
-            if existing:
-                existing_claim = existing[0][1]
-                if not (existing_claim is None and claim_id is None) and existing_claim != claim_id:
-                    existing_scope = f"claim {existing_claim}" if existing_claim else "global guidelines"
-                    new_scope = f"claim {claim_id}" if claim_id else "global guidelines"
-                    # The client-facing message must not name the other
-                    # scope's claim ID -- an adjuster restricted to claim A
-                    # would otherwise learn claim B's ID just by uploading a
-                    # same-named file. The detail is still logged for operators.
-                    logger.warning(
-                        "Scope-mismatched overwrite rejected for %r: existing=%s new=%s",
-                        filename, existing_scope, new_scope,
-                    )
-                    raise ValueError(
-                        f"A document named '{filename}' already exists outside this folder. "
-                        "Rename the file and upload it again."
-                    )
-                # Same scope -> overwrite: delete its rows (cascade removes chunks).
-                conn.execute(
-                    """
-                    DELETE FROM documents
-                    WHERE tenant_id = %s AND filename = %s
-                      AND claim_id IS NOT DISTINCT FROM %s
-                    """,
-                    (self.tenant_id, filename, claim_id),
-                )
+                (self.tenant_id, filename, claim_id),
+            )
 
             row = conn.execute(
                 """
@@ -220,19 +196,24 @@ class PostgresVectorStore:
 
         return doc_id, len(parent_chunks)
 
-    def delete_document(self, filename) -> bool:
-        """Removes a document and (cascade) its chunks/embeddings/FTS rows by
-        filename within this tenant. False if no such document exists. The
-        physical file is removed only after the delete commits."""
+    def delete_document(self, filename, claim_id=None) -> bool:
+        """Removes the document in the given scope (claim_id, filename) within
+        this tenant, and (cascade) its chunks/embeddings/FTS rows. False if no
+        such document exists. The physical file is removed only after the
+        delete commits."""
         from backend.rag_engine import safe_filename
 
         filename = safe_filename(filename)
-        source_key = self.get_blob_key(filename)
+        source_key = self.get_blob_key(filename, claim_id)
         conn = self._connect()
         try:
             cur = conn.execute(
-                "DELETE FROM documents WHERE tenant_id = %s AND filename = %s RETURNING id",
-                (self.tenant_id, filename),
+                """
+                DELETE FROM documents
+                WHERE tenant_id = %s AND filename = %s AND claim_id IS NOT DISTINCT FROM %s
+                RETURNING id
+                """,
+                (self.tenant_id, filename, claim_id),
             )
             deleted = cur.rowcount > 0
             conn.commit()
@@ -306,11 +287,12 @@ class PostgresVectorStore:
             conn.close()
         return [
             {"content": c, "filename": f, "file_type": t, "score": 1.0,
-             "id": pid, "document_id": str(did), "document_version": version or "legacy-unversioned"}
+             "id": pid, "document_id": str(did), "document_version": version or "legacy-unversioned",
+             "claim_id": claim_id}
             for c, f, t, pid, did, version in rows
         ]
 
-    def get_document_content(self, filename) -> str:
+    def get_document_content(self, filename, claim_id=None) -> str:
         """Reconstructs a document's full text by joining its parent chunks in order."""
         conn = self._connect()
         try:
@@ -319,27 +301,30 @@ class PostgresVectorStore:
                 SELECT p.content
                 FROM parent_chunks p
                 JOIN documents d ON p.document_id = d.id
-                WHERE d.tenant_id = %s AND d.filename = %s
+                WHERE d.tenant_id = %s AND d.filename = %s AND d.claim_id IS NOT DISTINCT FROM %s
                 ORDER BY p.chunk_index ASC
                 """,
-                (self.tenant_id, filename),
+                (self.tenant_id, filename, claim_id),
             ).fetchall()
         finally:
             conn.close()
         return "\n\n".join(r[0] for r in rows)
 
-    def get_document_metadata(self, filename):
+    def get_document_metadata(self, filename, claim_id=None):
         from backend.rag_engine import safe_filename
         conn = self._connect()
         try:
-            row = conn.execute("SELECT id, claim_id, filename, storage_key, document_version FROM documents WHERE tenant_id = %s AND filename = %s", (self.tenant_id, safe_filename(filename))).fetchone()
+            row = conn.execute(
+                "SELECT id, claim_id, filename, storage_key, document_version FROM documents WHERE tenant_id = %s AND filename = %s AND claim_id IS NOT DISTINCT FROM %s",
+                (self.tenant_id, safe_filename(filename), claim_id),
+            ).fetchone()
             return {"document_id": str(row[0]), "claim_id": row[1], "filename": row[2], "storage_key": row[3], "document_version": row[4] or "legacy-unversioned"} if row else None
         finally:
             conn.close()
 
-    def get_blob_key(self, filename):
+    def get_blob_key(self, filename, claim_id=None):
         from backend.rag_engine import _blob_key
-        metadata = self.get_document_metadata(filename)
+        metadata = self.get_document_metadata(filename, claim_id)
         if metadata is None:
             return None
         return metadata["storage_key"] or _blob_key(metadata["claim_id"], filename)
@@ -381,10 +366,10 @@ class PostgresVectorStore:
                     if top:
                         ids = [r[0] for r in top]
                         meta = {
-                            r[0]: (r[1], r[2], r[3], r[4], r[5])
+                            r[0]: (r[1], r[2], r[3], r[4], r[5], r[6])
                             for r in conn.execute(
                                 """
-                                SELECT p.id, p.content, d.filename, d.file_type, d.id, d.document_version
+                                SELECT p.id, p.content, d.filename, d.file_type, d.id, d.document_version, d.claim_id
                                 FROM parent_chunks p
                                 JOIN documents d ON p.document_id = d.id
                                 WHERE p.tenant_id = %s AND p.id = ANY(%s)
@@ -395,7 +380,8 @@ class PostgresVectorStore:
                         vector_ranked = [
                             {"id": pid, "content": meta[pid][0], "filename": meta[pid][1],
                              "file_type": meta[pid][2], "score": float(sim),
-                             "document_id": str(meta[pid][3]), "document_version": meta[pid][4] or "legacy-unversioned"}
+                             "document_id": str(meta[pid][3]), "document_version": meta[pid][4] or "legacy-unversioned",
+                             "claim_id": meta[pid][5]}
                             for pid, sim in top
                             if pid in meta
                         ]
@@ -415,7 +401,7 @@ class PostgresVectorStore:
                     with conn.transaction():
                         fts_rows = conn.execute(
                             """
-                            SELECT p.id, p.content, d.filename, d.file_type, d.id, d.document_version
+                            SELECT p.id, p.content, d.filename, d.file_type, d.id, d.document_version, d.claim_id
                             FROM parent_chunks p
                             JOIN documents d ON p.document_id = d.id
                             WHERE p.tenant_id = %(t)s
@@ -428,7 +414,8 @@ class PostgresVectorStore:
                         ).fetchall()
                         fts_ranked = [
                             {"id": r[0], "content": r[1], "filename": r[2], "file_type": r[3], "score": 0.0,
-                             "document_id": str(r[4]), "document_version": r[5] or "legacy-unversioned"}
+                             "document_id": str(r[4]), "document_version": r[5] or "legacy-unversioned",
+                             "claim_id": r[6]}
                             for r in fts_rows
                         ]
                 except Exception as exc:

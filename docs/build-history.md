@@ -856,3 +856,14 @@ existing California and Texas regulation docs.
   - `ingest_all.py` drops its tables first and then needs `sample_guidelines/`. Run alone, it left 13 documents. The right order is `generate_auto_pdfs.py`, `create_sample_files.py`, `ingest_all.py`, then `scripts/rebuild_golden_source_docs.py`. Diff the document set against a backup afterwards.
   - Writing the Webb reference exposed a tool bug: damages $865, deductible $1,000, and $700 "reimbursed" out of a $605.50 recovery. `subrogation_triage` now caps the deductible at the damages, and a parametrized test asserts that reimbursement never exceeds recovery. The Webb test had pinned the wrong $700.
 - `tests/test_golden_tool_references.py` uses the figure check to keep the references in step with the tools. A mutation check confirmed that a stale `$700.00` fails it.
+
+### 2026-10-20 — Per-scope document keys `(claim_id, filename)`
+
+- Owner decision: replace the "already exists outside this folder" rejection, which leaked that a filename existed in another scope, with per-scope identity. SQLite drops `filename TEXT UNIQUE` for `ix_documents_scope (filename, COALESCE(claim_id,''))`; Postgres already had `NULLS NOT DISTINCT` on `(tenant_id, claim_id, filename)`.
+- Store lookups/deletes, the API (`?claim_id=`, `DeleteRequest.claim_id`), audit records, the async delete message and the frontend all carry `claim_id`. `authorize_document` checks claim access before the lookup.
+- **Debugging history:**
+  - The first writer dispatch was rolled back because its `--files` scope left out the existing tests and `ingestion_worker.py`; one existing worker test asserted the old dead-letter-on-conflict behaviour.
+  - The SQLite rebuild must create `documents_new`, drop `documents`, then rename. Renaming the live table away first makes SQLite rewrite `parent_chunks`' foreign key to the old name.
+  - Opus review found that `CREATE TABLE` autocommits outside the transaction (a part-way failure left `documents_new` and blocked every restart), that the copy reset the AUTOINCREMENT mark (deleted ids were reused and picked up orphan chunks from another claim), and that search results lacked `claim_id` (claim citations 404'd in the viewer). All fixed with tests; the orphan cleanup skips chunk tables that a pre-2026-07-16 DB does not have.
+- Rollout: drain the async delete queue first; old messages carry no `claim_id` and read as global deletes.
+

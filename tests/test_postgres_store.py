@@ -176,11 +176,11 @@ def test_blob_store_wiring_routes_bytes_to_object_store(provisioned_db, tmp_path
         try:
             text = "Nevada mechanical labor cap is 110 dollars per hour."
             s.add_document("labor.txt", "txt", len(text), text, _FakeEmbedder(), claim_id="claim-1")
-            body = client.get_object(Bucket="test-bucket", Key=f"{tenant}/" + s.get_blob_key("labor.txt"))["Body"].read()
+            body = client.get_object(Bucket="test-bucket", Key=f"{tenant}/" + s.get_blob_key("labor.txt", "claim-1"))["Body"].read()
             assert body.decode() == text
             assert not (tmp_path / "docs" / "labor.txt").exists()
-            assert s.get_blob_key("labor.txt").startswith("versions/")
-            s.delete_document("labor.txt")
+            assert s.get_blob_key("labor.txt", "claim-1").startswith("versions/")
+            s.delete_document("labor.txt", "claim-1")
             keys = [o["Key"] for o in client.list_objects_v2(Bucket="test-bucket").get("Contents", [])]
             assert f"{tenant}/claim-1/labor.txt" not in keys
         finally:
@@ -239,24 +239,37 @@ def test_claim_chunks_return_generated_dossier(store):
 
 
 # --------------------------------------------------------------------------- #
-# Schema-level scope uniqueness / overwrite guard
+# Schema-level scope uniqueness: identity is (tenant_id, claim_id, filename)
 # --------------------------------------------------------------------------- #
 
 @needs_postgres
-def test_cross_claim_overwrite_guard(store):
-    text = "Custom equipment cap 3500 dollars per occurrence."
-    _add_global(store, "report.txt", text, claim_id="#2026-30291")
-    # pushing the same filename into a different claim must be refused
-    with pytest.raises(ValueError):
-        _add_global(store, "report.txt", text, claim_id="#2026-55912")
-    # the original scope is untouched
-    assert len(store.get_claim_documents("#2026-30291")) == 1
-    assert store.get_claim_documents("#2026-55912") == []
+def test_same_filename_coexists_across_claims_and_global(store):
+    text_a = "Custom equipment cap 3500 dollars per occurrence."
+    text_b = "Custom equipment cap 5000 dollars per occurrence."
+    text_global = "Global custom equipment policy text."
+    _add_global(store, "report.txt", text_a, claim_id="#2026-30291")
+    # The same filename in a different claim is a distinct document, not a conflict.
+    _add_global(store, "report.txt", text_b, claim_id="#2026-55912")
+    _add_global(store, "report.txt", text_global)
 
-    # same-scope overwrite is allowed and replaces contents
+    assert len(store.get_claim_documents("#2026-30291")) == 1
+    assert len(store.get_claim_documents("#2026-55912")) == 1
+    assert len(store.get_all_documents()) == 1
+    assert store.get_document_content("report.txt", "#2026-30291") == text_a
+    assert store.get_document_content("report.txt", "#2026-55912") == text_b
+    assert store.get_document_content("report.txt", None) == text_global
+
+    # Same-scope overwrite is allowed and replaces only that scope's contents.
     _add_global(store, "report.txt", "Overwritten custom equipment text.", claim_id="#2026-30291")
     assert len(store.get_claim_documents("#2026-30291")) == 1
-    assert "Overwritten" in store.get_document_content("report.txt")
+    assert "Overwritten" in store.get_document_content("report.txt", "#2026-30291")
+    assert store.get_document_content("report.txt", "#2026-55912") == text_b
+
+    # Deleting one scope leaves the others intact.
+    assert store.delete_document("report.txt", "#2026-30291") is True
+    assert store.get_claim_documents("#2026-30291") == []
+    assert store.get_document_content("report.txt", "#2026-55912") == text_b
+    assert store.get_document_content("report.txt", None) == text_global
 
 
 @needs_postgres

@@ -182,12 +182,13 @@ class IngestionWorker:
         (unsafe filenames) are permanent too; anything else retries."""
         payload = message.payload
         filename = payload.get("filename")
+        claim_id = payload.get("claim_id")
         if not filename:
             self.queue.dead_letter(message)
             return MALFORMED
         job = self._ensure_job(message)
         try:
-            deleted = self.vector_store.delete_document(filename)
+            deleted = self.vector_store.delete_document(filename, claim_id=claim_id)
         except ValueError as exc:
             self._mark_failed(job, "REJECTED_BY_STORE", str(exc))
             self.queue.dead_letter(message)

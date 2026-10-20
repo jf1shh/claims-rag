@@ -425,9 +425,9 @@ def test_given_delete_of_claim_scoped_document_then_authorize_document_is_consul
         files={"file": ("report.txt", b"claim report", "text/plain")},
     )
     assert upload.status_code == 200
-    response = client.post("/api/delete", json={"filename": "report.txt"})
+    response = client.post("/api/delete", json={"filename": "report.txt", "claim_id": "#2026-1"})
     assert response.status_code == 200
-    assert app_module.vector_store.get_document_metadata("report.txt") is None
+    assert app_module.vector_store.get_document_metadata("report.txt", "#2026-1") is None
 
 
 # NOTE: every role granted the `documents:delete` permission (supervisor, admin)

@@ -199,13 +199,14 @@ class IngestionService:
         *,
         tenant_id: str,
         filename: str,
+        claim_id: str | None = None,
     ) -> IngestionJob:
         """Async delete: creates a queued delete job and enqueues a delete
-        message for the worker. Dedupes only while a delete for this filename
-        is still in flight -- a completed delete job must not suppress a later
-        delete request (content-independent, so a naive checksum dedupe would
-        be wrong here)."""
-        dedupe_key = f"delete:{filename}"
+        message for the worker. Dedupes only while a delete for this
+        (claim_id, filename) scope is still in flight -- a completed delete
+        job must not suppress a later delete request (content-independent, so
+        a naive checksum dedupe would be wrong here)."""
+        dedupe_key = f"delete:{filename}:{claim_id or ''}"
         key = (tenant_id, dedupe_key)
         existing = self._find_existing(key)
         if existing is not None and existing.status in (
@@ -220,7 +221,7 @@ class IngestionService:
             job_id=f"job_{uuid.uuid4().hex}",
             tenant_id=tenant_id,
             document_id="",
-            claim_id=None,
+            claim_id=claim_id,
             filename=filename,
             checksum="",
             idempotency_key=dedupe_key,
@@ -239,7 +240,7 @@ class IngestionService:
                 "action": "delete",
                 "tenant_id": tenant_id,
                 "filename": filename,
-                "claim_id": None,
+                "claim_id": claim_id,
             }
         )
         return job
