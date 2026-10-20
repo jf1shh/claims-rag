@@ -48,7 +48,7 @@ the code computes.
 
 ### P2. Close the domain eval gaps
 
-**34-row re-score 2026-10-20**: 6 claim-scoped audit-button queries added (28 → 34); hybrid P/R 0.793/0.977, faithfulness 0.835, correctness 0.853. The new six answer at 0.992 coverage but retrieve at 0.528 precision. Details in README Results.
+**34-row re-score 2026-10-20**: 6 claim-scoped audit-button queries added (28 → 34); hybrid P/R 0.793/0.977, faithfulness 0.835, correctness 0.853. The new six answer at 0.992 coverage but retrieve at 0.528 precision. Details in README Results. **With named-document pinning (PR #29), re-scored the same day**: hybrid P/R 0.796/0.983, faithfulness 0.857, coverage 0.835. The new six went to P 0.542 and R 0.944; the original 28 retrieve identically.
 
 **Done 2026-10-16** (branch `feat/p2-domain-eval`): 28 golden queries; `crag coverage` flags only PII/privacy. Two same-day runs: hybrid P/R 0.865/0.991 in both, correctness 0.862/0.863, faithfulness 0.798/0.825. The new nine are easier (one short source each): correctness 0.956 vs 0.818 on the original nineteen.
 

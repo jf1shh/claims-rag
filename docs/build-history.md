@@ -876,3 +876,12 @@ existing California and Texas regulation docs.
 - **Debugging history:**
   - Tried first: prefixing the filename-derived title to the cross-encoder input (`ms-marco-MiniLM-L-6-v2`), in all three pair builders (`RerankingEngine.rerank`, `_RerankBatchCoordinator._process`, `RemoteReranker.rerank`). Sterling went 6→5, subrogation got worse (7→8, 7→9). Reverted.
   - A 2-dim fake embedder returns nothing from the vector leg: `_build_vector_cache` keeps only 384-dim rows. Integration tests must use 384-dim fakes.
+- **Merged** as PR #29 (d6d1d7d; CI run 39485723897 green on both jobs; revert point 4e7ac23).
+
+### 2026-10-20 — 34-row golden set re-scored with pinning
+
+- Run: `eval/run_eval.py` against a port-8010 server on d6d1d7d code, judge and generator `Qwen3-Coder-30B-A3B-Instruct-GGUF` on Lemonade (ctx 32768), 48-doc corpus, 3145 s. Saved as `eval/results-2026-10-20-34row-pinned.json`.
+- All 34: hybrid P/R 0.793/0.977 → 0.796/0.983, faithfulness 0.835 → 0.857 (32/34 scored), coverage 0.853 → 0.835 (33/34 scored).
+- Original 28: hybrid precision and recall identical on every row. All coverage movement is generation noise (`rostova-hydrolock-coverage` 0.0 → 0.85, `labor-mechanical-cap` 1.0 → 0.5).
+- New 6: P 0.528 → 0.542, R 0.911 → 0.944. Precision is rank-weighted and pins take the bottom slots, so recall is where pinning shows. The remaining new-6 precision gap is ranking order, not missing documents.
+- Launched detached (`setsid nohup`) so it survived the session handoff, per the earlier learning.
