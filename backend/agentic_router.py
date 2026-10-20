@@ -1098,7 +1098,7 @@ class AgenticRAGRouter:
         claim = next((c for c in CLAIMS_DATA if c["id"] == claim_id), None) if claim_id else None
         if claim is None:
             return None
-        audit_type = self._detect_audit_type(query_text)
+        audit_type = self._detect_live_audit_type(query_text)
         if audit_type == "general":
             return None
         try:
@@ -1236,8 +1236,8 @@ class AgenticRAGRouter:
 
     SUPPLEMENT_VERDICTS = {
         "hold_documentation": "HOLD: documentation incomplete",
-        "reinspection_required": "REINSPECTION REQUIRED before approval",
-        "approve_on_photos": "MAY BE APPROVED ON PHOTOS",
+        "reinspection_required": "Reinspection recommended before the adjuster's decision",
+        "approve_on_photos": "Supported on photos",
     }
 
     def _supplement_answer(self, claim: Dict[str, Any], evidence: Dict[str, Any], logs: List[str]) -> List[str]:
@@ -1252,7 +1252,7 @@ class AgenticRAGRouter:
         if result["status"] == "no_supplement":
             return out + ["No supplement is on file for this claim; the original estimate is the only one to review."]
         out += [f"**Recommended next step: {self.SUPPLEMENT_VERDICTS[result['status']]}**", "",
-                f"* Original approved estimate: {ct.fmt(result['original_approved'])} (itemized lines at the SOP labor caps).",
+                f"* Original estimate at SOP caps: {ct.fmt(result['original_approved'])} (itemized lines at the SOP labor caps).",
                 f"* Parts standard for this vehicle: {result['parts']['standard']}."]
         for supp in result["supplements"]:
             out += ["", f"#### Supplement {supp['id']} (received {supp['received'] or 'unknown'}): "
@@ -1287,7 +1287,7 @@ class AgenticRAGRouter:
         ("labor", re.compile(r"\blabou?rs?\b|\brates?\b|\bcaps?\b|\bcapped\b")),
         ("oem", re.compile(r"\boems?\b|\baftermarket\b|\blkq\b")),
         ("fraud", re.compile(r"\bfraud(?:s|ulent)?\b|\bred flags?\b|\bsiu\b")),
-        ("letter", re.compile(r"\bletters?\b|\bsettlements?\b|\bdecisions?\b")),
+        ("letter", re.compile(r"\bletters?\b|\bsettlements?\b")),
     ]
     LETTER_REQUEST = re.compile(r"\bletters?\b")
 
@@ -1302,6 +1302,30 @@ class AgenticRAGRouter:
                 return audit_type
         return "general"
 
+    # Stricter than AUDIT_KEYWORDS: the live path only attaches a computed section on an explicit
+    # phrasing (the UI audit buttons), never on an incidental keyword like "rate" or "decision"
+    # (verified misroutes: a police-report fault question routed to "letter", an interest-rate
+    # question to "labor", a rental-coverage question to "coverage"). "letter" and "total_loss" are
+    # checked first because their own button phrasing also contains "subrogation" / "supplement".
+    LIVE_AUDIT_KEYWORDS = [
+        ("letter", re.compile(r"\bsettlement letter\b")),
+        ("total_loss", re.compile(r"\btotal loss\b")),
+        ("supplement", re.compile(r"\bsupplements?\b")),
+        ("subrogation", re.compile(r"\bsubrogation\b")),
+        ("coverage", re.compile(r"\bverify(?:ing)? coverage\b")),
+        ("labor", re.compile(r"\blabor rate\b|\blabor cap\b")),
+        ("oem", re.compile(r"\boem parts\b")),
+        ("fraud", re.compile(r"\bsiu indicator checklist\b")),
+    ]
+
+    @classmethod
+    def _detect_live_audit_type(cls, query_text: str) -> str:
+        q_lower = query_text.lower()
+        for audit_type, pattern in cls.LIVE_AUDIT_KEYWORDS:
+            if pattern.search(q_lower):
+                return audit_type
+        return "general"
+
     SUBROGATION_VERDICTS = {
         "refer": "Refer to the Subrogation Unit (adjuster decision)",
         "refer_after_evidence": "Refer after evidence: complete the liability file first",
@@ -1309,7 +1333,7 @@ class AgenticRAGRouter:
     }
 
     COVERAGE_VERDICTS = {
-        "verified": "Coverage verified for this loss",
+        "verified": "All coverage checks pass (advisory)",
         "coverage_question": "Coverage question for the adjuster",
         "incomplete": "Incomplete: more information is needed before coverage can be verified",
     }

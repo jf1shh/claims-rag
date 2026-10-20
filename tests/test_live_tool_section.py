@@ -84,6 +84,30 @@ def test_no_section_without_a_claim_or_an_audit_type(query, claim_id):
     assert "<computed_figures>" not in _user_prompt(client)
 
 
+@pytest.mark.parametrize("query", [
+    "What decision did the police report reach on fault?",
+    "What interest rate applies to late payments?",
+    "Is the rental car covered?",
+])
+def test_keyword_misroutes_stay_general_on_the_live_path(query):
+    assert AgenticRAGRouter._detect_live_audit_type(query) == "general"
+
+
+@pytest.mark.parametrize("query,expected", [
+    ("Check the regional labor rate schedules for 2026.", "labor"),
+    ("Compare the shop charges against the labor cap.", "labor"),
+    ("Draft a formal Claim Decision and Payout Settlement Letter to the policyholder.", "letter"),
+    ("Verify coverage for claim #123: policy period, driver, peril and notice of loss.", "coverage"),
+    ("Run the SIU indicator checklist for claim #123.", "fraud"),
+    ("Explain whether claim #123 is a total loss under the state rule.", "total_loss"),
+    ("Review the repair supplement on claim #123.", "supplement"),
+    ("Triage claim #123 for subrogation.", "subrogation"),
+    ("Review the OEM Parts policy rider terms for claim #123.", "oem"),
+])
+def test_each_audit_button_phrasing_routes_correctly_on_the_live_path(query, expected):
+    assert AgenticRAGRouter._detect_live_audit_type(query) == expected
+
+
 def test_a_tool_error_never_fails_the_request(monkeypatch, caplog):
     def _boom(*args, **kwargs):
         raise RuntimeError("tool exploded")

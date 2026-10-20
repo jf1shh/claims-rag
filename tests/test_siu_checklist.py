@@ -102,10 +102,10 @@ class TestPaperAccident:
 
 
 class TestPreExistingDamage:
-    def test_rust_in_an_estimate_line_is_present(self):
+    def test_rust_in_an_estimate_line_alone_is_review_not_present(self):
         result = _result(estimate=[{"op": "Repair Rust-Through on Rear Quarter Panel", "cat": "Body",
                                     "rate": "$60/hr", "qty": "5.0 hrs", "total": "$300"}])
-        assert _indicator(result, "pre_existing_damage")["result"] == "present"
+        assert _indicator(result, "pre_existing_damage")["result"] == "review"
 
     def test_whole_word_match_trust_is_not_rust(self):
         result = _result(estimate=[{"op": "Replace Trust Sensor Module", "cat": "Electrical",
@@ -134,11 +134,29 @@ class TestDuplicateInvoices:
                                                       "photos": [{"angle": "rear bumper", "date": "2026-05-01"}]}])
         assert _indicator(result, "duplicate_invoices")["result"] == "absent"
 
-    def test_present_when_another_claim_has_the_same_photo_angle(self):
+    def test_review_when_only_the_photo_angle_matches(self):
         scene = {**BASE_SCENE, "photos": [{"angle": "front bumper", "date": "2026-01-01"}]}
         result = _result(scene=scene, other_claims=[{"claim_id": "#OTHER",
                                                       "photos": [{"angle": "front bumper", "date": "2026-05-01"}]}])
-        assert _indicator(result, "duplicate_invoices")["result"] == "present"
+        indicator = _indicator(result, "duplicate_invoices")
+        assert indicator["result"] == "review"
+        assert "#OTHER" not in indicator["detail"]
+
+    def test_review_when_only_the_date_matches(self):
+        scene = {**BASE_SCENE, "photos": [{"angle": "front bumper", "date": "2026-01-01"}]}
+        result = _result(scene=scene, other_claims=[{"claim_id": "#OTHER",
+                                                      "photos": [{"angle": "rear bumper", "date": "2026-01-01"}]}])
+        assert _indicator(result, "duplicate_invoices")["result"] == "review"
+
+    def test_present_when_another_claim_has_the_same_photo_angle_and_date(self):
+        scene = {**BASE_SCENE, "photos": [{"angle": "front bumper", "date": "2026-01-01"}]}
+        result = _result(scene=scene, other_claims=[{"claim_id": "#OTHER",
+                                                      "photos": [{"angle": "front bumper", "date": "2026-01-01"}]}])
+        indicator = _indicator(result, "duplicate_invoices")
+        assert indicator["result"] == "present"
+        assert "#OTHER" not in indicator["detail"]
+        assert indicator["source"] == ct.DOSSIER
+        assert indicator["_internal"]["matched_claim_id"] == "#OTHER"
 
 
 class TestStatus:
@@ -160,6 +178,15 @@ class TestStatus:
         result = _result(reported="2026-06-01", policy={"effective": "2026-01-01"},
                          scene={**BASE_SCENE, "single_vehicle": False})
         assert result["status"] == "incomplete"
+
+    def test_review_status_when_an_indicator_needs_review_and_none_is_present(self):
+        result = _result(reported="2026-06-01", policy={"effective": "2026-01-01"},
+                         scene={**BASE_SCENE, "single_vehicle": False},
+                         estimate=[{"op": "Repair Rust Damage", "cat": "Body", "rate": "$60/hr",
+                                    "qty": "1.0 hrs", "total": "$60"}])
+        assert result["status"] == "review"
+        assert "review" in result["message"].lower()
+        assert not result["procedure"]
 
     def test_referral_due_only_computed_when_detected_given(self):
         result = _result(estimate=[{"op": "Repair Rust Damage", "cat": "Body", "rate": "$60/hr",
@@ -235,6 +262,31 @@ class TestDemoClaimStatuses:
         assert "consequential-damage coverage exclusion question" in answer
         assert "not a fraud indicator" in answer
         assert "SIU Flagged" in answer
+
+
+class TestCrossClaimLeak:
+    """The duplicate-invoices row must never name another claim's ID or source filename to the user."""
+
+    CLAIM = {"id": "#TEST-A", "insured": "Test Insured", "estimate": [], "endorsements": [],
+              "plan": "Plan A (Standard)", "deductible": "$500", "vehicle": "2025 Test Car",
+              "facility": "Test Shop", "totalEst": "$0"}
+
+    def test_matched_claim_id_and_source_do_not_reach_the_rendered_section(self, monkeypatch):
+        other_claim = {"id": "#TEST-B"}
+        evidence = {
+            "reported": "2026-01-05", "loss_date": "2026-01-01", "policy": BASE_POLICY,
+            "fraud": {"scene": {**BASE_SCENE, "photos": [{"angle": "front bumper", "date": "2026-01-01"}]}},
+        }
+        other_evidence = {"fraud": {"scene": {"photos": [
+            {"angle": "front bumper", "date": "2026-01-01", "source": "secret_other_claim_photo.pdf"}]}}}
+        monkeypatch.setattr("backend.agentic_router.CLAIMS_DATA", [self.CLAIM, other_claim])
+        monkeypatch.setattr("backend.agentic_router.CLAIM_EVIDENCE",
+                             {self.CLAIM["id"]: evidence, other_claim["id"]: other_evidence})
+        out = AgenticRAGRouter()._siu_answer(self.CLAIM, evidence, [])
+        rendered = "\n".join(out)
+        assert "#TEST-B" not in rendered
+        assert "secret_other_claim_photo.pdf" not in rendered
+        assert "SIU can see which" in rendered
 
 
 def test_brooks_chronology_matches_claim_evidence():

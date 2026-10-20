@@ -78,6 +78,12 @@ class TestDriverCheck:
         assert row(result, "driver")["result"] == "issue"
         assert "Excluded Driver Endorsement" in row(result, "driver")["detail"]
 
+    def test_excluded_driver_wording_is_advisory_not_a_decision(self):
+        result = check(driver="Jane Doe", policy=policy(excluded_drivers=["Jane Doe"]))
+        detail = row(result, "driver")["detail"]
+        assert "coverage question for the adjuster" in detail
+        assert "is not covered operating" not in detail
+
     def test_permissive_documented_passes(self):
         result = check(driver="Alex Roe",
                        policy=policy(listed_drivers=["Jane Doe"], permissive={"Alex Roe": "texted by the insured"}))
@@ -257,7 +263,7 @@ class TestSimulatedCoverageAnswer:
     def test_coverage_query_routes_to_the_tool(self):
         answer, logs = run("Verify coverage for this claim", "#2026-99382")
         assert "### 🛡️ Coverage Verification: Matthew Sterling (#2026-99382)" in answer
-        assert "Coverage verified for this loss" in answer
+        assert "All coverage checks pass (advisory)" in answer
         assert "SOP_Coverage_Verification.pdf" in answer
         assert any("[Tool] coverage_check: verified" in line for line in logs)
 
