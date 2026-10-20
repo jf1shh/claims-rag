@@ -443,10 +443,17 @@ class PostgresVectorStore:
         finally:
             conn.close()
 
+        from backend.rag_engine import pin_named_documents
+
         # --- 4. Cross-encoder rerank (same protocol as SQLite) ------------- #
         if reranking_engine and candidates:
-            reranked = reranking_engine.rerank(query_text, candidates, top_k=top_k)
+            reranked = reranking_engine.rerank(query_text, candidates, top_k=len(candidates))
             for item in reranked:
                 item["score"] = item["rerank_score"]
-            return reranked
-        return candidates[:top_k]
+            if not use_fts:
+                return reranked[:top_k]
+            return pin_named_documents(query_text, reranked, top_k)
+
+        if not use_fts:
+            return candidates[:top_k]
+        return pin_named_documents(query_text, candidates, top_k)

@@ -5,6 +5,7 @@ os.environ["TRANSFORMERS_OFFLINE"] = "1"
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 
 import logging
+import re
 import sqlite3
 import threading
 import time
@@ -236,6 +237,116 @@ class RerankingEngine:
 
         scored_passages.sort(key=lambda x: x["rerank_score"], reverse=True)
         return scored_passages[:top_k]
+
+
+_PIN_TYPE_WORDS = {"sop", "guideline", "guide", "rider", "endorsement", "directive"}
+_PIN_GENERIC_WORDS = {"auto", "claim", "vehicle", "adjuster", "insurance", "policy", "plan", "form", "plus"}
+
+
+def _pin_singularize(token):
+    if len(token) > 3 and token.endswith("s"):
+        return token[:-1]
+    return token
+
+
+def _pin_is_droppable(token):
+    """Purely numeric tokens ("2026") and letters+digits ("form402") carry no title signal."""
+    return bool(re.fullmatch(r"[0-9]+", token) or re.fullmatch(r"[a-z]+[0-9]+", token))
+
+
+def _pin_tokenize_query(text):
+    return [_pin_singularize(t) for t in re.findall(r"[a-z0-9]+", text.lower())]
+
+
+def _pin_title_tokens(filename):
+    """Filename stem, split on separators and camelCase boundaries, lowercased,
+    singularized, with purely numeric/alnum-suffix tokens dropped."""
+    stem = filename.rsplit(".", 1)[0] if "." in filename else filename
+    stem = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", stem)
+    tokens = []
+    for part in re.split(r"[_\-\s]+", stem):
+        if not part:
+            continue
+        token = _pin_singularize(part.lower())
+        if _pin_is_droppable(token):
+            continue
+        tokens.append(token)
+    return tokens
+
+
+def _pin_is_named(doc, query_tokens):
+    """True if `query_tokens` names `doc` by document type plus distinctive title words."""
+    if doc.get("claim_id") is not None:
+        return False
+    tokens = _pin_title_tokens(doc["filename"])
+    type_words = [t for t in tokens if t in _PIN_TYPE_WORDS]
+    if not type_words or not any(t in query_tokens for t in type_words):
+        return False
+    distinctive = list(dict.fromkeys(t for t in tokens if t not in _PIN_TYPE_WORDS and t not in _PIN_GENERIC_WORDS))
+    if not distinctive:
+        return False
+    hits = sum(1 for t in distinctive if t in query_tokens)
+    return hits * 2 >= len(distinctive)
+
+
+def _pin_doc_key(doc):
+    return (doc.get("claim_id"), doc["filename"])
+
+
+def pin_named_documents(query_text, ranked, top_k, max_pins=2):
+    """Pin global reference documents (SOPs/guidelines/etc.) that the query names
+    explicitly by type + distinctive title words into the final top_k, even if the
+    cross-encoder ranked them lower.
+
+    A document is only eligible if it is global (`claim_id is None`); claim
+    documents are never pinned. Only documents already present in `ranked` --
+    which the caller has already filtered to the requesting scope -- are ever
+    considered, and no other lookup is performed, so this cannot leak another
+    claim's or tenant's documents. Pinned copies are marked
+    `"pinned": "named_document"`; the input list and its dicts are not mutated.
+    Output stays sorted by each item's original position in `ranked`, so scores
+    remain monotone non-increasing.
+    """
+    n = len(ranked)
+    if top_k >= n or top_k <= 0:
+        return ranked[:top_k]
+
+    query_tokens = set(_pin_tokenize_query(query_text))
+
+    # (position in `ranked`, item, is_pin)
+    selection = [[i, ranked[i], False] for i in range(top_k)]
+    # Keyed by document identity (claim_id, filename): a claim file named like a
+    # global SOP must not stop the SOP from being pinned.
+    selected_docs = {_pin_doc_key(entry[1]) for entry in selection}
+
+    pins_done = 0
+    processed_docs = set()
+    for idx, doc in enumerate(ranked):
+        if pins_done >= max_pins:
+            break
+        key = _pin_doc_key(doc)
+        if key in processed_docs:
+            continue
+        processed_docs.add(key)
+        if key in selected_docs:
+            continue
+        if not _pin_is_named(doc, query_tokens):
+            continue
+
+        replaceable = [i for i, entry in enumerate(selection) if not entry[2]]
+        if not replaceable:
+            break
+        replace_at = max(replaceable, key=lambda i: selection[i][0])
+
+        selected_docs.discard(_pin_doc_key(selection[replace_at][1]))
+        pinned_doc = dict(doc)
+        pinned_doc["pinned"] = "named_document"
+        selection[replace_at] = [idx, pinned_doc, True]
+        selected_docs.add(key)
+        pins_done += 1
+
+    selection.sort(key=lambda entry: entry[0])
+    return [entry[1] for entry in selection]
 
 
 class VectorStore(ABC):
@@ -948,9 +1059,13 @@ class SQLiteVectorStore(VectorStore):
 
         # --- 4. Cross-Encoder Reranking ---
         if reranking_engine and top_candidates:
-            reranked = reranking_engine.rerank(query_text, top_candidates, top_k=top_k)
+            reranked = reranking_engine.rerank(query_text, top_candidates, top_k=len(top_candidates))
             for item in reranked:
                 item["score"] = item["rerank_score"]
-            return reranked
+            if not use_fts:
+                return reranked[:top_k]
+            return pin_named_documents(query_text, reranked, top_k)
 
-        return top_candidates[:top_k]
+        if not use_fts:
+            return top_candidates[:top_k]
+        return pin_named_documents(query_text, top_candidates, top_k)
