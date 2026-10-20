@@ -94,6 +94,8 @@ docker compose up --build
 
 Runtime state (`rag_store.db`, `stored_documents/`, `jobs.db`, `audit.log.jsonl`) is routed via `RAG_DB_PATH`/`STORED_DOCUMENTS_DIR`/`JOBS_DB_PATH`/`AUDIT_LOG_PATH` into `/app/data`, backed by one named volume — deliberately not a bind mount per file, since Docker creates a directory (not a file) when a bind-mounted host path doesn't already exist.
 
+The image sets `APP_ENV=production` so it fails closed: a plain `docker run` with no further configuration refuses to start, because production validation rejects the no-credential `development` auth provider, rather than exposing the development admin identity on whatever interface/port is published. `docker-compose.yml` overrides `APP_ENV` back to `development` for local use and binds the port to `127.0.0.1` only; it still works with the Host allowlist (`ALLOWED_HOSTS`, wired in only when `AUTH_PROVIDERS` includes `development`) because its healthcheck and default browser access both use `127.0.0.1`/`localhost`, which are in the development default.
+
 This image is a development/portfolio-demo profile, same as local SQLite mode (see Production boundary below) — it isn't a production deployment artifact on its own.
 
 ## CI

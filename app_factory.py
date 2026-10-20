@@ -4,8 +4,45 @@ from dataclasses import dataclass
 from typing import Any
 
 from fastapi import FastAPI
+from starlette.responses import JSONResponse
 
 from config import Settings, get_settings
+
+
+class OriginCheckMiddleware:
+    """Rejects cross-site mutating requests (CSRF). CORSMiddleware alone does not
+    protect state-changing routes: a multipart form POST triggers no preflight, so
+    a page on another origin can submit it with the browser's cookies/credentials.
+    Applies only to POST/PUT/PATCH/DELETE, in every environment; pure ASGI, mirrors
+    BodyLimitMiddleware's shape. Requests with neither an Origin nor a Sec-Fetch-Site
+    header (curl, service clients, TestClient) are not browser-originated and pass."""
+
+    _MUTATING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+
+    def __init__(self, app, settings: Settings):
+        self.app = app
+        self.settings = settings
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http" or scope["method"] not in self._MUTATING_METHODS:
+            return await self.app(scope, receive, send)
+        headers = dict(scope["headers"])
+        sec_fetch_site = headers.get(b"sec-fetch-site", b"").decode("latin-1")
+        if sec_fetch_site == "cross-site":
+            return await self._refuse(scope, receive, send)
+        origin = headers.get(b"origin")
+        if origin is not None:
+            origin = origin.decode("latin-1")
+            host = headers.get(b"host", b"").decode("latin-1")
+            own_origin = f"{scope.get('scheme', 'http')}://{host}"
+            if origin != own_origin and origin not in self.settings.cors_origins:
+                return await self._refuse(scope, receive, send)
+        return await self.app(scope, receive, send)
+
+    @staticmethod
+    async def _refuse(scope, receive, send):
+        response = JSONResponse({"detail": "Cross-origin request refused."}, status_code=403)
+        return await response(scope, receive, send)
 
 
 @dataclass
@@ -268,6 +305,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                        allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
     from backend.body_limits import BodyLimitMiddleware
     app.add_middleware(BodyLimitMiddleware, settings=resolved)
+    app.add_middleware(OriginCheckMiddleware, settings=resolved)
+    if "development" in resolved.auth_providers:
+        from starlette.middleware.trustedhost import TrustedHostMiddleware
+        app.add_middleware(TrustedHostMiddleware, allowed_hosts=list(resolved.allowed_hosts))
     register_routes(app, runtime)
     if resolved.ingestion_mode == "async":
         runtime._ingestion_worker = build_ingestion_worker(
