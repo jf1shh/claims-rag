@@ -1264,7 +1264,7 @@ async function triggerAudit(type) {
             queryText = `Review the OEM Parts policy rider terms. For claim ${activeCase.id} involving a ${activeCase.vehicle} (which is currently under the coverage details specified), does the policy allow the adjuster to write aftermarket or LKQ parts, or does the policyholder's riders mandate brand-new OEM factory-original parts?`;
             break;
         case 'fraud':
-            queryText = `Analyze claim ${activeCase.id} for the vehicle ${activeCase.vehicle}. Perform a fraud red flags audit against the claims handler reference directives. Search the database for guidelines regarding pre-existing damage, telematics patterns (braking/speed), and reporting timelines, and list any red flags that adjusters should investigate.`;
+            queryText = `Run the SIU indicator checklist for claim ${activeCase.id} (${activeCase.vehicle}). Screen the Fraud Red Flags SOP's chronology, paper-accident, pre-existing-damage and duplicate-invoice indicators, cite each one, and say whether a referral to SIU is indicated. This is a cited checklist, not a decision.`;
             break;
         case 'supplement':
             queryText = `Review the repair supplement on claim ${activeCase.id} (${activeCase.vehicle}, ${activeCase.facility}). Check every added line against the Supplement Review SOP, the labor rate caps, the parts standard for this vehicle and the betterment guideline, and say whether a field reinspection is required.`;

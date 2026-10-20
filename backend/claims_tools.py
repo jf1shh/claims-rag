@@ -140,6 +140,19 @@ COMPARATIVE_FAULT: Dict[str, Dict[str, Any]] = {
            "text": "modified comparative fault with a 51% bar for accidents on or after March 24, 2023"},
 }
 
+FRAUD_SOP = "SOP_Claims_Fraud_Red_Flags.pdf"
+# SOP_Claims_Fraud_Red_Flags.pdf, section 1: refer to SIU within 3 business days of detection.
+SIU_REFERRAL_BUSINESS_DAYS = 3
+# Section 2, chronology: filed within 10 days of policy inception or a coverage upgrade.
+SIU_CHRONOLOGY_DAYS = 10
+# Section 2 gives "late at night" for paper accidents but no hours; this window is this tool's
+# own definition, flagged as such wherever it's used.
+SIU_LATE_NIGHT_START = 22
+SIU_LATE_NIGHT_END = 5
+# Whole words only: "trust" is not rust, "entrust" is not rust or an old dent.
+PRE_EXISTING_DAMAGE_PATTERN = re.compile(r"\brust(?:ed|y)?\b|\bcorrosion\b|\bcorroded\b|\bold dents?\b",
+                                         re.IGNORECASE)
+
 COVERAGE_SOP = "SOP_Coverage_Verification.pdf"
 # SOP_Coverage_Verification.pdf, section 4: 30 days to report a loss.
 NOTICE_DAYS = 30
@@ -944,6 +957,161 @@ def coverage_check(*, loss_date: str, reported: Optional[str], peril: str, plan:
 
     return {"tool": "coverage_check", "status": status, "coverage_part": coverage_part, "checks": checks,
             "inputs": inputs}
+
+
+def _chronology_check(reported: Optional[str], policy: Dict[str, Any]) -> Dict[str, Any]:
+    if reported is None:
+        return {"indicator": "chronology", "result": "missing",
+                "detail": "the date the loss was reported is not on file", "source": DOSSIER, "section": None}
+    report_date = date.fromisoformat(reported)
+    candidates = [("policy inception", policy["effective"])]
+    for change in policy.get("coverage_changes") or []:
+        candidates.append((change["change"], change["date"]))
+    scored = [(label, trigger, (report_date - date.fromisoformat(trigger)).days) for label, trigger in candidates]
+    within = [item for item in scored if 0 <= item[2] <= SIU_CHRONOLOGY_DAYS]
+    if within:
+        label, trigger, days = min(within, key=lambda item: item[2])
+        return {"indicator": "chronology", "result": "present",
+                "detail": f"claim reported {days} day(s) after {label} ({trigger}), within "
+                           f"{SIU_CHRONOLOGY_DAYS} days", "source": FRAUD_SOP, "section": "2. Red Flags Checklist"}
+    label, trigger, days = min(scored, key=lambda item: abs(item[2]))
+    return {"indicator": "chronology", "result": "absent",
+            "detail": f"claim reported {days} day(s) after {label} ({trigger}), outside "
+                       f"{SIU_CHRONOLOGY_DAYS} days", "source": FRAUD_SOP, "section": "2. Red Flags Checklist"}
+
+
+def _paper_accident_check(loss_time: Optional[str], scene: Dict[str, Any]) -> Dict[str, Any]:
+    single_vehicle = bool(scene.get("single_vehicle"))
+    remote = bool(scene.get("remote"))
+    police_report = scene.get("police_report")
+    witnesses = list(scene.get("witnesses") or [])
+    hours_note = (f"late night is taken here as {SIU_LATE_NIGHT_START}:00-0{SIU_LATE_NIGHT_END}:00; the SOP "
+                  "itself does not define the hours")
+    known = {"single-vehicle": single_vehicle, "remote area": remote,
+             "no police report": police_report is None, "no independent witness": not witnesses}
+    failed = [label for label, ok in known.items() if not ok]
+    if failed:
+        return {"indicator": "paper_accident", "result": "absent",
+                "detail": f"not a paper-accident pattern: {', '.join(failed)} not met; {hours_note}",
+                "source": FRAUD_SOP, "section": "2. Red Flags Checklist"}
+    if loss_time is None:
+        return {"indicator": "paper_accident", "result": "missing",
+                "detail": "single-vehicle, remote, no police report, no witness, but the time of loss is "
+                           f"not on file to check late night; {hours_note}", "source": DOSSIER, "section": None}
+    hour = int(loss_time.split(":")[0])
+    late_night = hour >= SIU_LATE_NIGHT_START or hour < SIU_LATE_NIGHT_END
+    if late_night:
+        return {"indicator": "paper_accident", "result": "present",
+                "detail": f"single-vehicle collision at {loss_time}, remote area, no police report, no "
+                           f"independent witness; {hours_note}", "source": FRAUD_SOP,
+                "section": "2. Red Flags Checklist"}
+    return {"indicator": "paper_accident", "result": "absent",
+            "detail": f"single-vehicle, remote, no police report, no witness, but {loss_time} is not late "
+                       f"night; {hours_note}", "source": FRAUD_SOP, "section": "2. Red Flags Checklist"}
+
+
+def _pre_existing_damage_check(estimate: List[Dict[str, Any]], findings: List[Dict[str, Any]]) -> Dict[str, Any]:
+    hits = [(row["op"], DOSSIER) for row in estimate if PRE_EXISTING_DAMAGE_PATTERN.search(row.get("op", ""))]
+    dossier_findings = [f for f in findings if f.get("indicator") == "pre_existing_damage"]
+    if hits or dossier_findings:
+        details = [f"estimate line '{op}' describes rust, corrosion or an old dent" for op, _ in hits]
+        details += [f["detail"] for f in dossier_findings]
+        sources = [src for _, src in hits] + [f["source"] for f in dossier_findings]
+        return {"indicator": "pre_existing_damage", "result": "present", "detail": "; ".join(details),
+                "source": "; ".join(dict.fromkeys(sources)), "section": "2. Red Flags Checklist"}
+    return {"indicator": "pre_existing_damage", "result": "absent",
+            "detail": "no estimate line or dossier finding of rust, corrosion, an old dent, or damage "
+                       "predating the loss", "source": FRAUD_SOP, "section": "2. Red Flags Checklist"}
+
+
+def _duplicate_invoices_check(photos: Optional[List[Dict[str, Any]]],
+                              other_claims: List[Dict[str, Any]]) -> Dict[str, Any]:
+    photos = list(photos or [])
+    other_claims = list(other_claims or [])
+    if not photos or not other_claims:
+        return {"indicator": "duplicate_invoices", "result": "missing",
+                "detail": "not checkable: no photo metadata on file", "source": DOSSIER, "section": None}
+    for other in other_claims:
+        for other_photo in other.get("photos") or []:
+            for photo in photos:
+                same_angle = photo.get("angle") and photo.get("angle") == other_photo.get("angle")
+                same_date = photo.get("date") and photo.get("date") == other_photo.get("date")
+                if same_angle or same_date:
+                    return {"indicator": "duplicate_invoices", "result": "present",
+                            "detail": f"photo angle or date on this claim matches "
+                                       f"{other.get('claim_id', 'another claim')}",
+                            "source": other_photo.get("source", DOSSIER), "section": None}
+    return {"indicator": "duplicate_invoices", "result": "absent",
+            "detail": f"no identical photo angle or treatment date found against {len(other_claims)} other "
+                       "claim(s) on file", "source": FRAUD_SOP, "section": "2. Red Flags Checklist"}
+
+
+def siu_checklist(*, claim_id: str, reported: Optional[str], loss_date: str, loss_time: Optional[str],
+                  policy: Dict[str, Any], scene: Dict[str, Any], estimate: Iterable[Dict[str, Any]],
+                  findings: Iterable[Dict[str, Any]] = (), other_claims: Iterable[Dict[str, Any]] = (),
+                  detected: Optional[str] = None) -> Dict[str, Any]:
+    """Screen a claim against the SOP's four SIU red flags. Every indicator carries its own
+    citation; the checklist never adjudicates -- referral itself stays with the adjuster.
+    """
+    estimate = list(estimate)
+    findings = list(findings)
+    other_claims = list(other_claims)
+
+    indicators = [
+        _chronology_check(reported, policy),
+        _paper_accident_check(loss_time, scene),
+        _pre_existing_damage_check(estimate, findings),
+        _duplicate_invoices_check(scene.get("photos"), other_claims),
+    ]
+    present = [i for i in indicators if i["result"] == "present"]
+    missing = [i for i in indicators if i["result"] == "missing"]
+    if present:
+        status = "refer_to_siu"
+    elif missing:
+        status = "incomplete"
+    else:
+        status = "no_indicator"
+
+    inputs = [
+        cite("claim", claim_id, DOSSIER),
+        cite("loss date", loss_date, DOSSIER),
+        cite("reported", reported or "not on file", DOSSIER),
+        cite("policy effective", policy.get("effective", "unknown"), policy.get("source", DOSSIER)),
+        cite("SIU chronology rule", f"filed within {SIU_CHRONOLOGY_DAYS} days of policy inception or a "
+             "coverage upgrade", FRAUD_SOP, "2. Red Flags Checklist"),
+        cite("SIU paper-accident rule", "single-vehicle collision, late at night, remote area, no police "
+             "report, no independent witness", FRAUD_SOP, "2. Red Flags Checklist"),
+        cite("SIU pre-existing-damage rule", "rust, corrosion or old dents that do not match the direction "
+             "of force", FRAUD_SOP, "2. Red Flags Checklist"),
+        cite("SIU duplicate-invoices rule", "identical photo angles or treatment dates across two claims",
+             FRAUD_SOP, "2. Red Flags Checklist"),
+    ]
+
+    procedure: List[str] = []
+    if status == "refer_to_siu":
+        message = (f"Indicators present: refer to SIU within {SIU_REFERRAL_BUSINESS_DAYS} business days of "
+                   "detection (adjuster decision).")
+        procedure = [
+            "Do not inform the policyholder or claimant that a referral is being made.",
+            "Compile photo metadata, the police report and telematics history (if available) before the referral.",
+            "Continue processing non-disputed elements of the claim unless instructed otherwise by the SIU investigator.",
+        ]
+        inputs.append(cite("SIU referral procedure", "do not inform the policyholder or claimant; compile "
+                           "documentation; continue non-disputed processing", FRAUD_SOP,
+                           "3. SIU Referral Procedure"))
+        inputs.append(cite("SIU referral deadline", f"{SIU_REFERRAL_BUSINESS_DAYS} business days of detection",
+                           FRAUD_SOP, "1. The Importance of Fraud Detection"))
+    elif status == "incomplete":
+        message = "No indicator is present, but some could not be checked on the file as it stands."
+    else:
+        message = "No SOP indicator is present on this claim."
+
+    referral_due = add_business_days(detected, SIU_REFERRAL_BUSINESS_DAYS) if detected and status == "refer_to_siu" else None
+    if detected:
+        inputs.append(cite("detection date", detected, "query"))
+
+    return {"tool": "siu_checklist", "status": status, "indicators": indicators, "message": message,
+            "procedure": procedure, "referral_due": referral_due, "inputs": inputs}
 
 
 def render_inputs(results: Iterable[Dict[str, Any]]) -> List[str]:

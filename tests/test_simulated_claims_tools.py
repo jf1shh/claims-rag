@@ -45,7 +45,8 @@ def test_oem_query_uses_rider_check():
 ])
 def test_settlement_letter_payout_is_computed(claim_id, payout):
     answer, logs = run("Draft the settlement letter", claim_id)
-    assert f"**Net settlement: {payout}**" in answer
+    assert f"**Draft net settlement: {payout}**" in answer
+    assert "not a settlement decision" in answer
     assert "#### Tool inputs and citations" in answer
     assert any("[Tool] deductible_apply" in line for line in logs)
 
@@ -64,9 +65,12 @@ def test_unknown_state_has_no_total_loss_rule():
     assert "NO RULE" in answer
 
 
-def test_fraud_narrative_unchanged():
-    answer, _ = run("Any SIU red flags?", "#2026-30291")
-    assert "RED FLAG DETECTED" in answer
+def test_fraud_query_runs_the_siu_checklist():
+    answer, logs = run("Any SIU red flags?", "#2026-30291")
+    assert "### 🔍 SIU Indicator Checklist: David Chen (#2026-30291)" in answer
+    assert "Pre Existing Damage | PRESENT" in answer
+    assert "refer to SIU within 3 business days" in answer
+    assert any("[Tool] siu_checklist" in line for line in logs)
 
 
 def test_global_scope_still_lists_references():
