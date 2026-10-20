@@ -195,6 +195,7 @@ def test_unverified_prose_figure_is_flagged_and_the_section_appended(api):
         assert body["answer"].endswith("\n\n---\n\n" + SECTION)
         assert body["figure_check"]["action"] == "flagged"
         assert body["figure_check"]["unverified"] == [{"kind": "money", "text": "$999.99"}]
+        assert body["figure_check"]["source_only"] == []
         assert body["structured"]["answer"]["text"] == body["answer"]
     assert chat["answer"] == final["answer"]
 
@@ -203,7 +204,7 @@ def test_verified_prose_figures_get_no_notice(api):
     chat, final = _both(api("Body labor at $75.00/hr matches the cap; the estimate is $4,850 (ADV_memo.txt)."))
     for body in (chat, final):
         assert "Figure check" not in body["answer"]
-        assert body["figure_check"] == {"action": "none", "checked": 2, "unverified": []}
+        assert body["figure_check"] == {"action": "none", "checked": 2, "unverified": [], "source_only": []}
         assert body["answer"].endswith(SECTION)
     assert chat["answer"] == final["answer"]
 

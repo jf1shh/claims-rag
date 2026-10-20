@@ -243,8 +243,9 @@ def register_routes(app, runtime):
     def tools_result(result):
         """Computed claim figures (the router's `tool_section`), applied last so the guard,
         provenance and conflict checks never see -- or redact -- the computed section. Live
-        prose is checked against the section and the evidence (backend/figure_check.py);
-        a withheld answer gets the section without a figure check. Never raises."""
+        prose is checked against the trusted computed section + claim dossier and the
+        untrusted retrieved sources (backend/figure_check.py); a withheld answer gets the
+        section without a figure check. Never raises."""
         section = result.get("tool_section")
         if not section:
             return result
@@ -254,9 +255,9 @@ def register_routes(app, runtime):
             return {**result, "answer": answer + "\n\n---\n\n" + section}
         try:
             from backend.figure_check import check_figures, notice
-            evidence = [s.get("content") or "" for s in result.get("sources") or []]
-            check = check_figures(answer, trusted=section,
-                                  evidence=evidence + [result.get("claim_dossier") or ""])
+            sources = [s.get("content") or "" for s in result.get("sources") or []]
+            check = check_figures(answer, trusted=[section, result.get("claim_dossier") or ""],
+                                  sources=sources)
             flagged = notice(check)
             if flagged:
                 answer += "\n\n" + flagged
