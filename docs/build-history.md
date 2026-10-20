@@ -867,3 +867,12 @@ existing California and Texas regulation docs.
   - Opus review found that `CREATE TABLE` autocommits outside the transaction (a part-way failure left `documents_new` and blocked every restart), that the copy reset the AUTOINCREMENT mark (deleted ids were reused and picked up orphan chunks from another claim), and that search results lacked `claim_id` (claim citations 404'd in the viewer). All fixed with tests; the orphan cleanup skips chunk tables that a pre-2026-07-16 DB does not have.
 - Rollout: drain the async delete queue first; old messages carry no `claim_id` and read as global deletes.
 
+
+### 2026-10-20 — Named-document pinning for audit queries
+
+- Problem: the 6 audit-phrasing golden rows scored hybrid precision 0.528. A retrieval-only probe (`/api/eval/search`, hybrid_rerank, top_k 4, every expected `source`) found all sources in the top 4 for 29/34 rows. The misses were long claim-scoped queries that name their SOP: `SOP_Coverage_Verification.pdf` ranked 6 (Sterling), `SOP_Subrogation_Recovery.pdf` ranked 7 (Webb, Jenkins). The cross-encoder put claim files and case studies above the SOP the query cites.
+- Fix: `pin_named_documents` (`backend/rag_engine.py`, both stores). The reranker now scores the full candidate pool. Then up to 2 global documents the query names by title (type word + at least half of the distinctive title words) replace the lowest-ranked unpinned items. Only scope-filtered candidates are eligible, claim documents are never pinned, and naive mode is not pinned. Dedup is keyed by `(claim_id, filename)`.
+- Result: probe at top_k 4 went 29/34 → 32/34. Pins fire only on Sterling, Webb and Jenkins; the other 31 rows are unchanged. The two left are `rostova-dui-hallucination-probe` (no source by design) and `loss_statement_Brooks.pdf`, which is outside the top 15 for its query.
+- **Debugging history:**
+  - Tried first: prefixing the filename-derived title to the cross-encoder input (`ms-marco-MiniLM-L-6-v2`), in all three pair builders (`RerankingEngine.rerank`, `_RerankBatchCoordinator._process`, `RemoteReranker.rerank`). Sterling went 6→5, subrogation got worse (7→8, 7→9). Reverted.
+  - A 2-dim fake embedder returns nothing from the vector leg: `_build_vector_cache` keeps only 384-dim rows. Integration tests must use 384-dim fakes.
