@@ -802,3 +802,24 @@ existing California and Texas regulation docs.
   - `crag check`: 970 passed, 17 skipped, 1 xfailed; gate passed, 0 blocking.
   - Full suite on a local pgvector:pg16: 986 passed.
   - Parity: PASS (recall@4 0.9844).
+
+## Computed tools on the live LLM path — 2026-10-20 (branch `fix/security-hardening`)
+
+- Goal: live answers on a claim use the same computed, cited figures as simulation mode, and the model cannot quietly change them.
+- `backend/agentic_router.py`:
+  - `_live_tool_section` runs `_computed_claim_answer` when the query has an audit type and the claim is known. "General" queries get no section.
+  - `_assemble_context` adds the section as `<computed_figures>`, with a system-prompt rule to quote its figures exactly. The section sits outside the source budget.
+  - Every live result after the pipeline carries `tool_section`. The simulated fallback does not, because its answer already contains the section.
+  - The live stream final now carries `claim_dossier`, like the JSON path.
+- `backend/api.py` `tools_result` runs last on both routes:
+  - It runs the figure check on the post-guard prose and appends the section after a rule.
+  - A withheld answer gets the section with no check.
+  - A check error keeps the section and logs a warning.
+- `backend/figure_check.py` (new, stdlib):
+  - Extracts money (to the cent, sign ignored), percentages and dates (ISO, US and month-name forms, all to ISO).
+  - Flags prose figures found in neither the section, nor the sources, nor the dossier.
+- Routing: Sonnet failed the checks and Opus passed. Claude reviewed the diff and reran the gates.
+- Verified:
+  - `crag check`: 988 passed, 17 skipped, 1 xfailed; gate 0 blocking.
+  - Postgres suite: 1004 passed.
+  - Ruff: clean.

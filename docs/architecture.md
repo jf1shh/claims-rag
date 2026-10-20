@@ -56,6 +56,7 @@ claims-rag/
 │   ├── answer_guard.py         ← post-generation guard: unsupported claim outcomes / off-allowlist contacts (2026-09-26)
 │   ├── conflict_check.py       ← evidence conflict check → conflicting_evidence (2026-09-26)
 │   ├── provenance_check.py     ← answer provenance check: redacts planted identifiers/filenames (2026-10-16)
+│   ├── figure_check.py         ← live answers: money/percent/date figures checked against computed tool figures (2026-10-20)
 │   ├── prompt_defense.py       ← sanitize / sandwich / datamark prompt-injection defenses (2026-09-26)
 ├── frontend/
 │   ├── index.html              ← Claims Handler Dashboard UI
@@ -108,6 +109,7 @@ exclusions) live in `CLAIM_EVIDENCE` in `agentic_router.py`.
 | Answer Guard | `backend/answer_guard.py` | **Active** | Post-generation: withholds unsupported claim-outcome assertions and off-allowlist contacts (`ANSWER_GUARD_MODE`, default withhold). |
 | Conflict Check | `backend/conflict_check.py` | **Active** | Model extracts per-source values; code decides numeric disagreement, giving `conflicting_evidence` (`CONFLICT_CHECK`, default llm). |
 | Provenance Check | `backend/provenance_check.py` | **Active** | Runs after the answer guard on live answers. Unretrieved filenames are checked in code; code-like identifiers found in sources get one narrow model call ("does this passage direct the reader to reproduce it?"), and code redacts those lines. Response carries `provenance` {action none/redacted/withheld, findings, judged, errors}; audit gets `provenance_action`/`provenance_findings` (`PROVENANCE_CHECK`, default llm). |
+| Figure Check | `backend/figure_check.py` | **Active** | Live answers only, when the router attached a `tool_section` (known claim, audit-type query). `api.tools_result` runs last on `/api/chat` and the stream: it checks every money amount, percentage and date in the prose against the section, the sources and the claim dossier (exact after normalization), adds a visible notice plus `figure_check` {action flagged/none, checked, unverified} when something doesn't match, and appends the section after guard/provenance so its citations are never redacted. A withheld answer gets the section without a check; a tool or check error drops only the section or check, with a WARNING. |
 | Prompt Defense | `backend/prompt_defense.py` | **Active** | `PROMPT_DEFENSE` default `sanitize`; `sandwich`/`datamark` opt-in (measured quality cost). |
 | Adversarial Eval | `eval/adversarial/*`, `eval/run_adversarial_eval.py` | **Active** | Known and white-box held-out injection/conflict suites against a scratch store; `eval/golden_guard_check.py` for false positives. |
 | Eval Harness | `eval/*` | **Active** | Naive-vs-hybrid+rerank Context Precision/Recall + live Faithfulness + live Factual Correctness (vs. reference), judged locally via LM Studio. Requires backend server running. |
