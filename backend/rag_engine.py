@@ -392,6 +392,16 @@ class SQLiteVectorStore(VectorStore):
                 self._vector_cache = built
         return built
 
+    @staticmethod
+    def _delete_orphan_chunks(cursor, existing):
+        """Delete chunk/FTS rows whose document no longer exists (migration helper)."""
+        orphan_parents = "SELECT id FROM parent_chunks WHERE document_id NOT IN (SELECT id FROM documents)"
+        if "child_chunks" in existing:
+            cursor.execute(f"DELETE FROM child_chunks WHERE parent_id IN ({orphan_parents})")
+        if "parent_chunks_fts" in existing:
+            cursor.execute(f"DELETE FROM parent_chunks_fts WHERE rowid IN ({orphan_parents})")
+        cursor.execute("DELETE FROM parent_chunks WHERE document_id NOT IN (SELECT id FROM documents)")
+
     def _init_db(self):
         conn = self._connect()
         cursor = conn.cursor()
@@ -433,26 +443,80 @@ class SQLiteVectorStore(VectorStore):
             # default, so renaming `documents` to `documents_old` first would
             # silently repoint parent_chunks.document_id's FK at
             # `documents_old`, breaking it the moment that table is dropped.
+            #
+            # PRAGMA foreign_keys is a no-op inside a transaction, so it must
+            # be set before BEGIN. Everything from here to COMMIT runs as one
+            # transaction: CREATE TABLE autocommits on its own otherwise, so a
+            # failure partway through (e.g. the INSERT) used to leave an empty
+            # `documents_new` behind and every subsequent restart failed with
+            # "table documents_new already exists".
             cursor.execute("PRAGMA foreign_keys = OFF")
-            cursor.execute("""
-                CREATE TABLE documents_new (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    filename TEXT,
-                    file_type TEXT,
-                    file_size INTEGER,
-                    uploaded_at TEXT,
-                    claim_id TEXT,
-                    storage_key TEXT,
-                    document_version TEXT
-                )
-            """)
-            cursor.execute("""
-                INSERT INTO documents_new (id, filename, file_type, file_size, uploaded_at, claim_id, storage_key, document_version)
-                SELECT id, filename, file_type, file_size, uploaded_at, claim_id, storage_key, document_version FROM documents
-            """)
-            cursor.execute("DROP TABLE documents")
-            cursor.execute("ALTER TABLE documents_new RENAME TO documents")
-            cursor.execute("PRAGMA foreign_keys = ON")
+            cursor.execute("BEGIN")
+            try:
+                # A previous migration attempt may have failed after creating
+                # documents_new but before the rename -- drop it so CREATE
+                # TABLE below doesn't fail on "already exists".
+                cursor.execute("DROP TABLE IF EXISTS documents_new")
+                old_seq_row = cursor.execute(
+                    "SELECT seq FROM sqlite_sequence WHERE name = 'documents'"
+                ).fetchone()
+                old_seq = old_seq_row[0] if old_seq_row else 0
+                cursor.execute("""
+                    CREATE TABLE documents_new (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        filename TEXT,
+                        file_type TEXT,
+                        file_size INTEGER,
+                        uploaded_at TEXT,
+                        claim_id TEXT,
+                        storage_key TEXT,
+                        document_version TEXT
+                    )
+                """)
+                cursor.execute("""
+                    INSERT INTO documents_new (id, filename, file_type, file_size, uploaded_at, claim_id, storage_key, document_version)
+                    SELECT id, filename, file_type, file_size, uploaded_at, claim_id, storage_key, document_version FROM documents
+                """)
+                cursor.execute("DROP TABLE documents")
+                cursor.execute("ALTER TABLE documents_new RENAME TO documents")
+
+                # The rebuild above re-created `documents` as a fresh
+                # AUTOINCREMENT table, which loses the old high-water mark.
+                # Without restoring it, a previously-deleted id gets reused by
+                # the next upload and that new document silently inherits any
+                # orphaned chunk rows still carrying the old document_id.
+                max_id_row = cursor.execute("SELECT MAX(id) FROM documents").fetchone()
+                max_id = max_id_row[0] or 0
+                new_seq = max(old_seq, max_id)
+                updated = cursor.execute(
+                    "UPDATE sqlite_sequence SET seq = ? WHERE name = 'documents'", (new_seq,)
+                ).rowcount
+                if not updated:
+                    cursor.execute(
+                        "INSERT INTO sqlite_sequence (name, seq) VALUES ('documents', ?)", (new_seq,)
+                    )
+
+                # Orphan parent/child/FTS rows (document_id pointing at an id
+                # that no longer exists) predate this migration and were never
+                # cascade-deleted; left in place they can attach to a future
+                # upload that reuses the id. The chunk tables are created
+                # further down, so a DB that predates them (2026-07-16) has
+                # nothing to clean -- skip rather than fail on "no such table".
+                existing = {
+                    row[0] for row in cursor.execute(
+                        "SELECT name FROM sqlite_master WHERE name IN "
+                        "('parent_chunks', 'child_chunks', 'parent_chunks_fts')"
+                    )
+                }
+                if "parent_chunks" in existing:
+                    self._delete_orphan_chunks(cursor, existing)
+
+                conn.commit()
+            except BaseException:
+                conn.rollback()
+                raise
+            finally:
+                cursor.execute("PRAGMA foreign_keys = ON")
 
         cursor.execute("""
             CREATE UNIQUE INDEX IF NOT EXISTS ix_documents_scope
@@ -703,7 +767,8 @@ class SQLiteVectorStore(VectorStore):
         # so it must stay numeric, not None.
         return [
             {"content": content, "filename": filename, "file_type": file_type, "score": 1.0,
-             "id": pid, "document_id": str(did), "document_version": version or "legacy-unversioned"}
+             "id": pid, "document_id": str(did), "document_version": version or "legacy-unversioned",
+             "claim_id": claim_id}
             for content, filename, file_type, pid, did, version in rows
         ]
 
@@ -792,7 +857,8 @@ class SQLiteVectorStore(VectorStore):
                             "filename": filenames[global_idx],
                             "file_type": file_types[global_idx],
                             "document_id": cache["document_ids"][global_idx],
-                            "document_version": cache["document_versions"][global_idx]
+                            "document_version": cache["document_versions"][global_idx],
+                            "claim_id": cache["claim_ids"][global_idx]
                         }
 
                 # Compile vector results
@@ -824,7 +890,7 @@ class SQLiteVectorStore(VectorStore):
                 # rowid (insertion) order -- arbitrary ranks for fusion, and
                 # LIMIT truncating by age rather than relevance.
                 cursor.execute("""
-                    SELECT p.content, d.filename, d.file_type, p.id, d.id, d.document_version
+                    SELECT p.content, d.filename, d.file_type, p.id, d.id, d.document_version, d.claim_id
                     FROM parent_chunks p
                     JOIN documents d ON p.document_id = d.id
                     JOIN parent_chunks_fts f ON p.id = f.rowid
@@ -835,12 +901,13 @@ class SQLiteVectorStore(VectorStore):
                 """, (claim_id, clean_query))
                 fts_rows = cursor.fetchall()
 
-                for content, filename, file_type, p_id, doc_id, version in fts_rows:
+                for content, filename, file_type, p_id, doc_id, version, fts_claim_id in fts_rows:
                     fts_ranked.append({
                         "id": p_id, "document_id": str(doc_id), "document_version": version or "legacy-unversioned",
                         "content": content,
                         "filename": filename,
                         "file_type": file_type,
+                        "claim_id": fts_claim_id,
                         "score": 0.0
                     })
             except sqlite3.OperationalError:

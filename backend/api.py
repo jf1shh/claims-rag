@@ -590,13 +590,12 @@ def register_routes(app, runtime):
                 }
             }
         except HTTPException as exc:
-            # Deliberate 4xx responses (empty document, corrupt file, scope
-            # conflict) must not be re-wrapped by the generic handler into a 500.
+            # Deliberate 4xx responses (empty document, corrupt file) must not
+            # be re-wrapped by the generic handler into a 500.
             _audit(request, principal, "upload", outcome="failed", filename=filename, reason=str(exc.detail))
             raise
         except ValueError as e:
-            # safe_filename() rejections and the per-scope filename-conflict guard
-            # in add_document() are client errors, not server failures.
+            # safe_filename() rejections are client errors, not server failures.
             _audit(request, principal, "upload", outcome="failed", filename=filename, reason=str(e))
             raise HTTPException(status_code=400, detail="Document processing failed.") from None
         except Exception:

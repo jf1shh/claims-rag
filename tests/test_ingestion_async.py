@@ -214,6 +214,35 @@ def test_given_submit_delete_without_queue_then_rejected(tmp_path):
         service.submit_delete(tenant_id="tenant-a", filename="labor.txt")
 
 
+def test_given_submit_delete_with_claim_id_then_worker_deletes_only_that_scope(tmp_path):
+    """submit_delete(filename, claim_id) must carry claim_id through to the
+    worker so a same-named global document in a different scope survives."""
+    from backend.blob_store import LocalDocumentBlobStore
+    from backend.rag_engine import SQLiteVectorStore
+
+    queue = InProcessQueue()
+    blob = LocalDocumentBlobStore(tmp_path / "blobs")
+    store = SQLiteVectorStore(db_path=str(tmp_path / "test.db"), storage_dir=str(tmp_path / "docs"), blob_store=blob)
+    job_store = SqliteJobStore(str(tmp_path / "jobs.db"))
+    service = IngestionService(queue=queue, job_store=job_store)
+    worker = _make_worker(queue, store, blob, job_store)
+
+    store.add_document("labor.txt", "txt", len(LABOR_TEXT), LABOR_TEXT, _FakeEmbedder(), claim_id="claim-a")
+    store.add_document("labor.txt", "txt", len(LABOR_TEXT), LABOR_TEXT, _FakeEmbedder())
+
+    job = service.submit_delete(tenant_id="tenant-a", filename="labor.txt", claim_id="claim-a")
+    message = queue.dequeue()
+    assert message.payload["claim_id"] == "claim-a"
+
+    from backend.ingestion_worker import DELETED
+
+    assert worker.process_message(message) == DELETED
+    assert job_store.get(job.job_id, "tenant-a").status is IngestionStatus.deleted
+
+    assert store.get_document_content("labor.txt", "claim-a") == ""
+    assert store.get_document_content("labor.txt", None) == LABOR_TEXT
+
+
 def test_given_inflight_delete_then_deduped_but_not_after_completion(tmp_path):
     queue = InProcessQueue()
     job_store = SqliteJobStore(str(tmp_path / "jobs.db"))

@@ -74,6 +74,26 @@ def test_overwrite_within_scope_replaces_only_that_scope(store, embedder):
     assert len(store.get_claim_documents("claim-a")) == 1
 
 
+def test_search_similarity_results_carry_claim_id(store, embedder):
+    store.add_document("report.pdf", "pdf", 7, "claim A content about repairs", embedder, claim_id="claim-a")
+    store.add_document("policy.pdf", "pdf", 7, "global policy content about repairs", embedder)
+
+    claim_results = store.search_similarity(
+        embedder.embed_query("repairs"), "repairs", claim_id="claim-a", use_fts=True
+    )
+    by_filename = {r["filename"]: r for r in claim_results}
+    assert by_filename["report.pdf"]["claim_id"] == "claim-a"
+    assert by_filename["policy.pdf"]["claim_id"] is None
+
+
+def test_get_claim_chunks_results_carry_claim_id(store, embedder):
+    store.add_document("report.pdf", "pdf", 7, "claim A content", embedder, claim_id="claim-a")
+
+    chunks = store.get_claim_chunks("claim-a")
+    assert chunks
+    assert all(c["claim_id"] == "claim-a" for c in chunks)
+
+
 def test_delete_in_claim_a_leaves_b_and_global_intact(store, embedder):
     store.add_document("report.pdf", "pdf", 7, "claim A content", embedder, claim_id="claim-a")
     store.add_document("report.pdf", "pdf", 7, "claim B content", embedder, claim_id="claim-b")
@@ -185,6 +205,151 @@ def test_legacy_db_migrates_and_keeps_data_and_chunk_links(tmp_path):
     assert store2.get_document_content("legacy.txt", "claim-a") == "claim content"
 
 
+def test_delete_after_migration_still_removes_chunks(tmp_path):
+    db_path = str(tmp_path / "legacy.db")
+    _build_legacy_db(db_path)
+
+    store = SQLiteVectorStore(db_path=db_path, storage_dir=str(tmp_path / "stored_documents"))
+    assert store.delete_document("legacy.txt", None) is True
+
+    conn = sqlite3.connect(db_path)
+    try:
+        assert conn.execute("SELECT COUNT(*) FROM documents WHERE filename = 'legacy.txt'").fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM parent_chunks WHERE id = 11").fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM child_chunks WHERE id = 21").fetchone()[0] == 0
+    finally:
+        conn.close()
+
+
+def test_stale_documents_new_from_a_failed_migration_does_not_brick_startup(tmp_path):
+    """A migration that failed after CREATE TABLE documents_new autocommitted
+    (pre-fix behavior) leaves a leftover documents_new next to the still-legacy
+    documents table. The next startup must clean it up and complete the
+    migration rather than failing with "table documents_new already exists"."""
+    db_path = str(tmp_path / "legacy.db")
+    _build_legacy_db(db_path)
+
+    conn = sqlite3.connect(db_path)
+    try:
+        # Simulate the partial-failure leftover: an empty documents_new table
+        # sitting next to the still-UNIQUE legacy documents table.
+        conn.execute("""
+            CREATE TABLE documents_new (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                filename TEXT,
+                file_type TEXT,
+                file_size INTEGER,
+                uploaded_at TEXT,
+                claim_id TEXT,
+                storage_key TEXT,
+                document_version TEXT
+            )
+        """)
+        conn.commit()
+    finally:
+        conn.close()
+
+    store = SQLiteVectorStore(db_path=db_path, storage_dir=str(tmp_path / "stored_documents"))
+    assert store.get_document_content("legacy.txt", None) == "legacy content"
+
+    conn = sqlite3.connect(db_path)
+    try:
+        table_names = {
+            row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")
+        }
+        assert "documents_new" not in table_names
+    finally:
+        conn.close()
+
+
+def test_migration_preserves_autoincrement_high_water_mark_and_drops_orphans(tmp_path):
+    """A legacy DB where the highest-ever document id (3) was deleted (so
+    sqlite_sequence.seq=3 but max(id)=2) left orphan chunks for id 3. After
+    migration, a new upload must get id 4, not reuse 3 and inherit the orphans."""
+    db_path = str(tmp_path / "legacy.db")
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute("""
+            CREATE TABLE documents (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                filename TEXT UNIQUE,
+                file_type TEXT,
+                file_size INTEGER,
+                uploaded_at TEXT,
+                claim_id TEXT
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE parent_chunks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                document_id INTEGER,
+                chunk_index INTEGER,
+                content TEXT,
+                FOREIGN KEY (document_id) REFERENCES documents (id) ON DELETE CASCADE
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE child_chunks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                parent_id INTEGER,
+                content TEXT,
+                embedding BLOB,
+                FOREIGN KEY (parent_id) REFERENCES parent_chunks (id) ON DELETE CASCADE
+            )
+        """)
+        conn.execute("CREATE VIRTUAL TABLE parent_chunks_fts USING fts5(content, tokenize='porter')")
+
+        conn.execute(
+            "INSERT INTO documents (id, filename, file_type, file_size, uploaded_at, claim_id) "
+            "VALUES (1, 'doc1.txt', 'txt', 9, '2026-01-01 00:00:00', NULL)"
+        )
+        conn.execute(
+            "INSERT INTO documents (id, filename, file_type, file_size, uploaded_at, claim_id) "
+            "VALUES (2, 'doc2.txt', 'txt', 9, '2026-01-01 00:00:00', NULL)"
+        )
+        # id=3 was uploaded then deleted -- the row is gone, but sqlite_sequence
+        # still remembers it as the high-water mark (the explicit-id inserts
+        # above already created the row with seq=2; bump it to 3), and its
+        # chunks were never cleaned up (the orphan this migration must drop).
+        conn.execute("UPDATE sqlite_sequence SET seq = 3 WHERE name = 'documents'")
+        conn.execute(
+            "INSERT INTO parent_chunks (id, document_id, chunk_index, content) VALUES (31, 3, 0, 'orphan content')"
+        )
+        conn.execute("INSERT INTO parent_chunks_fts (rowid, content) VALUES (31, 'orphan content')")
+        conn.execute(
+            "INSERT INTO child_chunks (id, parent_id, content, embedding) VALUES (41, 31, 'orphan content', ?)",
+            (np.zeros(384, dtype=np.float32).tobytes(),),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    store = SQLiteVectorStore(db_path=db_path, storage_dir=str(tmp_path / "stored_documents"))
+
+    # Orphan rows for the deleted id=3 are gone.
+    conn = sqlite3.connect(db_path)
+    try:
+        assert conn.execute("SELECT COUNT(*) FROM parent_chunks WHERE document_id = 3").fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM child_chunks WHERE parent_id = 31").fetchone()[0] == 0
+        assert conn.execute(
+            "SELECT COUNT(*) FROM parent_chunks_fts WHERE rowid = 31"
+        ).fetchone()[0] == 0
+    finally:
+        conn.close()
+
+    # A new upload gets id 4 (the old seq=3 high-water mark preserved, not
+    # reset to max(id)=2), and has none of the orphaned content.
+    store.add_document("doc3.txt", "txt", 9, "fresh content", FakeEmbeddingEngine())
+    row = sqlite3.connect(db_path).execute(
+        "SELECT id FROM documents WHERE filename = 'doc3.txt'"
+    ).fetchone()
+    assert row[0] == 4
+    parent_rows = sqlite3.connect(db_path).execute(
+        "SELECT content FROM parent_chunks WHERE document_id = 4"
+    ).fetchall()
+    assert [r[0] for r in parent_rows] == ["fresh content"]
+
+
 # ---------------------------------------------------------------------------
 # API: content/download resolve the right scope; claim access is checked
 # before the scoped lookup (no existence oracle).
@@ -247,3 +412,57 @@ def test_restricted_user_gets_403_not_404_for_other_claims_filename(tmp_path):
         for path in ('/api/documents/content/nope.pdf', '/api/documents/download/nope.pdf'):
             response = client.get(path, params={'claim_id': 'claim-b'}, headers=headers)
             assert response.status_code == 403
+
+
+def test_delete_gets_403_not_404_for_claim_caller_cannot_access(tmp_path):
+    application, rt = _restricted_app(tmp_path)
+    rt.vector_store.add_document('report.pdf', 'pdf', 7, 'claim B content', FakeEmbeddingEngine(), claim_id='claim-b')
+
+    with TestClient(application) as client:
+        headers = {'X-API-Key': 'alice'}
+        # Existing file in a claim alice can't access: 403, not 404.
+        response = client.post('/api/delete', json={'filename': 'report.pdf', 'claim_id': 'claim-b'}, headers=headers)
+        assert response.status_code == 403
+
+        # Nonexistent file in that same inaccessible claim: still 403, not
+        # 404 -- the delete endpoint must not be an existence oracle either.
+        response = client.post('/api/delete', json={'filename': 'nope.pdf', 'claim_id': 'claim-b'}, headers=headers)
+        assert response.status_code == 403
+
+
+def test_legacy_db_without_chunk_tables_migrates(tmp_path):
+    """A DB from before parent/child chunking (2026-07-16) has the UNIQUE
+    documents table but no chunk or FTS tables. The orphan cleanup must skip
+    them; otherwise the migration rolls back on "no such table" every start."""
+    db_path = str(tmp_path / "pre_chunks.db")
+    conn = sqlite3.connect(db_path)
+    try:
+        conn.execute("""
+            CREATE TABLE documents (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                filename TEXT UNIQUE,
+                file_type TEXT,
+                file_size INTEGER,
+                uploaded_at TEXT,
+                claim_id TEXT
+            )
+        """)
+        conn.execute(
+            "INSERT INTO documents (id, filename, file_type, file_size, uploaded_at, claim_id) "
+            "VALUES (7, 'old.txt', 'text', 3, '2026-07-01', 'CLM-1')"
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    store = SQLiteVectorStore(db_path=db_path, storage_dir=str(tmp_path / "stored_documents"))
+
+    assert store.get_document_metadata("old.txt", "CLM-1")["document_id"] == "7"
+    conn = sqlite3.connect(db_path)
+    try:
+        table_sql = conn.execute(
+            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'documents'"
+        ).fetchone()[0]
+        assert "UNIQUE" not in table_sql
+    finally:
+        conn.close()

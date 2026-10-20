@@ -225,7 +225,7 @@ def _store(monkeypatch, conn):
 def test_given_vector_leg_fails_when_searching_then_keyword_leg_still_used(monkeypatch, caplog):
     conn = _FakePostgresConn(
         vector_raises=RuntimeError("boom"),
-        fts_rows=[(1, "content", "report.pdf", "pdf", 7, "sha256:abc")],
+        fts_rows=[(1, "content", "report.pdf", "pdf", 7, "sha256:abc", None)],
     )
     store = _store(monkeypatch, conn)
     with caplog.at_level(logging.WARNING):
@@ -239,7 +239,7 @@ def test_given_keyword_leg_fails_when_searching_then_vector_leg_still_used(monke
     conn = _FakePostgresConn(
         fts_raises=RuntimeError("boom"),
         vector_rows=[(1, 0.9)],
-        meta_rows=[(1, "content", "report.pdf", "pdf", 7, "sha256:abc")],
+        meta_rows=[(1, "content", "report.pdf", "pdf", 7, "sha256:abc", None)],
     )
     store = _store(monkeypatch, conn)
     with caplog.at_level(logging.WARNING):

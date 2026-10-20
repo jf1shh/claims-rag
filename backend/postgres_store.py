@@ -9,8 +9,8 @@ the SQLite implementation forwards:
 
   * `(tenant_id, claim_id, filename)` unique, NULLS NOT DISTINCT -- a
     cross-claim filename collision is impossible in the schema, not just in
-    app code (the schema-level fix the per-scope overwrite guard was only a
-    stopgap for in SQLite).
+    app code. SQLite enforces the same scoping via `ix_documents_scope`
+    instead of a runtime guard.
   * `tenant_id` on every row with row-level security keyed on the
     `app.tenant_id` GUC. RLS is defense in depth -- this store *also* filters
     by tenant_id in SQL -- and it is proven by tests/test_postgres_store.py via
@@ -287,7 +287,8 @@ class PostgresVectorStore:
             conn.close()
         return [
             {"content": c, "filename": f, "file_type": t, "score": 1.0,
-             "id": pid, "document_id": str(did), "document_version": version or "legacy-unversioned"}
+             "id": pid, "document_id": str(did), "document_version": version or "legacy-unversioned",
+             "claim_id": claim_id}
             for c, f, t, pid, did, version in rows
         ]
 
@@ -365,10 +366,10 @@ class PostgresVectorStore:
                     if top:
                         ids = [r[0] for r in top]
                         meta = {
-                            r[0]: (r[1], r[2], r[3], r[4], r[5])
+                            r[0]: (r[1], r[2], r[3], r[4], r[5], r[6])
                             for r in conn.execute(
                                 """
-                                SELECT p.id, p.content, d.filename, d.file_type, d.id, d.document_version
+                                SELECT p.id, p.content, d.filename, d.file_type, d.id, d.document_version, d.claim_id
                                 FROM parent_chunks p
                                 JOIN documents d ON p.document_id = d.id
                                 WHERE p.tenant_id = %s AND p.id = ANY(%s)
@@ -379,7 +380,8 @@ class PostgresVectorStore:
                         vector_ranked = [
                             {"id": pid, "content": meta[pid][0], "filename": meta[pid][1],
                              "file_type": meta[pid][2], "score": float(sim),
-                             "document_id": str(meta[pid][3]), "document_version": meta[pid][4] or "legacy-unversioned"}
+                             "document_id": str(meta[pid][3]), "document_version": meta[pid][4] or "legacy-unversioned",
+                             "claim_id": meta[pid][5]}
                             for pid, sim in top
                             if pid in meta
                         ]
@@ -399,7 +401,7 @@ class PostgresVectorStore:
                     with conn.transaction():
                         fts_rows = conn.execute(
                             """
-                            SELECT p.id, p.content, d.filename, d.file_type, d.id, d.document_version
+                            SELECT p.id, p.content, d.filename, d.file_type, d.id, d.document_version, d.claim_id
                             FROM parent_chunks p
                             JOIN documents d ON p.document_id = d.id
                             WHERE p.tenant_id = %(t)s
@@ -412,7 +414,8 @@ class PostgresVectorStore:
                         ).fetchall()
                         fts_ranked = [
                             {"id": r[0], "content": r[1], "filename": r[2], "file_type": r[3], "score": 0.0,
-                             "document_id": str(r[4]), "document_version": r[5] or "legacy-unversioned"}
+                             "document_id": str(r[4]), "document_version": r[5] or "legacy-unversioned",
+                             "claim_id": r[6]}
                             for r in fts_rows
                         ]
                 except Exception as exc:

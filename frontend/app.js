@@ -1368,15 +1368,19 @@ async function fetchClaimDocuments(claimId) {
     try {
         const response = await apiFetch(`/api/documents/claim/${encodeURIComponent(claimId)}`);
         if (!response.ok) throw new Error('Failed to load claim documents');
-        
+
         const docs = await response.json();
-        renderClaimDocuments(docs);
+        // A slower earlier request can resolve after the user has already
+        // switched claims; only the response matching the currently active
+        // claim is allowed to render, or it would list/act on the wrong claim.
+        if (!activeCase || activeCase.id !== claimId) return;
+        renderClaimDocuments(docs, claimId);
     } catch (error) {
         console.error('Error fetching claim documents:', error);
     }
 }
 
-function renderClaimDocuments(docs) {
+function renderClaimDocuments(docs, claimId) {
     claimDocsList.innerHTML = '';
     
     if (docs.length === 0) {
@@ -1411,8 +1415,8 @@ function renderClaimDocuments(docs) {
         const nameSpan = li.querySelector('.doc-name');
         nameSpan.textContent = doc.filename;
         nameSpan.title = doc.filename;
-        nameSpan.addEventListener('click', () => openDocumentViewer(doc.filename, null, activeCase.id));
-        li.querySelector('.btn-delete').addEventListener('click', () => deleteClaimDocument(doc.filename, activeCase.id));
+        nameSpan.addEventListener('click', () => openDocumentViewer(doc.filename, null, claimId));
+        li.querySelector('.btn-delete').addEventListener('click', () => deleteClaimDocument(doc.filename, claimId));
 
         claimDocsList.appendChild(li);
     });
