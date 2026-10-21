@@ -126,9 +126,7 @@ class IngestionService:
             created_at=now,
             updated_at=now,
         )
-        with self._lock:
-            self._jobs[key] = job
-        self._persist(job)
+        self._store_job(key, job)
 
         if self._queue is not None:
             # Async: hand the work to the worker and return the queued job.
@@ -191,9 +189,7 @@ class IngestionService:
             created_at=now,
             updated_at=now,
         )
-        with self._lock:
-            self._jobs[key] = job
-        self._persist(job)
+        self._store_job(key, job)
         return job
 
     def submit_delete(
@@ -231,9 +227,7 @@ class IngestionService:
             created_at=now,
             updated_at=now,
         )
-        with self._lock:
-            self._jobs[key] = job
-        self._persist(job)
+        self._store_job(key, job)
         if self._queue is None:
             raise ValueError("submit_delete requires an ingestion queue (async mode)")
         self._queue.enqueue(
@@ -297,6 +291,15 @@ class IngestionService:
     def _persist(self, job: IngestionJob) -> None:
         if self._job_store is not None:
             self._job_store.create(job)
+
+    def _store_job(self, key: tuple[str, str], job: IngestionJob) -> None:
+        """Keeps the in-memory ``_jobs`` map only when there is no durable job
+        store -- with a store, every create/update/get goes through it, so
+        in-memory growth would be unbounded and redundant."""
+        if self._job_store is None:
+            with self._lock:
+                self._jobs[key] = job
+        self._persist(job)
 
     def _run(self, job: IngestionJob, key: tuple[str, str], content: bytes) -> IngestionJob:
         try:

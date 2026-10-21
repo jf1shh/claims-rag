@@ -93,19 +93,34 @@ class ChatClient(ABC):
 
 
 class _DefaultHTTP:
-    """Real transport. Replaced by a recording stub in tests."""
+    """Real transport. Replaced by a recording stub in tests.
+
+    Holds one pooled ``requests.Session`` for the client's lifetime instead of
+    opening a new TCP/TLS connection on every call."""
+
+    def __init__(self):
+        import requests
+        self._session = requests.Session()
+        adapter = requests.adapters.HTTPAdapter(pool_connections=4, pool_maxsize=16)
+        self._session.mount("http://", adapter)
+        self._session.mount("https://", adapter)
 
     def post(self, url, json=None, headers=None, timeout=None, **kw):
-        import requests
-        return requests.post(url, json=json, headers=headers, timeout=timeout, **kw)
+        return self._session.post(url, json=json, headers=headers, timeout=timeout, **kw)
 
     def get(self, url, timeout=None, **kw):
-        import requests
-        return requests.get(url, timeout=timeout, **kw)
+        return self._session.get(url, timeout=timeout, **kw)
+
+    def close(self):
+        self._session.close()
 
 
 # Placeholder model name used when LLM_MODEL is unset and no server model is known.
 UNRESOLVED_MODEL = "local-model"
+
+# How long a failed models() probe is cached, so repeated calls during an
+# outage don't each pay the health/models-endpoint timeouts.
+MODELS_FAILURE_TTL_SECONDS = 30.0
 
 
 class OpenAICompatibleClient(ChatClient):
@@ -130,6 +145,7 @@ class OpenAICompatibleClient(ChatClient):
         self._clock = clock
         self._models_cache: list[str] | None = None
         self._models_at = -float("inf")
+        self._models_failed_at = -float("inf")
 
     def _stage_timeout(self, stage: str) -> float:
         # The timeout follows the stage, not the resolved model name: under the
@@ -270,6 +286,8 @@ class OpenAICompatibleClient(ChatClient):
         now = self._clock()
         if self._models_cache is not None and (now - self._models_at) < self.models_ttl_seconds:
             return self._models_cache
+        if (now - self._models_failed_at) < MODELS_FAILURE_TTL_SECONDS:
+            return [UNRESOLVED_MODEL]
         # Lemonade's /v1/models lists every *downloaded* model, so data[0] can name one
         # that is not resident and requesting it forces a model swap. Its health
         # endpoint names the loaded ones; other servers fall through to /v1/models.
@@ -287,8 +305,13 @@ class OpenAICompatibleClient(ChatClient):
                 return self._models_cache
         except Exception:
             pass
-        # Do not cache a failure: a transient outage self-heals next call.
+        self._models_failed_at = now
         return [UNRESOLVED_MODEL]
+
+    def close(self) -> None:
+        close = getattr(self._http, "close", None)
+        if callable(close):
+            close()
 
     def _loaded_llms(self) -> list[str]:
         try:

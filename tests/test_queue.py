@@ -102,6 +102,17 @@ def test_given_message_when_dead_lettered_then_moved_to_dlq():
     assert queue.dequeue() is None
 
 
+def test_given_1005_dead_letters_then_only_last_1000_are_kept():
+    queue = make_queue()
+    for i in range(1005):
+        queue.enqueue({"job_id": f"job_{i}"})
+        queue.dead_letter(queue.dequeue())
+    assert queue.dead_letter_count == 1000
+    kept = queue.dead_letters()
+    assert kept[0].payload == {"job_id": "job_5"}
+    assert kept[-1].payload == {"job_id": "job_1004"}
+
+
 def test_given_negative_backoff_when_rejected_then_rejected():
     queue = make_queue()
     queue.enqueue({"job_id": "job_1"})
