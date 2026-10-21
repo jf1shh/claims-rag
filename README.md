@@ -12,7 +12,7 @@ Built by **Jared Fisher**: 17 years at Liberty Mutual, including 11 as senior ap
 
 *Recorded 2026-07-19: a theft claim is selected, then an OEM parts rider audit runs. The assistant plans its searches, pulls from both the policy documents and the claim's own file (police report, parts receipts), and writes a cited answer line by line. The current version also has sign-in, streamed answers and the answer checks described below; the recording predates them.*
 
-**Jump to:** [For a hiring manager](#for-a-hiring-manager) · [What it does for an adjuster](#what-it-does-for-an-adjuster) · [Results](#results) · [What testing found](#what-testing-found) · [Try it locally](#try-it-locally) · [How it works](#how-it-works) · [Known limitations](#known-limitations)
+**Jump to:** [For a hiring manager](#for-a-hiring-manager) · [Claims workflows](#claims-workflows) · [What it does for an adjuster](#what-it-does-for-an-adjuster) · [Results](#results) · [What testing found](#what-testing-found) · [Try it locally](#try-it-locally) · [How it works](#how-it-works) · [Known limitations](#known-limitations)
 
 ## For a hiring manager
 
@@ -24,6 +24,19 @@ What this project shows, in the order a claims-AI team tends to ask:
 - **It says no when it should.** If nothing relevant is found, it refuses rather than inventing an answer. Answers that announce a claim decision (approved, paid, denied) that the claim record doesn't support are held back for a human.
 - **It stays on the machine.** Search, reranking, generation and evaluation all run locally by default. No claim content goes to a cloud API unless someone configures one.
 - **It is built like software a team would run:** sign-in on every API route, role and claim-level permissions (adjuster, supervisor, SIU, admin), an audit log, rate limits, a Postgres option, Docker, and CI on every pull request.
+
+## Claims workflows
+
+Four one-click review modes, each built on a tested tool in [`backend/claims_tools.py`](backend/claims_tools.py). Each one checks the claim file against the SOPs and riders, cites every number, and leaves the decision to the adjuster. Each mode links to a short write-up with a worked example.
+
+| Mode | UI button | Try it on | Tool | Unit tests | Golden eval cases (coverage, 2026-10-21) |
+|---|---|---|---|---|---|
+| [Supplement Review](docs/workflows/supplement-review.md) | Review Supplement | #2026-99382, #2026-10492 | `supplement_review` | [test_supplement_review.py](tests/test_supplement_review.py) (20) | `supplement-reinspection-threshold` (0.75), `betterment-tires` (1.00) |
+| [Total Loss Explainer](docs/workflows/total-loss-explainer.md) | Explain Total Loss | #2026-55912 | `total_loss_explain` | [test_total_loss_explainer.py](tests/test_total_loss_explainer.py) (18) | `rollover-total-loss-threshold` (0.67), `salvage-owner-retention` (0.40) |
+| [Subrogation Triage](docs/workflows/subrogation-triage.md) | Triage Subrogation | #2026-71845, #2026-10492 | `subrogation_triage` | [test_subrogation_triage.py](tests/test_subrogation_triage.py) (27) | `webb-subrogation-triage` (1.00), `jenkins-subrogation-no-indicator` (0.90), `subrogation-referral-trigger` (1.00), `subrogation-partial-deductible` (0.87) |
+| [SIU Indicator Checklist](docs/workflows/siu-checklist.md) | SIU Indicator Checklist | #2026-30291, #2026-84410, #2026-55912 | `siu_checklist` | [test_siu_checklist.py](tests/test_siu_checklist.py) (33) | `chen-siu-checklist` (1.00), `brooks-siu-checklist` (1.00), `rostova-siu-flag-unexplained` (1.00), `fraud-chronology-red-flag` (1.00) |
+
+Supplement review and the total-loss explainer have no claim-scoped golden question that runs the button end to end yet; their golden cases test the underlying rules, and the button outputs are covered by unit tests. Subrogation and SIU have claim-scoped golden questions that run the button prompt.
 
 ## What it does for an adjuster
 
