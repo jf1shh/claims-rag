@@ -944,6 +944,17 @@ Decided: one pool per store instance (one tenant per process). `LLMDeadlineExcee
 
 - Verified on the combined tree: offline suite 1182 passed, 28 skipped, 1 xfailed; Postgres suite 1209 passed, 1 skipped, 1 xfailed; ruff clean. Each PR also went through CI (pytest-linux + postgres) before merge.
 
+### 2026-10-21 — RAG technique screen (null result)
+
+Owner asked for a web search of current RAG techniques and to implement the ones worth it. A Sonnet research agent wrote `docs/research/2026-10-21-rag-techniques.md` (sources cited). Its shortlist was table-aware parsing, contextual chunk headers, metadata filters and a `bge-small-en-v1.5` embedding swap; it advised against RAPTOR/GraphRAG, `bge-reranker-v2-m3` on CPU, HyDE, semantic caching and ColBERT.
+
+- New tool: `scripts/probe_retrieval.py` rebuilds the live corpus into a temp store and reports, per golden row, the rank of each expected source, whether `top_k=4` serves them all (after pinning), and fact recall (the reference answer's numbers found in the served text plus the claim dossier). No LLM; about a minute, deterministic.
+- Baseline (48 docs, 33 rows with a source): 33/33 rows served at `top_k=4`, 30/33 with every source in the pre-pin top 4, MRR 0.813, fact recall 0.884.
+- Tried and ruled out, each flat on the probe: spreadsheet rows as `Column: value` records (MRR 0.809), a filename/claim title prefixed to child-chunk embedding input (0.814), `bge-small-en-v1.5` (0.812). Fact recall did not move. Not implemented.
+- Why: retrieval is saturated on this corpus. The only PDFs are prose (no tables), the two spreadsheets are small, and every remaining fact gap is a computed number (Chen 5,900 / 900 over cap, Webb recovery amounts) or absent from the corpus, which is synthesis work, not retrieval.
+- Watch out: `backend/rag_engine.py` forces `HF_HUB_OFFLINE=1`, so trying a new model needs `huggingface_hub.snapshot_download` first. The probe's top-15 ranks are pre-pin; the served flag is the production view.
+- Next: these techniques only become measurable with a harder test. Add distractor documents (similar SOPs across states) and harder golden rows, then rerun the probe before revisiting.
+
 ### 2026-10-21 — Claim purge and job retention (M12c-E)
 
 Audit finding #6. The owner chose the design: both an admin API and a CLI; a purge deletes the claim's job rows, document deletes scrub theirs, and terminal rows expire after `JOB_RETENTION_DAYS`; the audit log is untouched and a purge writes one event with counts. Built by a Sonnet worker through nexus-route (`code`, 652 s), reviewed and corrected by Claude.
