@@ -729,14 +729,17 @@ class SQLiteVectorStore(VectorStore):
         A failed stage or transaction leaves the previous indexed version intact.
         Unreferenced staged blobs can be reclaimed by the maintenance command.
 
-        Chunking and embedding run BEFORE any write statement -- embedding a
-        large document can take seconds, and running it inside the write
+        Chunking, embedding, and source staging all run BEFORE any write
+        statement -- embedding a large document can take seconds and staging
+        is an S3 PUT or an fsync, and running either inside the write
         transaction held SQLite's write lock that whole time, so any
         concurrent upload/delete hit "database is locked" against the default
         busy timeout. The write transaction below only covers the scope
-        check and the inserts themselves.
+        check and the inserts themselves. Staged keys are unique per call, so
+        staging before the transaction is safe; if the transaction then
+        fails, the just-staged blob is deleted since nothing references it.
         """
-        from backend.source_storage import stage_source
+        from backend.source_storage import discard_staged, stage_source
         filename = safe_filename(filename)
         os.makedirs(self.storage_dir, exist_ok=True)
 
@@ -753,7 +756,13 @@ class SQLiteVectorStore(VectorStore):
             ]
             parent_payloads.append((p_idx, p_text, child_payloads))
 
-        conn = self._connect()
+        storage_key, document_version = stage_source(self, filename, file_type, text, file_path)
+
+        try:
+            conn = self._connect()
+        except Exception:
+            discard_staged(self, storage_key, "staged-source")
+            raise
         cursor = conn.cursor()
 
         try:
@@ -761,20 +770,21 @@ class SQLiteVectorStore(VectorStore):
             # (claim_id, filename); a NULL claim_id is the global scope). Must
             # run against current DB state inside this transaction, i.e. after
             # embedding above.
-            cursor.execute("SELECT id FROM documents WHERE filename = ? AND claim_id IS ?", (filename, claim_id))
+            cursor.execute("SELECT id, storage_key FROM documents WHERE filename = ? AND claim_id IS ?", (filename, claim_id))
             existing = cursor.fetchone()
+            replaced_storage_key = None
             if existing:
-                doc_id = existing[0]
+                doc_id, replaced_storage_key = existing
                 # Delete FTS index
                 cursor.execute("DELETE FROM parent_chunks_fts WHERE rowid IN (SELECT id FROM parent_chunks WHERE document_id = ?)", (doc_id,))
-                # Delete document (physical file is handled after commit, below)
+                # Delete document (its versioned blob is deleted after commit, below)
                 cursor.execute("DELETE FROM documents WHERE id = ?", (doc_id,))
 
             # Insert document
             uploaded_at = time.strftime("%Y-%m-%d %H:%M:%S")
             cursor.execute(
-                "INSERT INTO documents (filename, file_type, file_size, uploaded_at, claim_id) VALUES (?, ?, ?, ?, ?)",
-                (filename, file_type, file_size, uploaded_at, claim_id)
+                "INSERT INTO documents (filename, file_type, file_size, uploaded_at, claim_id, storage_key, document_version) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (filename, file_type, file_size, uploaded_at, claim_id, storage_key, document_version)
             )
             doc_id = cursor.lastrowid
 
@@ -797,16 +807,22 @@ class SQLiteVectorStore(VectorStore):
                         (p_id, c_text, emb_bytes)
                     )
 
-            storage_key, document_version = stage_source(self, filename, file_type, text, file_path)
-            cursor.execute("UPDATE documents SET storage_key = ?, document_version = ? WHERE id = ?",
-                           (storage_key, document_version, doc_id))
             conn.commit()
             self._invalidate_vector_cache()
         except Exception as e:
             conn.rollback()
+            discard_staged(self, storage_key, "staged-source")
             raise e
         finally:
             conn.close()
+
+        # Now that the new version is durably committed, delete the replaced
+        # row's blob. A failure here must not fail the upload -- the new
+        # document is already indexed and searchable.
+        # Only an app-written `versions/<uuid>/<file>` key is unique to the
+        # replaced row; a legacy row's plain file is left to the collector.
+        if replaced_storage_key and replaced_storage_key.startswith("versions/"):
+            discard_staged(self, replaced_storage_key, "replaced-version")
 
         return doc_id, len(parent_chunks)
 

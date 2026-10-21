@@ -117,43 +117,76 @@ class PostgresVectorStore:
 
         A failed stage or transaction leaves the previous indexed version intact.
         Unreferenced staged blobs can be reclaimed by the maintenance command.
-        """
-        from backend.source_storage import stage_source
 
+        Chunking, embedding, and source staging all run BEFORE any connection
+        is opened -- embedding a large document can take seconds and staging
+        is an S3 PUT or an fsync, and running either inside the transaction
+        held the row lock that whole time. The transaction below only covers
+        the scope check and the inserts themselves. Staged keys are unique
+        per call, so staging before the transaction is safe; if the
+        transaction then fails, the just-staged blob is deleted since nothing
+        references it.
+        """
         from backend.rag_engine import TextChunker, safe_filename
+        from backend.source_storage import discard_staged, stage_source
 
         filename = safe_filename(filename)
         os.makedirs(self.storage_dir, exist_ok=True)
         uploaded_at = time.strftime("%Y-%m-%d %H:%M:%S")
 
-        conn = self._connect()
+        # 1. Generate parent/child chunks and embeddings up front, with no
+        # connection open.
+        parent_chunks = TextChunker.chunk(text, chunk_size=1200, chunk_overlap=200)
+        parent_payloads = []
+        for p_idx, p_text in enumerate(parent_chunks):
+            child_chunks = TextChunker.chunk(p_text, chunk_size=250, chunk_overlap=50)
+            child_payloads = []
+            if child_chunks:
+                embeddings = embedding_engine.embed_chunks(child_chunks)
+                for c_text, embedding in zip(child_chunks, embeddings, strict=True):
+                    vec = np.asarray(embedding, dtype=np.float32)
+                    if vec.shape[0] != self.embedding_dimensions:
+                        raise ValueError(
+                            f"embedding dimension {vec.shape[0]} does not match configured "
+                            f"{self.embedding_dimensions}"
+                        )
+                    child_payloads.append((c_text, vec))
+            parent_payloads.append((p_idx, p_text, child_payloads))
+
+        storage_key, document_version = stage_source(self, filename, file_type, text, file_path)
+
+        try:
+            conn = self._connect()
+        except Exception:
+            discard_staged(self, storage_key, "staged-source")
+            raise
         try:
             # Overwrite only the existing row in the SAME scope -- the schema's
             # (tenant_id, claim_id, filename) NULLS NOT DISTINCT unique index
             # already makes a cross-scope collision impossible, so this is a
             # plain scoped delete-then-insert, not a guard.
-            conn.execute(
+            replaced = conn.execute(
                 """
                 DELETE FROM documents
                 WHERE tenant_id = %s AND filename = %s
                   AND claim_id IS NOT DISTINCT FROM %s
+                RETURNING storage_key
                 """,
                 (self.tenant_id, filename, claim_id),
-            )
+            ).fetchone()
+            replaced_storage_key = replaced[0] if replaced else None
 
             row = conn.execute(
                 """
-                INSERT INTO documents (tenant_id, filename, file_type, file_size, uploaded_at, claim_id)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                INSERT INTO documents (tenant_id, filename, file_type, file_size, uploaded_at, claim_id, storage_key, document_version)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id
                 """,
-                (self.tenant_id, filename, file_type, file_size, uploaded_at, claim_id),
+                (self.tenant_id, filename, file_type, file_size, uploaded_at, claim_id, storage_key, document_version),
             ).fetchone()
             doc_id = row[0]
 
-            parent_chunks = TextChunker.chunk(text, chunk_size=1200, chunk_overlap=200)
-
-            for p_idx, p_text in enumerate(parent_chunks):
+            for p_idx, p_text, child_payloads in parent_payloads:
                 p_row = conn.execute(
                     """
                     INSERT INTO parent_chunks (tenant_id, document_id, chunk_index, content)
@@ -164,18 +197,7 @@ class PostgresVectorStore:
                 ).fetchone()
                 p_id = p_row[0]
 
-                child_chunks = TextChunker.chunk(p_text, chunk_size=250, chunk_overlap=50)
-                if not child_chunks:
-                    continue
-                embeddings = embedding_engine.embed_chunks(child_chunks)
-
-                for c_text, embedding in zip(child_chunks, embeddings, strict=True):
-                    vec = np.asarray(embedding, dtype=np.float32)
-                    if vec.shape[0] != self.embedding_dimensions:
-                        raise ValueError(
-                            f"embedding dimension {vec.shape[0]} does not match configured "
-                            f"{self.embedding_dimensions}"
-                        )
+                for c_text, vec in child_payloads:
                     conn.execute(
                         """
                         INSERT INTO child_chunks (tenant_id, parent_id, content, embedding)
@@ -184,15 +206,21 @@ class PostgresVectorStore:
                         (self.tenant_id, p_id, c_text, vec),
                     )
 
-            storage_key, document_version = stage_source(self, filename, file_type, text, file_path)
-            conn.execute("UPDATE documents SET storage_key = %s, document_version = %s WHERE id = %s AND tenant_id = %s",
-                         (storage_key, document_version, doc_id, self.tenant_id))
             conn.commit()
         except Exception as e:
             conn.rollback()
+            discard_staged(self, storage_key, "staged-source")
             raise e
         finally:
             conn.close()
+
+        # Now that the new version is durably committed, delete the replaced
+        # row's blob. A failure here must not fail the upload -- the new
+        # document is already indexed and searchable. Only app-written
+        # `versions/` blobs are removed here; legacy plain files are left to
+        # scripts/collect_source_garbage.py.
+        if replaced_storage_key and replaced_storage_key.startswith("versions/"):
+            discard_staged(self, replaced_storage_key, "replaced-version")
 
         return doc_id, len(parent_chunks)
 

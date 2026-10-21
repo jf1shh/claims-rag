@@ -87,3 +87,48 @@ def test_delete_missing_document_is_noop_and_leaves_blobs(s3_db_store):
     # The stored blob is untouched.
     body = client.get_object(Bucket=BUCKET, Key="tenant-a/" + store.get_blob_key("labor.txt", "claim-9"))["Body"].read()
     assert body.decode() == LABOR_TEXT
+
+
+def test_reupload_same_scope_deletes_replaced_blob(s3_db_store):
+    client, store, blob, local_dir = s3_db_store
+    store.add_document("labor.txt", "txt", 100, LABOR_TEXT, _FakeEmbedder(), claim_id="claim-9")
+    old_key = "tenant-a/" + store.get_blob_key("labor.txt", "claim-9")
+    store.add_document("labor.txt", "txt", 100, "NEW CONTENT", _FakeEmbedder(), claim_id="claim-9")
+    new_key = "tenant-a/" + store.get_blob_key("labor.txt", "claim-9")
+    assert new_key != old_key
+    keys = {o["Key"] for o in client.list_objects_v2(Bucket=BUCKET).get("Contents", [])}
+    assert old_key not in keys
+    assert new_key in keys
+
+
+def test_add_document_embeds_before_opening_a_connection(s3_db_store, monkeypatch):
+    client, store, blob, local_dir = s3_db_store
+    call_order = []
+    real_connect = store._connect
+
+    def recording_connect():
+        call_order.append("connect")
+        return real_connect()
+
+    class _OrderRecordingEmbedder(_FakeEmbedder):
+        def embed_chunks(self, chunks):
+            call_order.append("embed")
+            return super().embed_chunks(chunks)
+
+    monkeypatch.setattr(store, "_connect", recording_connect)
+    store.add_document("labor.txt", "txt", 100, LABOR_TEXT, _OrderRecordingEmbedder(), claim_id="claim-9")
+    assert call_order.index("embed") < call_order.index("connect")
+
+
+def test_connect_failure_after_staging_discards_staged_blob(s3_db_store, monkeypatch):
+    """M12a: the source is staged before `_connect()`; if the connection fails
+    the staged blob must be deleted rather than orphaned."""
+    client, store, blob, local_dir = s3_db_store
+
+    def failing_connect():
+        raise RuntimeError("database unavailable")
+
+    monkeypatch.setattr(store, "_connect", failing_connect)
+    with pytest.raises(RuntimeError, match="database unavailable"):
+        store.add_document("labor.txt", "txt", 100, LABOR_TEXT, _FakeEmbedder(), claim_id="claim-9")
+    assert client.list_objects_v2(Bucket=BUCKET).get("KeyCount", 0) == 0
