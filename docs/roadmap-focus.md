@@ -82,6 +82,8 @@ wording:
 
 ### P5. Show it
 
+> **Done 2026-10-21** (branch `feat/p5-show-it`): README "Claims workflows" table, one write-up per mode in [`docs/workflows/`](workflows/README.md), and a 90-second [shot list](workflows/demo-shot-list.md). The owner records the video. The refusal shot uses the SIU hallucination probe (#2026-55912), because the live zero-context refusal can't be triggered reliably on the seeded corpus.
+
 - 90-second demo video: one supplement review end to end, a refusal, and the eval table.
 - README: a "Claims workflows" table near the top linking each mode to its eval cases.
 - One short write-up per mode, used as the outreach hook for that segment.
