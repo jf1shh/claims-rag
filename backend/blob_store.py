@@ -4,8 +4,14 @@ import os
 import tempfile
 from abc import ABC, abstractmethod
 from pathlib import Path
+from urllib.parse import quote
 
 import boto3
+
+# Lowered from 3600s (audit finding F): a presigned download URL is bearer
+# proof of access for its whole lifetime once minted -- a short TTL limits
+# how long a leaked/logged URL stays usable.
+PRESIGN_EXPIRES_SECONDS = 300
 
 
 class DocumentBlobStore(ABC):
@@ -22,7 +28,7 @@ class DocumentBlobStore(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def create_download_url(self, key: str, expires_seconds: int) -> str:
+    def create_download_url(self, key: str, expires_seconds: int, filename: str | None = None) -> str:
         raise NotImplementedError
 
 
@@ -69,7 +75,8 @@ class LocalDocumentBlobStore(DocumentBlobStore):
         if path.exists():
             path.unlink()
 
-    def create_download_url(self, key: str, expires_seconds: int) -> str:
+    def create_download_url(self, key: str, expires_seconds: int, filename: str | None = None) -> str:
+        del filename  # served through the API's own content-disposition, not a direct URL
         if expires_seconds <= 0:
             raise ValueError("expires_seconds must be positive")
         self._path(key)
@@ -139,11 +146,15 @@ class S3DocumentBlobStore(DocumentBlobStore):
         # mirroring LocalDocumentBlobStore.delete.
         self._client.delete_object(Bucket=self.bucket, Key=self._object_key(key))
 
-    def create_download_url(self, key: str, expires_seconds: int) -> str:
+    def create_download_url(self, key: str, expires_seconds: int, filename: str | None = None) -> str:
         if expires_seconds <= 0:
             raise ValueError("expires_seconds must be positive")
+        params = {"Bucket": self.bucket, "Key": self._object_key(key)}
+        if filename:
+            encoded = quote(filename, safe="")
+            params["ResponseContentDisposition"] = f"attachment; filename*=UTF-8''{encoded}"
         return self._client.generate_presigned_url(
             "get_object",
-            Params={"Bucket": self.bucket, "Key": self._object_key(key)},
+            Params=params,
             ExpiresIn=expires_seconds,
         )
