@@ -163,6 +163,26 @@ def test_given_worker_message_without_precreated_job_then_record_is_created(tmp_
     assert recorded.checksum == "sha256:abc"
 
 
+def test_given_job_store_then_in_memory_jobs_map_stays_empty(tmp_path):
+    """With a durable job store attached, submit/record_result/submit_delete
+    must not also grow IngestionService._jobs -- unbounded in-memory job
+    growth was finding #21."""
+    queue = InProcessQueue()
+    job_store = SqliteJobStore(str(tmp_path / "jobs.db"))
+    service = IngestionService(queue=queue, job_store=job_store)
+
+    jobs = [
+        service.submit(tenant_id="tenant-a", filename=f"labor-{i}.txt", content=f"x{i}".encode())
+        for i in range(5)
+    ]
+    service.record_result(tenant_id="tenant-a", filename="other.txt", content=b"y", document_id="doc_1")
+    service.submit_delete(tenant_id="tenant-a", filename="labor-0.txt")
+
+    assert len(service._jobs) == 0
+    for job in jobs:
+        assert service.get(job.job_id, "tenant-a").status is IngestionStatus.queued
+
+
 def test_given_legacy_service_without_queue_then_submit_still_indexes_inline():
     """The Phase-0 synchronous contract (no queue) must keep working."""
     service = IngestionService()

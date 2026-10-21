@@ -4,11 +4,16 @@ import json
 import time
 import uuid
 from abc import ABC, abstractmethod
+from collections import deque
 from dataclasses import dataclass
 from threading import Lock
 from typing import Any, Callable
 
 import boto3
+
+# Cap on InProcessQueue's dead-letter history: unbounded growth under a
+# sustained poison-message storm would otherwise be a memory leak.
+MAX_DEAD_LETTERS = 1000
 
 
 @dataclass(frozen=True)
@@ -92,7 +97,7 @@ class InProcessQueue(Queue):
         self._now = now_fn or time.monotonic
         self._pending: list[QueueMessage] = []
         self._in_flight: dict[str, QueueMessage] = {}
-        self._dead_letters: list[QueueMessage] = []
+        self._dead_letters: deque[QueueMessage] = deque(maxlen=MAX_DEAD_LETTERS)
         self._lock = Lock()
 
     # -- introspection helpers (tests / observability) -------------------- #

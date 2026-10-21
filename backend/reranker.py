@@ -304,8 +304,18 @@ class RemoteReranker(Reranker):
         if self._http is None:
             import requests
 
-            self._http = requests
+            session = requests.Session()
+            adapter = requests.adapters.HTTPAdapter(pool_connections=4, pool_maxsize=16)
+            session.mount("http://", adapter)
+            session.mount("https://", adapter)
+            self._http = session
         return self._http
+
+    def close(self) -> None:
+        if self._http is not None:
+            close = getattr(self._http, "close", None)
+            if callable(close):
+                close()
 
     def rerank(self, query: str, passages: list[dict], top_k: int = 4) -> list[dict]:
         if not passages:

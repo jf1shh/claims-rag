@@ -160,14 +160,26 @@ def test_models_returns_first_and_ttl_caches():
     assert len([g for g in http.gets if g["url"].endswith("/v1/models")]) == 1  # cached
 
 
-def test_models_failure_returns_local_model_without_caching():
+def test_models_failure_is_cached_for_30s_then_retried(monkeypatch):
+    fake_time = [0.0]
     http = FakeHTTP()
     http._models_resp = {"data": []}
     client = OpenAICompatibleClient(base_url="http://x", default_model="M",
-                                    models_ttl_seconds=600, http=http)
+                                    models_ttl_seconds=600, http=http,
+                                    clock=lambda: fake_time[0])
     assert client.models() == ["local-model"]
+    gets_after_first_failure = len(http.gets)
+
     http._models_resp = {"data": [{"id": "now-up"}]}
-    assert client.models() == ["now-up"]  # failure wasn't cached
+    fake_time[0] += 29.0
+    # Still within the 30s failure-cache window: no new network attempt, and
+    # the server coming back up isn't noticed yet.
+    assert client.models() == ["local-model"]
+    assert len(http.gets) == gets_after_first_failure
+
+    fake_time[0] += 2.0  # now 31s after the failure
+    assert client.models() == ["now-up"]
+    assert len(http.gets) > gets_after_first_failure
 
 
 def test_models_prefers_lemonade_loaded_llm_over_download_list():
@@ -347,3 +359,50 @@ def test_content_length_trickle_is_cut_off_at_the_deadline():
         stop.set()
         thread.join(timeout=2)
         srv.close()
+
+
+# --- connection reuse (finding #19) -------------------------------------------
+
+
+def test_two_chat_calls_on_one_client_reuse_one_session(monkeypatch):
+    import requests
+
+    created = []
+    orig_init = requests.Session.__init__
+
+    def tracking_init(self, *a, **kw):
+        created.append(self)
+        orig_init(self, *a, **kw)
+
+    monkeypatch.setattr(requests.Session, "__init__", tracking_init)
+
+    posts = []
+
+    def fake_session_post(self, url, json=None, headers=None, timeout=None, **kw):
+        posts.append(self)
+        return _FakeResponse(_completion_body("ok"))
+
+    monkeypatch.setattr(requests.Session, "post", fake_session_post)
+
+    def fail_module_post(*a, **kw):
+        raise AssertionError("module-level requests.post must not be called")
+
+    monkeypatch.setattr(requests, "post", fail_module_post)
+
+    client = OpenAICompatibleClient(base_url="http://x", default_model="M")
+    client.complete([{"role": "user", "content": "q1"}], model="M", temperature=0, max_tokens=10)
+    client.complete([{"role": "user", "content": "q2"}], model="M", temperature=0, max_tokens=10)
+
+    assert len(created) == 1
+    assert posts == [created[0], created[0]]
+
+
+def test_close_closes_the_underlying_session():
+    from backend.llm_client import _DefaultHTTP
+
+    http = _DefaultHTTP()
+    closed = []
+    http._session.close = lambda: closed.append(True)
+    client = OpenAICompatibleClient(base_url="http://x", default_model="M", http=http)
+    client.close()
+    assert closed == [True]

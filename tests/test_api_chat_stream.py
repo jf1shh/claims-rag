@@ -201,3 +201,37 @@ def test_timeboxed_stream_normal_completion_does_not_touch_the_generator(monkeyp
         await response({"type": "http"}, None, None)
 
     anyio.run(run)
+
+
+def test_timeboxed_stream_timeout_closes_generator_off_the_loop_thread(monkeypatch):
+    # Finding #20: the generator's finally writes the audit event (file lock +
+    # fsync) -- close() must not run that blocking I/O on the event loop thread.
+    import threading
+
+    async def _hang_forever(self, scope, receive, send):
+        await anyio.sleep_forever()
+
+    monkeypatch.setattr(StreamingResponse, "__call__", _hang_forever)
+
+    close_thread_ident = []
+
+    def gen():
+        try:
+            yield b"data: x\n\n"
+        finally:
+            close_thread_ident.append(threading.get_ident())
+
+    g = gen()
+    next(g)  # start the generator so its finally runs only on close()
+    response = _TimeBoxedStream(g, 0.01, media_type="text/event-stream")
+
+    loop_thread_ident = []
+
+    async def run():
+        loop_thread_ident.append(threading.get_ident())
+        await response({"type": "http"}, None, None)
+
+    anyio.run(run)
+
+    assert close_thread_ident, "generator's finally never ran"
+    assert close_thread_ident[0] != loop_thread_ident[0]
