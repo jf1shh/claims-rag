@@ -962,3 +962,14 @@ Audit finding #6. The owner chose the design: both an admin API and a CLI; a pur
 - Defect found in review: the sync `POST /api/delete` scrub was unguarded, so a job-store error after the document was already deleted returned 500 (`test_given_scrub_failure_when_sync_delete_then_still_200` failed on the worker's code with `500 == 200`). It now logs the error type and returns 200, like the worker path. The worker also omitted the brief's API-level sync scrub test; added.
 - Decided: terminal = indexed, failed, deleted; anything else blocks a purge with 409. `IngestionJob.checksum` is now optional so scrubbed rows still load. The purge checks for active jobs and then deletes without a lock; an upload that lands in between is not covered (admin operation, documented 409 contract).
 - Verified on the M12c A+B+C+D base: offline suite 1228 passed, 29 skipped, 1 xfailed; Postgres suite 1256 passed, 1 skipped, 1 xfailed; ruff clean.
+
+### 2026-10-21 — Audit lows (M12d)
+
+Findings #15–#21 and #25, split by file set between two Sonnet workers through nexus-route: storage and privacy (#15–#18, #25; `code`, 468 s) and runtime (#19–#21; `code`, 405 s). Both branched from `feat/claim-purge`. Claude reviewed both.
+
+- Defect found in review (storage): when `record_result` failed during a sync delete, the worker skipped the job-row scrub, so the upload's job row kept its filename. The delete now always scrubs (`test_given_record_result_failure_when_sync_delete_then_upload_job_still_scrubbed` failed on the worker's code).
+- #17 was already fixed on the base (M12a stages uploads before the transaction); the worker added WAL to the vector store instead.
+- #25: FORCE RLS lives in a new migration `0003` (0001/0002 are never edited). FORCE does not bind superusers or `BYPASSRLS` roles, so the store warns at startup; it fires in CI and the dev container, which connect as `postgres`, as expected.
+- Runtime review accepted without changes. The `models()` failure cache uses the injected monotonic clock and only applies after a real probe failure; the pooled session keeps the `post(..., stream=True)` contract the M12c deadline reader relies on.
+- Watch out: the two branches share the Postgres verify database. After the storage suite migrates it to `0003`, the runtime branch fails with "Can't locate revision '0003'" until the database is recreated.
+- Verified: storage offline 1245 passed, 30 skipped, 1 xfailed, Postgres 1274 passed, 1 skipped, 1 xfailed; runtime offline 1235 passed, 29 skipped, 1 xfailed, Postgres 1263 passed, 1 skipped, 1 xfailed; ruff clean.

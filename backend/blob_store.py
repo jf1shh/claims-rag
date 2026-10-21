@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 import tempfile
 from abc import ABC, abstractmethod
@@ -7,6 +8,9 @@ from pathlib import Path
 from urllib.parse import quote
 
 import boto3
+import botocore
+
+logger = logging.getLogger(__name__)
 
 # Lowered from 3600s (audit finding F): a presigned download URL is bearer
 # proof of access for its whole lifetime once minted -- a short TTL limits
@@ -144,7 +148,45 @@ class S3DocumentBlobStore(DocumentBlobStore):
     def delete(self, key: str) -> None:
         # S3/DC delete is idempotent; deleting a missing object is a no-op,
         # mirroring LocalDocumentBlobStore.delete.
-        self._client.delete_object(Bucket=self.bucket, Key=self._object_key(key))
+        object_key = self._object_key(key)
+        try:
+            to_delete = self._list_versions(object_key)
+        except botocore.exceptions.ClientError as exc:
+            error_code = exc.response.get("Error", {}).get("Code", "Unknown")
+            if error_code not in {"AccessDenied", "NotImplemented"}:
+                raise
+            logger.warning(
+                "Falling back to plain delete; version listing failed (%s)", error_code
+            )
+            self._client.delete_object(Bucket=self.bucket, Key=object_key)
+            return
+
+        if not to_delete:
+            self._client.delete_object(Bucket=self.bucket, Key=object_key)
+            return
+
+        for start in range(0, len(to_delete), 1000):
+            batch = to_delete[start : start + 1000]
+            response = self._client.delete_objects(
+                Bucket=self.bucket, Delete={"Objects": batch}
+            )
+            errors = response.get("Errors") or []
+            if errors:
+                raise botocore.exceptions.ClientError(
+                    {"Error": errors[0]}, "DeleteObjects"
+                )
+
+    def _list_versions(self, object_key: str) -> list[dict]:
+        paginator = self._client.get_paginator("list_object_versions")
+        to_delete: list[dict] = []
+        for page in paginator.paginate(Bucket=self.bucket, Prefix=object_key):
+            for version in page.get("Versions", []):
+                if version["Key"] == object_key:
+                    to_delete.append({"Key": object_key, "VersionId": version["VersionId"]})
+            for marker in page.get("DeleteMarkers", []):
+                if marker["Key"] == object_key:
+                    to_delete.append({"Key": object_key, "VersionId": marker["VersionId"]})
+        return to_delete
 
     def create_download_url(self, key: str, expires_seconds: int, filename: str | None = None) -> str:
         if expires_seconds <= 0:

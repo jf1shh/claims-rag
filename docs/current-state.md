@@ -168,10 +168,18 @@ As of September 6, the authoritative state is [portfolio-hardening.md](docs/port
 > - `/api/claims/{id}` paths are redacted in the uvicorn access log.
 > - Verified on the M12c A+B+C+D base: offline suite 1228 passed, 29 skipped, 1 xfailed; Postgres suite 1256 passed, 1 skipped, 1 xfailed; ruff clean.
 >
-> **Next:** M12 in this order:
-> 1. **Lows**: #15–#21, #25.
+> **Audit lows done 2026-10-21 (M12d, branches `fix/m12d-storage` and `fix/m12d-runtime`)**: findings #15–#21 and #25.
+> - #15: `S3DocumentBlobStore.delete` removes every version and delete marker of the exact key (batches of 1,000). If the bucket refuses version listing, it falls back to a plain delete and logs a warning.
+> - #16: SQLite runs with `PRAGMA secure_delete=ON`. `SQLiteVectorStore.compact()` (FTS optimize + `VACUUM`) runs from `scripts/purge_claim.py --compact`.
+> - #17: upload staging was already outside the store transaction (M12a); the vector store now also opens in WAL mode.
+> - #18: the job store uses WAL, a 30 s busy timeout, and a job-store failure after a committed sync upload or delete still returns success (`job_id` null, audit `job_record="failed"`). A sync delete always scrubs the job rows, even when recording its own job failed.
+> - #19: the LLM client and the remote reranker each keep one pooled `requests.Session`. A failed `models()` probe is cached for 30 s.
+> - #20: when a chat stream closes, the generator is closed in a worker thread and the audit write leaves the event loop.
+> - #21: `IngestionService` keeps no in-memory job copy when a job store is set, and the queue's dead-letter list is capped at 1,000.
+> - #25: Alembic `0003` turns on `FORCE ROW LEVEL SECURITY` for `documents`, `parent_chunks` and `child_chunks`. `PostgresVectorStore` warns once at startup if its role is a superuser or has `BYPASSRLS`, because those roles skip RLS even when forced.
+> - Verified: storage branch offline 1245 passed, 30 skipped, 1 xfailed, Postgres 1274 passed; runtime branch offline 1235 passed, 29 skipped, 1 xfailed, Postgres 1263 passed; ruff clean.
 >
-> Then roadmap P5 (demo/README workflow table) and P6 (NAIC governance mapping).
+> **Next:** roadmap P5 (demo/README workflow table), then P6 (NAIC governance mapping).
 
 > **License changed 2026-10-17**: MIT → AGPL-3.0 (owner decision; `LICENSE`, README badge and a new License section). Code copied before the change stays under MIT.
 
