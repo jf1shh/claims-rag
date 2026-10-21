@@ -221,13 +221,23 @@ def test_audit_recovers_torn_tail_without_losing_complete_records(tmp_path):
 
 
 def test_garbage_collection_preserves_current_source(tmp_path):
+    # M12a: add_document now deletes a replaced version's blob itself right
+    # after the commit (see test_rag_engine_store.py), so a same-scope
+    # re-upload no longer leaves an orphan for the collector to find.
     from scripts.collect_source_garbage import collect
     application = create_app(local_settings(tmp_path))
     store = application.state.runtime.vector_store
     store.add_document('policy.txt', 'txt', 3, 'OLD', FakeEmbedder())
     old_key = store.get_blob_key('policy.txt')
     store.add_document('policy.txt', 'txt', 3, 'NEW', FakeEmbedder())
-    assert collect(store) == [old_key]
-    assert collect(store, apply=True) == [old_key]
     assert collect(store) == []
     assert store.get_document_content('policy.txt') == 'NEW'
+
+    # The collector itself still reclaims a truly unreferenced staged blob
+    # (e.g. one left behind by some other failure path).
+    from backend.source_storage import stage_source
+    orphan_key, _ = stage_source(store, 'orphan.txt', 'txt', 'ORPHAN')
+    assert orphan_key != old_key
+    assert collect(store) == [orphan_key]
+    assert collect(store, apply=True) == [orphan_key]
+    assert collect(store) == []

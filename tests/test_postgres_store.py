@@ -192,6 +192,85 @@ def test_blob_store_wiring_routes_bytes_to_object_store(provisioned_db, tmp_path
                 conn.close()
 
 
+@needs_postgres
+def test_reupload_same_scope_deletes_replaced_blob(provisioned_db, tmp_path):
+    """M12a: re-uploading (claim_id, filename) must delete the replaced row's
+    blob after the commit, not leave it orphaned."""
+    import uuid
+
+    import boto3
+    from moto import mock_aws
+
+    from backend.blob_store import S3DocumentBlobStore
+    from backend.postgres_store import PostgresVectorStore
+
+    tenant = f"test-{uuid.uuid4().hex[:8]}"
+    with mock_aws():
+        client = boto3.client("s3", region_name="us-east-1")
+        client.create_bucket(Bucket="test-bucket")
+        blob = S3DocumentBlobStore(bucket="test-bucket", tenant_id=tenant)
+        s = PostgresVectorStore(
+            dsn=provisioned_db,
+            tenant_id=tenant,
+            storage_dir=str(tmp_path / "docs"),
+            embedding_dimensions=384,
+            blob_store=blob,
+        )
+        try:
+            s.add_document("labor.txt", "txt", 100, "OLD CONTENT", _FakeEmbedder(), claim_id="claim-1")
+            old_key = f"{tenant}/" + s.get_blob_key("labor.txt", "claim-1")
+            s.add_document("labor.txt", "txt", 100, "NEW CONTENT", _FakeEmbedder(), claim_id="claim-1")
+            new_key = f"{tenant}/" + s.get_blob_key("labor.txt", "claim-1")
+            assert new_key != old_key
+            keys = {o["Key"] for o in client.list_objects_v2(Bucket="test-bucket").get("Contents", [])}
+            assert old_key not in keys
+            assert new_key in keys
+        finally:
+            conn = _connect(provisioned_db)
+            try:
+                conn.execute("DELETE FROM documents WHERE tenant_id = %s", (tenant,))
+                conn.commit()
+            finally:
+                conn.close()
+
+
+@needs_postgres
+def test_add_document_embeds_before_opening_a_connection(store, monkeypatch):
+    """M12a: chunking/embedding must happen before `_connect()`, so a slow
+    embed never holds a Postgres connection/row lock."""
+    call_order = []
+    real_connect = store._connect
+
+    def recording_connect():
+        call_order.append("connect")
+        return real_connect()
+
+    class _OrderRecordingEmbedder(_FakeEmbedder):
+        def embed_chunks(self, chunks):
+            call_order.append("embed")
+            return super().embed_chunks(chunks)
+
+    monkeypatch.setattr(store, "_connect", recording_connect)
+    text = "Nevada mechanical labor cap is 110 dollars per hour."
+    store.add_document("labor.txt", "txt", len(text), text, _OrderRecordingEmbedder())
+    assert call_order.index("embed") < call_order.index("connect")
+
+
+@needs_postgres
+def test_connect_failure_after_staging_discards_staged_source(store, tmp_path, monkeypatch):
+    """M12a: the source is staged before `_connect()`; if the connection fails
+    the staged file must be deleted rather than orphaned."""
+
+    def failing_connect():
+        raise RuntimeError("database unavailable")
+
+    monkeypatch.setattr(store, "_connect", failing_connect)
+    text = "Nevada mechanical labor cap is 110 dollars per hour."
+    with pytest.raises(RuntimeError, match="database unavailable"):
+        store.add_document("labor.txt", "txt", len(text), text, _FakeEmbedder())
+    docs = tmp_path / "docs"
+    assert not docs.exists() or not [p for p in docs.rglob("*") if p.is_file()]
+
 # --------------------------------------------------------------------------- #
 # Basic add / search / chunk / delete
 # --------------------------------------------------------------------------- #

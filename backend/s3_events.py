@@ -5,11 +5,18 @@ from typing import Any
 
 from backend.queue import Queue
 
-# Physical S3 object keys are `{tenant}/{scope}/{filename}` -- the tenant prefix
-# is added by S3DocumentBlobStore._object_key, and the scope is either a claim
-# id or the literal "global" (see rag_engine._blob_key). The bridge validates
-# that prefix and enqueues the *logical* key so consumers stay tenant-agnostic.
+# Physical S3 object keys the bridge accepts are `{tenant}/inbound/{scope}/{filename}`
+# -- the tenant prefix is added by S3DocumentBlobStore._object_key, "inbound" is a
+# fixed marker that is never used by the app's own object keys (`versions/<uuid>/...`
+# from source_storage.stage_source, `staging/<uuid>/...` from the async upload path),
+# and the scope is either a claim id or the literal "global" (see
+# rag_engine._blob_key). Configure the S3 bucket notification with a
+# `{tenant}/inbound/` key-prefix filter so only genuine client uploads reach this
+# bridge. The bridge enqueues the *logical* key so consumers stay tenant-agnostic.
 GLOBAL_SCOPE = "global"
+INBOUND_PREFIX = "inbound"
+# Scopes reserved for the app's own object namespaces; never treated as a claim id.
+_RESERVED_SCOPES = frozenset({"versions", "staging", "inbound"})
 
 
 class S3EventIngestBridge:
@@ -42,13 +49,13 @@ class S3EventIngestBridge:
             key = self._object_key(record)
             if not key:
                 continue
-            logical_key = self._tenant_scope_key(key)
-            if logical_key is None:
-                # Foreign tenant or malformed `{tenant}/{scope}/{filename}` shape.
+            parsed = self._tenant_scope_key(key)
+            if parsed is None:
+                # Foreign tenant, reserved/empty scope, or malformed
+                # `{tenant}/inbound/{scope}/{filename}` shape.
                 continue
-            scope, filename = logical_key.split("/", 1)
-            if not filename or filename.startswith("/"):
-                continue
+            scope, filename = parsed
+            logical_key = f"{INBOUND_PREFIX}/{scope}/{filename}"
             claim_id = None if scope == GLOBAL_SCOPE else scope
             self.queue.enqueue(
                 {
@@ -81,14 +88,21 @@ class S3EventIngestBridge:
 
         return unquote(key)
 
-    def _tenant_scope_key(self, physical_key: str) -> str | None:
-        parts = physical_key.split("/", 2)
-        if len(parts) != 3 or parts[0] != self.tenant_id:
+    def _tenant_scope_key(self, physical_key: str) -> tuple[str, str] | None:
+        """Parses `{tenant}/inbound/{scope}/{filename}`; filename must be a
+        single path segment (no `/`), and scope must be non-empty and not one
+        of the app's own reserved namespaces."""
+        parts = physical_key.split("/")
+        if len(parts) != 4:
             return None
-        scope, filename = parts[1], parts[2]
-        if not scope or not filename:
+        tenant, inbound, scope, filename = parts
+        if tenant != self.tenant_id or inbound != INBOUND_PREFIX:
             return None
-        return f"{scope}/{filename}"
+        if not scope or scope in _RESERVED_SCOPES:
+            return None
+        if not filename or filename.startswith("/"):
+            return None
+        return scope, filename
 
     @staticmethod
     def _etag(record: dict[str, Any]) -> str:

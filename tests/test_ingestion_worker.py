@@ -388,6 +388,41 @@ def test_given_mixed_outcomes_then_stats_reflect_each(harness, tmp_path):
     assert stats["rejected"] == 0
 
 
+# ---------------------------------------------------------------------------
+# M12a -- staging blob cleanup on every final outcome, never on a retry
+# ---------------------------------------------------------------------------
+
+def test_given_staging_blob_indexed_then_staging_blob_deleted(harness):
+    queue, blob, store = harness
+    blob.put("staging/u1/labor.txt", LABOR_TEXT.encode(), "text/plain")
+    queue.enqueue(_job_message("labor.txt", "staging/u1/labor.txt"))
+
+    assert _worker(harness).process_message(queue.dequeue()) == INDEXED
+    with pytest.raises(FileNotFoundError):
+        blob.get("staging/u1/labor.txt")
+
+
+def test_given_staging_blob_dead_lettered_then_staging_blob_still_deleted(harness):
+    queue, blob, store = harness
+    blob.put("staging/u2/broken.pdf", b"%PDF-1.4 this is not a real pdf at all", "application/pdf")
+    queue.enqueue(_job_message("broken.pdf", "staging/u2/broken.pdf"))
+
+    assert _worker(harness).process_message(queue.dequeue()) == DEAD_LETTERED
+    with pytest.raises(FileNotFoundError):
+        blob.get("staging/u2/broken.pdf")
+
+
+def test_given_staging_blob_retryable_failure_then_staging_blob_kept_for_redelivery(harness):
+    queue, blob, store = harness
+    blob.put("staging/u3/labor.txt", LABOR_TEXT.encode(), "text/plain")
+    queue.enqueue(_job_message("labor.txt", "staging/u3/labor.txt"))
+    worker = _worker(harness, embedder=_FailingEmbedder())
+
+    assert worker.process_message(queue.dequeue()) == REJECTED
+    # Still present: the re-delivered message will need to fetch it again.
+    assert blob.get("staging/u3/labor.txt") == LABOR_TEXT.encode()
+
+
 def test_given_sqs_queue_when_retries_exhausted_then_message_lands_in_dlq(tmp_path):
     """The SQS leg of the DLQ failure drill: a message that exhausts its retry
     budget via visibility-timeout rejects must end up in the dead-letter queue,

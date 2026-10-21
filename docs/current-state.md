@@ -136,11 +136,16 @@ As of September 6, the authoritative state is [portfolio-hardening.md](docs/port
 >
 > **Enterprise audit 2026-10-21 (M12)**: Opus read-only audit of 60c0111, 25 findings (1 high, 11 medium, 13 low): [docs/agent-work/enterprise-audit-2026-10-21.md](agent-work/enterprise-audit-2026-10-21.md).
 >
+> **Data lifecycle 2026-10-21 (M12a, branch `fix/data-lifecycle`)**: audit findings #1 (high), #4, #5 and #7.
+> - The S3 event bridge accepts only `{tenant}/inbound/{scope}/{filename}`. Scopes `versions`, `staging` and `inbound` are reserved, and nested filenames are rejected, so the app's own `versions/` and `staging/` writes can no longer re-enter ingestion as claim uploads. Configure the bucket notification with a `{tenant}/inbound/` prefix filter.
+> - The ingestion worker deletes the `staging/` blob on every final outcome (indexed or dead-lettered), never on a retry. Worker logs name the job id, not the filename.
+> - Both stores embed and stage the source before opening a connection. If the connection or the transaction fails, the staged blob is discarded (`source_storage.discard_staged`). After commit, the replaced version's blob is deleted, but only for app-written `versions/` keys. Legacy plain files stay with `scripts/collect_source_garbage.py`.
+> - Verified: offline suite 1105 passed; Postgres suite 1126 passed.
+>
 > **Next:** M12 in this order:
 > 1. **M12b API hardening** (#2, #13 access log, #14, #22, #23, #24): built and green on branch `fix/api-hardening`. It adds audit records on content, eval-search and claim-list reads and on chat 403s, redacts paths in the access log, adds a generic 500 middleware, makes `/api/status` require auth, turns docs off outside dev, adds frame/HSTS headers, and sets 300 s attachment presigns.
-> 2. **M12a data lifecycle** (#1 high, #4, #5, #7): the S3 bridge accepts only an inbound prefix and reserved scopes; staging is deleted on every final outcome; the replaced blob is deleted after commit; Postgres `add_document` embeds before its transaction.
-> 3. **M12c medium findings**: #3 cross-process vector cache and #11 single-flight rebuild, #8 PG pool with timeouts, #9 overall chat deadline, #10 SQS visibility extension, #12 zip EOCD check, #6 claim purge and job retention (needs an owner design call).
-> 4. **Lows**: #15–#21, #25.
+> 2. **M12c medium findings**: #3 cross-process vector cache and #11 single-flight rebuild, #8 PG pool with timeouts, #9 overall chat deadline, #10 SQS visibility extension, #12 zip EOCD check, #6 claim purge and job retention (needs an owner design call).
+> 3. **Lows**: #15–#21, #25.
 >
 > Then roadmap P5 (demo/README workflow table) and P6 (NAIC governance mapping).
 

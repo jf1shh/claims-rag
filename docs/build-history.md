@@ -908,3 +908,13 @@ existing California and Texas regulation docs.
   - Ruled out: implicit AND (matches nothing), a bigger rerank pool (latency), the `isalnum()` split (drops punctuated words). OR alone (2026-10-20) changed nothing on the top-4 probe because stopwords swamped the bm25 order; the stopword filter is what makes OR work.
   - Postgres ranking: the default `ts_rank` dropped parity from 0.9907 to 0.912 (CI floor 0.9). `ts_rank_cd(...,1)` gave 0.935 but worse PG hybrid recall (0.944); `ts_rank(...,8)` gave 0.935; `ts_rank(...,1)` gave 0.940 and identical golden recall, so it stays. Python IDF re-scoring was ruled out for latency and complexity. The remaining SQLite/PG gap is IDF, which bm25 has and `ts_rank` does not.
   - Judge parity by golden recall per backend, not by `parity_runner` alone: its vector leg is a hash embedder, so it exaggerates keyword-ranking gaps.
+
+### 2026-10-21 — Data lifecycle (M12a)
+
+- Scope: enterprise audit findings #1 (high), #4, #5 and #7 (`docs/agent-work/enterprise-audit-2026-10-21.md`). Built by a Sonnet worker (nexus-route `code`, 472 s), reviewed and corrected by Claude.
+- #1: the S3 bridge parsed any `{tenant}/{scope}/{filename}` key, so the app's own `versions/<uuid>/...` and `staging/<uuid>/...` writes looked like client uploads to scope `versions` or `staging`. It now accepts only `{tenant}/inbound/{scope}/{filename}` (exactly four segments), rejects the reserved scopes, and enqueues the logical key `inbound/{scope}/{filename}`.
+- #4: `IngestionWorker._cleanup_staging` deletes `staging/` blobs on INDEXED and DEAD_LETTERED, including blob-not-found, checksum mismatch and fetch retries exhausted. It never deletes on a retry, because the redelivered message still needs the blob.
+- #5: re-uploading `(claim_id, filename)` deletes the replaced version's blob after the commit. Review correction: only `versions/` keys are deleted. Deleting `storage_dir/<filename>` for a legacy row could remove a file another legacy row still shares, so legacy files stay with `scripts/collect_source_garbage.py`. The dead legacy branch in SQLite `add_document` was removed.
+- #7: Postgres `add_document` chunks, embeds and stages before `_connect()`, so a slow embed never holds a connection or row lock. Review correction: a `_connect()` failure after staging now discards the staged blob, since it was previously orphaned (`discard_staged` in `backend/source_storage.py`, used by both stores; tests in `test_store_blob_wiring.py` and `test_postgres_store.py`).
+- Worker logs now name the job id, not the filename.
+- Verified: ruff clean; offline suite 1105 passed, 22 skipped, 1 xfailed (the strict prompt-defense xfail); Postgres suite (local pgvector container) 1126 passed.

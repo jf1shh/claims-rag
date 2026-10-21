@@ -29,8 +29,8 @@ def make_bridge(**kwargs):
 def test_given_global_and_claim_events_when_handled_then_both_are_enqueued():
     queue, bridge = make_bridge()
     records = [
-        _created_record("my-bucket", "tenant-a/global/policy.txt"),
-        _created_record("my-bucket", "tenant-a/claim-9/receipt.xlsx"),
+        _created_record("my-bucket", "tenant-a/inbound/global/policy.txt"),
+        _created_record("my-bucket", "tenant-a/inbound/claim-9/receipt.xlsx"),
     ]
     assert bridge.handle_event(records) == 2
     first = queue.dequeue()
@@ -39,28 +39,62 @@ def test_given_global_and_claim_events_when_handled_then_both_are_enqueued():
     assert first.payload["tenant_id"] == "tenant-a"
     assert first.payload["filename"] == "policy.txt"
     assert first.payload["claim_id"] is None
-    assert first.payload["blob_key"] == "global/policy.txt"
+    assert first.payload["blob_key"] == "inbound/global/policy.txt"
     assert first.payload["etag"] == "abc123"
-    assert second.payload["blob_key"] == "claim-9/receipt.xlsx"
+    assert second.payload["blob_key"] == "inbound/claim-9/receipt.xlsx"
     assert second.payload["claim_id"] == "claim-9"
     assert second.payload["filename"] == "receipt.xlsx"
 
 
+def test_given_app_owned_version_or_staging_keys_when_handled_then_skipped():
+    # The app's own objects (source_storage.stage_source's `versions/<uuid>/...`
+    # and the async upload path's `staging/<uuid>/...`) must never be mistaken
+    # for a client upload -- they are not under the `inbound/` prefix.
+    queue, bridge = make_bridge()
+    records = [
+        _created_record("my-bucket", "tenant-a/versions/abc123/report.pdf"),
+        _created_record("my-bucket", "tenant-a/staging/def456/report.pdf"),
+    ]
+    assert bridge.handle_event(records) == 0
+    assert queue.pending_count == 0
+
+
+def test_given_reserved_or_empty_scope_under_inbound_when_handled_then_skipped():
+    queue, bridge = make_bridge()
+    records = [
+        _created_record("my-bucket", "tenant-a/inbound/versions/report.pdf"),
+        _created_record("my-bucket", "tenant-a/inbound/staging/report.pdf"),
+        _created_record("my-bucket", "tenant-a/inbound/inbound/report.pdf"),
+        _created_record("my-bucket", "tenant-a/inbound//report.pdf"),
+    ]
+    assert bridge.handle_event(records) == 0
+    assert queue.pending_count == 0
+
+
+def test_given_filename_with_extra_path_segment_when_handled_then_skipped():
+    # filename must be a single path segment -- a key with an extra `/` is not
+    # `{tenant}/inbound/{scope}/{filename}`.
+    queue, bridge = make_bridge()
+    record = _created_record("my-bucket", "tenant-a/inbound/claim-9/sub/receipt.xlsx")
+    assert bridge.handle_event([record]) == 0
+    assert queue.pending_count == 0
+
+
 def test_given_wrong_bucket_event_when_handled_then_skipped():
     queue, bridge = make_bridge()
-    assert bridge.handle_event([_created_record("other-bucket", "tenant-a/global/x.txt")]) == 0
+    assert bridge.handle_event([_created_record("other-bucket", "tenant-a/inbound/global/x.txt")]) == 0
     assert queue.pending_count == 0
 
 
 def test_given_foreign_tenant_event_when_handled_then_skipped():
     queue, bridge = make_bridge()
-    assert bridge.handle_event([_created_record("my-bucket", "tenant-b/global/x.txt")]) == 0
+    assert bridge.handle_event([_created_record("my-bucket", "tenant-b/inbound/global/x.txt")]) == 0
     assert queue.pending_count == 0
 
 
 def test_given_non_creation_event_when_handled_then_skipped():
     queue, bridge = make_bridge()
-    record = _created_record("my-bucket", "tenant-a/global/x.txt")
+    record = _created_record("my-bucket", "tenant-a/inbound/global/x.txt")
     record["eventName"] = "ObjectRemoved:Delete"
     assert bridge.handle_event([record]) == 0
     assert queue.pending_count == 0
@@ -68,18 +102,25 @@ def test_given_non_creation_event_when_handled_then_skipped():
 
 def test_given_malformed_key_when_handled_then_skipped():
     queue, bridge = make_bridge()
-    # Only {tenant}/{scope} -- no filename segment.
-    assert bridge.handle_event([_created_record("my-bucket", "tenant-a/global")]) == 0
+    # Only {tenant}/inbound/{scope} -- no filename segment.
+    assert bridge.handle_event([_created_record("my-bucket", "tenant-a/inbound/global")]) == 0
+    assert queue.pending_count == 0
+
+
+def test_given_key_without_inbound_prefix_when_handled_then_skipped():
+    queue, bridge = make_bridge()
+    # Same shape as the old accepted key, but no `inbound` marker segment.
+    assert bridge.handle_event([_created_record("my-bucket", "tenant-a/global/policy.txt")]) == 0
     assert queue.pending_count == 0
 
 
 def test_given_url_encoded_key_when_handled_then_decoded():
     queue, bridge = make_bridge()
-    record = _created_record("my-bucket", "tenant-a/global/repair%20order.txt")
+    record = _created_record("my-bucket", "tenant-a/inbound/global/repair%20order.txt")
     assert bridge.handle_event([record]) == 1
     message = queue.dequeue()
     assert message.payload["filename"] == "repair order.txt"
-    assert message.payload["blob_key"] == "global/repair order.txt"
+    assert message.payload["blob_key"] == "inbound/global/repair order.txt"
 
 
 def test_given_empty_bucket_or_tenant_then_bridge_is_rejected():

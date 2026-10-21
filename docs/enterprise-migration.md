@@ -149,7 +149,8 @@ parity harness defines acceptable divergence (recall@k ≥ 0.9) *before* data mi
 > forwarding when `SQS_DLQ_URL` is set — moto-tested). `S3EventIngestBridge`
 > (`backend/s3_events.py`) converts S3 put-event records into tenant-validated
 > queue messages (skips wrong bucket / foreign-tenant / malformed / non-created
-> records; the bucket-notification → Lambda hop is deployment wiring, the
+> records; since M12a it accepts only `{tenant}/inbound/{scope}/{filename}` and
+> rejects the reserved `versions` / `staging` / `inbound` scopes; the bucket-notification → Lambda hop is deployment wiring, the
 > bridge is the tested unit). `IngestionWorker` (`backend/ingestion_worker.py`)
 > runs fetch-blob → parse → chunk → batch-embed → `vector_store.add_document`
 > (one transaction = the incremental upsert; replay overwrites in place) with

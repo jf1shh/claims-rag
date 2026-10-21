@@ -145,7 +145,7 @@ class IngestionWorker:
             return MALFORMED
 
         if self._is_duplicate_event(payload):
-            logger.info("duplicate S3 event for %s (etag %s); acking", blob_key, payload.get("etag"))
+            logger.info("duplicate S3 event for job %s; acking", payload.get("job_id"))
             self.queue.ack(message)
             return DUPLICATE
 
@@ -153,9 +153,12 @@ class IngestionWorker:
         try:
             content = self._fetch_or_dead_letter(message, blob_key)
         except Exception as exc:
-            return self._retry_or_dead_letter(message, filename, exc, job)
+            outcome = self._retry_or_dead_letter(message, filename, exc, job)
+            self._cleanup_staging(blob_key, outcome)
+            return outcome
         if content is None:
             self._mark_failed(job, "BLOB_NOT_FOUND", "source document not found in object storage")
+            self._cleanup_staging(blob_key, DEAD_LETTERED)
             return DEAD_LETTERED
 
         import hashlib
@@ -163,17 +166,28 @@ class IngestionWorker:
         if checksum and checksum != "sha256:" + hashlib.sha256(content).hexdigest():
             self._mark_failed(job, "CHECKSUM_MISMATCH", "staged document does not match submitted bytes")
             self.queue.dead_letter(message)
+            self._cleanup_staging(blob_key, DEAD_LETTERED)
             return DEAD_LETTERED
         outcome = self._index(message, filename, claim_id, content, job)
         if outcome == INDEXED:
             self.queue.ack(message)
-            # Staging is private to this submitted upload, never an indexed source.
-            if blob_key.startswith("staging/"):
-                try:
-                    self.blob_store.delete(blob_key)
-                except Exception:
-                    logger.warning("staging cleanup failed; operator cleanup required")
+        self._cleanup_staging(blob_key, outcome)
         return outcome
+
+    def _cleanup_staging(self, blob_key: str, outcome: str) -> None:
+        """Deletes the async-upload staging blob (`staging/<uuid>/<filename>`,
+        written by the API's upload endpoint) on every final outcome -- indexed
+        or dead-lettered -- but never on a retryable rejection, since the
+        message will be redelivered and still needs the blob. A missing blob
+        is not an error (both blob-store adapters no-op on it already)."""
+        if outcome not in (INDEXED, DEAD_LETTERED):
+            return
+        if not blob_key.startswith("staging/"):
+            return
+        try:
+            self.blob_store.delete(blob_key)
+        except Exception as exc:
+            logger.warning("staging cleanup failed (%s); operator cleanup required", type(exc).__name__)
 
     def _process_delete(self, message: QueueMessage) -> str:
         """Executes a delete message: removes the document and marks its job
@@ -201,7 +215,7 @@ class IngestionWorker:
             return DEAD_LETTERED
         self._set_job(job, status=IngestionStatus.deleted, progress=100)
         self.queue.ack(message)
-        logger.info("deleted %s", filename)
+        logger.info("deleted document for job %s", payload.get("job_id"))
         return DELETED
 
     def _is_duplicate_event(self, payload: dict[str, Any]) -> bool:
@@ -262,7 +276,7 @@ class IngestionWorker:
         try:
             return self.blob_store.get(blob_key)
         except FileNotFoundError as exc:
-            logger.warning("blob fetch failed for %s: %s", blob_key, exc)
+            logger.warning("blob fetch failed for job %s (%s)", message.payload.get("job_id"), type(exc).__name__)
             self.queue.dead_letter(message)
             return None
 
@@ -278,7 +292,7 @@ class IngestionWorker:
         if file_ext not in ALLOWED_FILE_TYPES:
             self._mark_failed(job, "UNSUPPORTED_FILE_TYPE", "unsupported file type")
             self.queue.dead_letter(message)
-            logger.warning("unsupported file type %r for %s; dead-lettered", file_ext, filename)
+            logger.warning("unsupported file type %r for job %s; dead-lettered", file_ext, message.payload.get("job_id"))
             return DEAD_LETTERED
 
         tmp_path = None
@@ -298,13 +312,13 @@ class IngestionWorker:
                 # retrying will never succeed -- dead-letter immediately.
                 self._mark_failed(job, "CORRUPT_FILE", "could not read the file -- it may be corrupt, truncated, or password-protected")
                 self.queue.dead_letter(message)
-                logger.warning("unparseable file %s; dead-lettered", filename)
+                logger.warning("unparseable file for job %s; dead-lettered", message.payload.get("job_id"))
                 return DEAD_LETTERED
 
             if not text.strip():
                 self._mark_failed(job, "EMPTY_DOCUMENT", "document is empty or unreadable")
                 self.queue.dead_letter(message)
-                logger.warning("empty document %s; dead-lettered", filename)
+                logger.warning("empty document for job %s; dead-lettered", message.payload.get("job_id"))
                 return DEAD_LETTERED
 
             self._set_job(job, status=IngestionStatus.embedding, progress=75)
@@ -325,7 +339,7 @@ class IngestionWorker:
                 # permanent -- retrying cannot change the outcome.
                 self._mark_failed(job, "REJECTED_BY_STORE", str(exc))
                 self.queue.dead_letter(message)
-                logger.warning("permanent store rejection for %s: %s", filename, exc)
+                logger.warning("permanent store rejection for job %s (%s)", message.payload.get("job_id"), type(exc).__name__)
                 return DEAD_LETTERED
             except Exception as exc:
                 # Embedding-engine failure or a transient store error: the
@@ -335,7 +349,7 @@ class IngestionWorker:
                 return self._retry_or_dead_letter(message, filename, exc, job)
 
             self._set_job(job, status=IngestionStatus.indexed, progress=100, document_id=str(doc_id))
-            logger.info("indexed %s (claim=%s)", filename, claim_id or "global")
+            logger.info("indexed document for job %s", message.payload.get("job_id"))
             return INDEXED
         finally:
             if tmp_path and os.path.exists(tmp_path):
@@ -346,7 +360,7 @@ class IngestionWorker:
     ) -> str:
         if message.receive_count >= self.max_retries:
             self._mark_failed(job, "RETRIES_EXHAUSTED", "document indexing failed after repeated attempts")
-            logger.warning("retries exhausted for %s; dead-lettered (%s)", filename, exc)
+            logger.warning("retries exhausted for job %s; dead-lettered (%s)", message.payload.get("job_id"), type(exc).__name__)
             self.queue.dead_letter(message)
             return DEAD_LETTERED
         self._set_job(
@@ -356,7 +370,12 @@ class IngestionWorker:
             retry_count=(job.retry_count + 1) if job is not None else 0,
         )
         backoff = min(self.backoff_base_seconds * (2 ** max(0, message.receive_count - 1)), _MAX_BACKOFF_SECONDS)
-        logger.warning("retryable failure for %s (attempt %d): %s", filename, message.receive_count, exc)
+        logger.warning(
+            "retryable failure for job %s (attempt %d): %s",
+            message.payload.get("job_id"),
+            message.receive_count,
+            type(exc).__name__,
+        )
         self.queue.reject(message, backoff_seconds=backoff)
         return REJECTED
 
