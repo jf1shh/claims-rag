@@ -56,13 +56,17 @@ class SqliteJobStore:
         self._init_db()
 
     def _connect(self):
-        conn = sqlite3.connect(self.db_path)
+        # timeout=30 matches busy_timeout below: a committed upload must not
+        # 500 just because another writer briefly held the lock.
+        conn = sqlite3.connect(self.db_path, timeout=30)
         conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA busy_timeout = 30000")
         return conn
 
     def _init_db(self) -> None:
         conn = self._connect()
         try:
+            conn.execute("PRAGMA journal_mode = WAL")
             conn.execute(
                 """
                 CREATE TABLE IF NOT EXISTS ingestion_jobs (

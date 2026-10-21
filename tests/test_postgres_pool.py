@@ -69,6 +69,48 @@ def test_close_is_idempotent_with_no_pool():
     assert store._pool is None
 
 
+class _FakeRoleRow:
+    def __init__(self, bypasses):
+        self._bypasses = bypasses
+
+    def fetchone(self):
+        return (self._bypasses,)
+
+
+class _FakeConn:
+    def __init__(self, bypasses):
+        self._bypasses = bypasses
+        self.committed = False
+
+    def execute(self, *args, **kwargs):
+        return _FakeRoleRow(self._bypasses)
+
+    def commit(self):
+        self.committed = True
+
+
+def test_check_rls_bypass_warns_once_when_role_bypasses_rls(caplog):
+    import logging
+
+    store = PostgresVectorStore(dsn="postgresql://localhost/does-not-matter")
+    with caplog.at_level(logging.WARNING):
+        store._check_rls_bypass(_FakeConn(bypasses=True))
+
+    warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings) == 1
+    assert "bypasses row-level security" in warnings[0].message
+
+
+def test_check_rls_bypass_is_silent_when_role_does_not_bypass_rls(caplog):
+    import logging
+
+    store = PostgresVectorStore(dsn="postgresql://localhost/does-not-matter")
+    with caplog.at_level(logging.WARNING):
+        store._check_rls_bypass(_FakeConn(bypasses=False))
+
+    assert [r for r in caplog.records if r.levelno == logging.WARNING] == []
+
+
 def test_pool_settings_are_stored_from_constructor_kwargs():
     store = PostgresVectorStore(
         dsn="postgresql://localhost/does-not-matter",
@@ -181,6 +223,19 @@ def test_close_rolls_back_uncommitted_work_instead_of_committing(provisioned_db)
             conn.close()
     finally:
         store.close()
+
+
+@needs_postgres
+def test_force_row_level_security_is_applied_to_rls_tables(provisioned_db):
+    import psycopg
+
+    with psycopg.connect(provisioned_db, autocommit=True) as conn:
+        rows = conn.execute(
+            "SELECT relname, relforcerowsecurity FROM pg_class "
+            "WHERE relname IN ('documents', 'parent_chunks', 'child_chunks')"
+        ).fetchall()
+    assert len(rows) == 3
+    assert all(forced for _, forced in rows)
 
 
 @needs_postgres

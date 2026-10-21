@@ -7,6 +7,7 @@ behavior while gaining job_id/status for the shared response contract.
 """
 
 import hashlib
+import sqlite3
 
 import pytest
 from fastapi.testclient import TestClient
@@ -219,6 +220,45 @@ def test_given_sync_mode_when_delete_missing_then_404(harness):
     client, _, _, _, _ = harness("sync")
     response = client.post("/api/delete", json={"filename": "ghost.txt"})
     assert response.status_code == 404
+
+
+def test_given_sync_upload_when_job_record_result_raises_then_upload_still_succeeds(harness, monkeypatch):
+    client, store, blob, job_store, _ = harness("sync")
+
+    def _raise(*args, **kwargs):
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(app_module.ingestion_service, "record_result", _raise)
+
+    response = client.post(
+        "/api/upload", files={"file": ("labor.txt", LABOR_TEXT.encode(), "text/plain")}
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["job_id"] is None
+    assert body["status"] == "indexed"
+    assert store.get_document_content("labor.txt") == LABOR_TEXT
+    documents = client.get("/api/documents").json()
+    assert "labor.txt" in [d["filename"] for d in documents]
+
+
+def test_given_sync_delete_when_job_record_result_raises_then_delete_still_succeeds(harness, monkeypatch):
+    client, store, blob, job_store, _ = harness("sync")
+    store.add_document("labor.txt", "txt", 100, LABOR_TEXT, _FakeEmbedder())
+
+    def _raise(*args, **kwargs):
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(app_module.ingestion_service, "record_result", _raise)
+
+    response = client.post("/api/delete", json={"filename": "labor.txt"})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["job_id"] is None
+    assert body["status"] == "deleted"
+    assert store.get_all_documents() == []
 
 
 def test_given_async_mode_when_delete_invalid_filename_then_400(harness):

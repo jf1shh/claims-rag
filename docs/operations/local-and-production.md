@@ -148,7 +148,11 @@ Deleting a whole claim removes its documents (index, FTS rows and stored source 
 .venv/bin/python scripts/purge_claim.py --claim-id '#2026-99382'        # dry run: prints document and job counts
 .venv/bin/python scripts/purge_claim.py --claim-id '#2026-99382' --yes # deletes; exit 2 if a job is in flight
 .venv/bin/python scripts/purge_claim.py --sweep-jobs                 # one JOB_RETENTION_DAYS sweep
+.venv/bin/python scripts/purge_claim.py --claim-id '#2026-99382' --yes --compact # purge, then VACUUM + FTS optimize
+.venv/bin/python scripts/purge_claim.py --compact                    # compact only
 ```
+
+`--compact` is SQLite-only (on Postgres, run `VACUUM` yourself). Stop the API and workers first: `VACUUM` needs an exclusive lock and rewrites the whole database file.
 
 Over HTTP: `DELETE /api/claims/{claim_id}` with an admin token returns `{"claim_id", "documents_deleted", "jobs_deleted"}`, or 409 while a job is in flight and 400 for an invalid id. URL-encode the id (`/api/claims/%232026-99382`). Both write one `claim_purge` audit event with counts. The audit log itself is append-only and is never purged.
 
@@ -160,7 +164,7 @@ Over HTTP: `DELETE /api/claims/{claim_id}` with an admin token returns `{"claim_
 
 ## Runtime data
 
-Keep `rag_store.db`, `stored_documents/`, `.env`, model caches, logs, and audit output outside version control. Configure explicit paths for service deployments. Back up the database and source documents together until object storage is enabled.
+Keep `rag_store.db`, `stored_documents/`, `.env`, model caches, logs, and audit output outside version control. Configure explicit paths for service deployments. The SQLite stores run in WAL mode, so `rag_store.db-wal`/`-shm` and `jobs.db-wal`/`-shm` sit next to them; back them up together (or use `sqlite3 rag_store.db '.backup out.db'`). Back up the database and source documents together until object storage is enabled.
 
 ## Production boundary
 

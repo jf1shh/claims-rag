@@ -78,7 +78,18 @@ can leave unreferenced versions. Stop API/writers, then run
 This works for filesystem and S3 adapters and retains currently referenced keys. Successful async
 jobs remove their private staging bytes; failed/interrupted staging and external S3 object versions
 need an operator retention policy. Clear staging only when no queued/retry jobs require it. Deletion
-from this application does not delete backups, independent copies, S3 version history, or audit logs.
+from this application does not delete backups, independent copies or audit logs. On S3 it deletes
+every version and delete marker of the document's key; Object Lock retention, or a policy that
+denies version listing, leaves older versions in place (the app logs a warning and falls back to a
+plain delete).
+
+SQLite stores run with `secure_delete` on, so deleted rows are overwritten in place. Free pages and
+the FTS index can still hold old bytes until `scripts/purge_claim.py --compact` runs `VACUUM` and
+an FTS optimize; run it after a purge, with writers stopped.
+
+In Postgres, migration `0003` forces row-level security on the document and chunk tables. Superuser
+and `BYPASSRLS` roles still skip RLS, so production must connect as an ordinary role; the store
+logs a warning at startup when it does not.
 
 Deleting a document also scrubs its ingestion job rows (filename, checksum and idempotency key). An
 admin can purge a whole claim (`DELETE /api/claims/{claim_id}` or `scripts/purge_claim.py`), which

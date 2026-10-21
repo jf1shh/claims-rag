@@ -97,6 +97,92 @@ def test_given_empty_bucket_name_then_store_is_rejected():
         S3DocumentBlobStore(bucket="", tenant_id="tenant-a")
 
 
+def test_given_versioned_bucket_when_deleted_then_all_versions_are_gone(s3):
+    client, store = s3
+    client.put_bucket_versioning(
+        Bucket=BUCKET, VersioningConfiguration={"Status": "Enabled"}
+    )
+    store.put("report.txt", b"old", "text/plain")
+    store.put("report.txt", b"new", "text/plain")
+    store.delete("report.txt")
+
+    with pytest.raises(botocore.exceptions.ClientError):
+        store.get("report.txt")
+    versions = client.list_object_versions(
+        Bucket=BUCKET, Prefix="tenant-a/report.txt"
+    )
+    assert versions.get("Versions", []) == []
+    assert versions.get("DeleteMarkers", []) == []
+
+
+def test_given_versioned_bucket_when_deleted_then_similarly_named_key_is_untouched(s3):
+    client, store = s3
+    client.put_bucket_versioning(
+        Bucket=BUCKET, VersioningConfiguration={"Status": "Enabled"}
+    )
+    store.put("a/b.pdf", b"keep-version-1", "application/pdf")
+    store.put("a/b.pdf", b"keep-version-2", "application/pdf")
+    store.put("a/b.pdf.bak", b"unrelated", "application/pdf")
+
+    store.delete("a/b.pdf")
+
+    assert store.get("a/b.pdf.bak") == b"unrelated"
+    with pytest.raises(botocore.exceptions.ClientError):
+        store.get("a/b.pdf")
+
+
+def test_given_many_versions_when_deleted_then_batches_beyond_1000_are_handled(s3, monkeypatch):
+    client, store = s3
+    client.put_bucket_versioning(
+        Bucket=BUCKET, VersioningConfiguration={"Status": "Enabled"}
+    )
+    store.put("report.txt", b"v", "text/plain")
+
+    fake_versions = [
+        {"Key": "tenant-a/report.txt", "VersionId": f"v{i}"} for i in range(1234)
+    ]
+    monkeypatch.setattr(
+        store, "_list_versions", lambda object_key: fake_versions
+    )
+
+    seen = []
+    real_delete_objects = client.delete_objects
+
+    def tracking_delete_objects(**kwargs):
+        seen.append(len(kwargs["Delete"]["Objects"]))
+        return real_delete_objects(**kwargs)
+
+    monkeypatch.setattr(store._client, "delete_objects", tracking_delete_objects)
+
+    store.delete("report.txt")
+
+    assert seen == [1000, 234]
+
+
+def test_given_access_denied_on_version_listing_when_deleted_then_falls_back_to_plain_delete(
+    s3, monkeypatch, caplog
+):
+    client, store = s3
+    store.put("report.txt", b"x", "text/plain")
+
+    def deny(*args, **kwargs):
+        raise botocore.exceptions.ClientError(
+            {"Error": {"Code": "AccessDenied", "Message": "no"}}, "ListObjectVersions"
+        )
+
+    monkeypatch.setattr(store, "_list_versions", deny)
+
+    import logging
+
+    with caplog.at_level(logging.WARNING):
+        store.delete("report.txt")
+
+    with pytest.raises(botocore.exceptions.ClientError):
+        store.get("report.txt")
+    assert "AccessDenied" in caplog.text
+    assert "report.txt" not in caplog.text
+
+
 def test_given_distinct_tenants_then_keys_do_not_collide():
     with mock_aws():
         client = boto3.client("s3", region_name="us-east-1")

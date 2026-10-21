@@ -23,6 +23,12 @@ def main(argv=None) -> int:
     parser.add_argument("--claim-id", help="Claim to purge.")
     parser.add_argument("--yes", action="store_true", help="Actually delete; without it this is a dry run.")
     parser.add_argument("--sweep-jobs", action="store_true", help="Run one job-retention sweep and exit.")
+    parser.add_argument(
+        "--compact",
+        action="store_true",
+        help="Reclaim deleted rows' disk space (SQLite-only). Runs after a --yes purge, "
+        "or alone if --claim-id/--sweep-jobs are not given.",
+    )
     args = parser.parse_args(argv)
 
     settings = get_settings()
@@ -34,8 +40,16 @@ def main(argv=None) -> int:
             print(f"Swept {count} expired job row(s).")
             return 0
 
+        if args.compact and not args.claim_id and not args.sweep_jobs:
+            if not hasattr(deps.vector_store, "compact"):
+                print("compact is SQLite-only; run VACUUM on Postgres")
+                return 0
+            deps.vector_store.compact()
+            print("Compacted the vector store.")
+            return 0
+
         if not args.claim_id:
-            parser.error("--claim-id is required unless --sweep-jobs is given")
+            parser.error("--claim-id is required unless --sweep-jobs or a lone --compact is given")
 
         try:
             validate_claim_id(args.claim_id)
@@ -82,6 +96,13 @@ def main(argv=None) -> int:
             f"Deleted {result.documents_deleted} document(s) and {result.jobs_deleted} "
             f"job row(s) for claim {args.claim_id!r}."
         )
+
+        if args.compact:
+            if not hasattr(deps.vector_store, "compact"):
+                print("compact is SQLite-only; run VACUUM on Postgres")
+            else:
+                deps.vector_store.compact()
+                print("Compacted the vector store.")
         return 0
     finally:
         deps.queue.close()

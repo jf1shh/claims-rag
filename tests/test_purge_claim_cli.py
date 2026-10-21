@@ -102,6 +102,43 @@ def test_given_invalid_claim_id_then_exit_code_one(cli_env):
     assert cli.main(["--claim-id", "a" * 129, "--yes"]) == 1
 
 
+def test_given_compact_flag_with_yes_when_run_then_compact_runs_after_purge(cli_env, monkeypatch):
+    cli, store, job_store, _ = cli_env
+    store.add_document("report.pdf", "pdf", 10, "loss report text", _FakeEmbedder(), claim_id="claim-1")
+    _add_job(job_store, "claim-1")
+
+    calls = []
+    monkeypatch.setattr(type(store), "compact", lambda self: calls.append("compact"))
+
+    exit_code = cli.main(["--claim-id", "claim-1", "--yes", "--compact"])
+
+    assert exit_code == 0
+    assert calls == ["compact"]
+
+
+def test_given_lone_compact_flag_when_run_then_compact_runs_without_claim_id(cli_env, monkeypatch):
+    cli, store, _, _ = cli_env
+    calls = []
+    monkeypatch.setattr(type(store), "compact", lambda self: calls.append("compact"))
+
+    exit_code = cli.main(["--compact"])
+
+    assert exit_code == 0
+    assert calls == ["compact"]
+
+
+def test_given_compact_flag_when_store_has_no_compact_then_prints_message_and_exits_zero(
+    cli_env, capsys, monkeypatch
+):
+    cli, store, _, _ = cli_env
+    monkeypatch.delattr(type(store), "compact")
+
+    exit_code = cli.main(["--compact"])
+
+    assert exit_code == 0
+    assert "compact is SQLite-only; run VACUUM on Postgres" in capsys.readouterr().out
+
+
 def test_given_sweep_jobs_flag_when_run_then_old_terminal_rows_expired(cli_env, capsys):
     cli, store, job_store, _ = cli_env
     old = datetime.now(timezone.utc) - timedelta(days=31)
