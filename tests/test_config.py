@@ -285,7 +285,25 @@ def test_given_no_stage_models_then_defaults_fall_back_to_single_model():
     assert s.llm_api_key is None
     assert s.llm_synthesis_timeout_seconds == 120
     assert s.llm_plan_timeout_seconds == 5
+    assert s.llm_check_timeout_seconds == 30
+    assert s.chat_deadline_seconds == 180
     assert s.model_cache_ttl_seconds == 10
+
+
+def test_given_chat_deadline_settings_when_parsed_then_configured():
+    s = Settings.from_env({
+        "LLM_CHECK_TIMEOUT_SECONDS": "15",
+        "CHAT_DEADLINE_SECONDS": "90",
+    })
+    assert s.llm_check_timeout_seconds == 15
+    assert s.chat_deadline_seconds == 90
+
+
+def test_given_nonpositive_chat_deadline_settings_then_parsing_fails():
+    with pytest.raises(ValueError, match="LLM_CHECK_TIMEOUT_SECONDS"):
+        Settings.from_env({"LLM_CHECK_TIMEOUT_SECONDS": "0"})
+    with pytest.raises(ValueError, match="CHAT_DEADLINE_SECONDS"):
+        Settings.from_env({"CHAT_DEADLINE_SECONDS": "-1"})
 
 
 def test_given_context_caps_when_parsed_then_configured():

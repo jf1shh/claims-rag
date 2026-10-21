@@ -134,6 +134,11 @@ class Settings:
     llm_api_key: str | None = None           # injected from env/secrets; never client-supplied
     llm_synthesis_timeout_seconds: int = 120
     llm_plan_timeout_seconds: int = 5
+    llm_check_timeout_seconds: int = 30
+    # Overall wall-clock budget for one non-streaming /api/chat call, shared
+    # across planning, synthesis and the provenance/conflict checks -- bounds
+    # a byte-trickling gateway to this instead of the sum of every stage timeout.
+    chat_deadline_seconds: int = 180
     model_cache_ttl_seconds: int = 10
     max_upload_bytes: int = 25 * 1024 * 1024
     max_document_chars: int = 2_000_000
@@ -259,6 +264,8 @@ class Settings:
             llm_api_key=env.get("LLM_API_KEY") or None,
             llm_synthesis_timeout_seconds=_int(env.get("LLM_SYNTHESIS_TIMEOUT_SECONDS"), 120, "LLM_SYNTHESIS_TIMEOUT_SECONDS"),
             llm_plan_timeout_seconds=_int(env.get("LLM_PLAN_TIMEOUT_SECONDS"), 5, "LLM_PLAN_TIMEOUT_SECONDS"),
+            llm_check_timeout_seconds=_int(env.get("LLM_CHECK_TIMEOUT_SECONDS"), 30, "LLM_CHECK_TIMEOUT_SECONDS"),
+            chat_deadline_seconds=_int(env.get("CHAT_DEADLINE_SECONDS"), 180, "CHAT_DEADLINE_SECONDS"),
             model_cache_ttl_seconds=_int(env.get("MODEL_CACHE_TTL_SECONDS"), 10, "MODEL_CACHE_TTL_SECONDS"),
             max_upload_bytes=_int(env.get("MAX_UPLOAD_BYTES"), 25 * 1024 * 1024, "MAX_UPLOAD_BYTES"),
             max_document_chars=_int(env.get("MAX_DOCUMENT_CHARS"), 2_000_000, "MAX_DOCUMENT_CHARS"),
