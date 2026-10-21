@@ -132,6 +132,7 @@ def _build_queue(settings: Settings):
         region=settings.sqs_region,
         endpoint_url=settings.sqs_endpoint_url,
         dlq_url=settings.sqs_dlq_url,
+        visibility_timeout=settings.sqs_visibility_timeout_seconds,
     )
 
 
