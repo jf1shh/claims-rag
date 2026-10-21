@@ -9,19 +9,26 @@ completeness of the event stream across sampled actions, including failure
 and async outcomes.
 """
 
+import base64
 import json
+from dataclasses import replace
+from datetime import datetime, timedelta, timezone
 
+import jwt as pyjwt
 import pytest
+from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi.testclient import TestClient
 
 from backend.app import runtime as app_module
 from backend.app import app
 from backend.audit import JsonlAuditSink
+from backend.authn import OIDCAuthenticator
 from backend.blob_store import LocalDocumentBlobStore
 from backend.ingestion import IngestionService
 from backend.job_store import SqliteJobStore
 from backend.queue import InProcessQueue
 from backend.rag_engine import SQLiteVectorStore
+from backend.rbac import ClaimAccessPolicy
 from config import Settings
 
 LABOR_TEXT = (
@@ -274,6 +281,157 @@ def test_given_claim_chat_when_answered_then_claim_id_is_logged(stub_router):
 
     event = _by_event(_events(sink_path), "chat")[0]
     assert event["claim_id"] == "#2026-99382"
+
+
+# --- content ------------------------------------------------------------------
+
+
+def test_given_content_fetch_when_served_then_audit_event_is_recorded(harness):
+    client, _, _, _, _, sink_path = harness("sync")
+    client.post("/api/upload", files={"file": ("labor.txt", LABOR_TEXT.encode(), "text/plain")})
+    response = client.get("/api/documents/content/labor.txt")
+    assert response.status_code == 200
+
+    events = _by_event(_events(sink_path), "content", "served")
+    assert len(events) == 1
+    assert events[0]["filename"] == "labor.txt"
+    assert events[0]["claim_id"] is None
+
+
+def test_given_content_fetch_when_missing_then_not_found_event_is_recorded(harness):
+    client, _, _, _, _, sink_path = harness("sync")
+    response = client.get("/api/documents/content/ghost.txt")
+    assert response.status_code == 404
+
+    events = _by_event(_events(sink_path), "content", "not_found")
+    assert len(events) == 1
+    assert events[0]["filename"] == "ghost.txt"
+
+
+# --- claim documents -----------------------------------------------------------
+
+
+def test_given_claim_documents_listed_then_audit_event_is_recorded(harness):
+    client, _, _, _, _, sink_path = harness("sync")
+    client.post(
+        "/api/upload-claim-file",
+        data={"claim_id": "#2026-99382"},
+        files={"file": ("receipt.txt", LABOR_TEXT.encode(), "text/plain")},
+    )
+    response = client.get("/api/documents/claim/%232026-99382")
+    assert response.status_code == 200
+
+    events = _by_event(_events(sink_path), "claim_documents", "listed")
+    assert len(events) == 1
+    assert events[0]["claim_id"] == "#2026-99382"
+    assert events[0]["document_count"] >= 1
+
+
+# --- eval search ----------------------------------------------------------------
+
+
+def test_given_eval_search_when_completed_then_audit_event_is_recorded(harness):
+    client, _, _, _, _, sink_path = harness("sync")
+    client.post("/api/upload", files={"file": ("labor.txt", LABOR_TEXT.encode(), "text/plain")})
+    response = client.post("/api/eval/search", json={"query": "labor rate", "mode": "naive", "top_k": 4})
+    assert response.status_code == 200
+
+    events = _by_event(_events(sink_path), "eval_search", "completed")
+    assert len(events) == 1
+    assert events[0]["mode"] == "naive"
+    assert "query" not in events[0]
+
+
+# --- claim-access refusals ------------------------------------------------------
+
+
+ISSUER = "https://idp.example.com"
+AUDIENCE = "claimsrag-app"
+
+
+def _make_keypair():
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    public_numbers = private_key.public_key().public_numbers()
+
+    def _b64(value):
+        length = (value.bit_length() + 7) // 8
+        return base64.urlsafe_b64encode(value.to_bytes(length, "big")).rstrip(b"=").decode()
+
+    jwks = {
+        "keys": [
+            {
+                "kty": "RSA", "kid": "k1", "use": "sig", "alg": "RS256",
+                "n": _b64(public_numbers.n), "e": _b64(public_numbers.e),
+            }
+        ]
+    }
+    return private_key, jwks
+
+
+def _unassigned_adjuster_token(private_key):
+    payload = {
+        "sub": "adjuster-alice", "tenant_id": "tenant-a", "roles": ["adjuster"],
+        "iss": ISSUER, "aud": AUDIENCE, "exp": datetime.now(timezone.utc) + timedelta(hours=1),
+    }
+    return pyjwt.encode(payload, private_key, algorithm="RS256", headers={"kid": "k1"})
+
+
+@pytest.fixture
+def denied_claim_access(harness, monkeypatch):
+    """An adjuster authenticated via OIDC, with a claim ACL that assigns
+    '#2026-99382' to someone else -- every claim-scoped route must refuse
+    them with 403 and an audit event."""
+    client, _, _, _, _, sink_path = harness("sync")
+    private_key, jwks = _make_keypair()
+    oidc = OIDCAuthenticator(
+        issuer=ISSUER, client_id=AUDIENCE, jwks_url=f"{ISSUER}/jwks.json",
+        jwks_fetcher=lambda url: jwks, clock=lambda: 1000.0,
+    )
+    monkeypatch.setattr(app_module, "_authenticator", oidc)
+    monkeypatch.setattr(app_module, "_claim_access_policy", ClaimAccessPolicy({"#2026-99382": ["adjuster-bob"]}))
+    monkeypatch.setattr(app_module, "settings", replace(app_module.settings, tenant_id="tenant-a"))
+    token = _unassigned_adjuster_token(private_key)
+    return client, sink_path, {"Authorization": f"Bearer {token}"}
+
+
+def test_given_claim_access_denied_when_chatting_then_denied_event_is_recorded(denied_claim_access):
+    client, sink_path, headers = denied_claim_access
+    response = client.post(
+        "/api/chat", headers=headers,
+        json={"query": "estimate?", "engine": "simulated", "claim_id": "#2026-99382"},
+    )
+    assert response.status_code == 403
+
+    events = _by_event(_events(sink_path), "chat", "denied")
+    assert len(events) == 1
+    assert events[0]["claim_id"] == "#2026-99382"
+    assert events[0]["subject"] == "adjuster-alice"
+
+
+def test_given_claim_access_denied_when_streaming_then_denied_event_is_recorded(denied_claim_access):
+    client, sink_path, headers = denied_claim_access
+    response = client.post(
+        "/api/chat/stream", headers=headers,
+        json={"query": "estimate?", "engine": "simulated", "claim_id": "#2026-99382"},
+    )
+    assert response.status_code == 403
+
+    events = _by_event(_events(sink_path), "chat", "denied")
+    assert len(events) == 1
+    assert events[0]["claim_id"] == "#2026-99382"
+
+
+def test_given_claim_access_denied_when_fetching_content_then_denied_event_is_recorded(denied_claim_access):
+    client, sink_path, headers = denied_claim_access
+    response = client.get(
+        "/api/documents/content/report.txt", headers=headers, params={"claim_id": "#2026-99382"},
+    )
+    assert response.status_code == 403
+
+    events = _by_event(_events(sink_path), "content", "denied")
+    assert len(events) == 1
+    assert events[0]["claim_id"] == "#2026-99382"
+    assert events[0]["filename"] == "report.txt"
 
 
 # --- immutability -------------------------------------------------------------

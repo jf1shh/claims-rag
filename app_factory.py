@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Any
 
@@ -7,6 +8,37 @@ from fastapi import FastAPI
 from starlette.responses import JSONResponse
 
 from config import Settings, get_settings
+
+
+class UnhandledErrorMiddleware:
+    """Pure-ASGI safety net around the router, so an unhandled route
+    exception is turned into the generic 500 response here and never reaches
+    Starlette's ServerErrorMiddleware. ServerErrorMiddleware re-raises after
+    sending its own response, so uvicorn prints the full traceback to the
+    server log -- exception messages can carry filenames/claim ids. Logs the
+    exception type only, never its message."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+        started = False
+
+        async def send_wrapper(message):
+            nonlocal started
+            if message["type"] == "http.response.start":
+                started = True
+            await send(message)
+
+        try:
+            await self.app(scope, receive, send_wrapper)
+        except Exception as exc:
+            logging.getLogger(__name__).error("request failed: %s", type(exc).__name__)
+            if not started:
+                response = JSONResponse({"detail": "An internal error occurred."}, status_code=500)
+                await response(scope, receive, send)
 
 
 class OriginCheckMiddleware:
@@ -262,9 +294,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     from backend.ingestion import IngestionService
     from backend.ingestion_worker import build_ingestion_worker
     from backend.api import register_routes
+    from backend.logging_setup import configure_logging
 
     resolved = settings or get_settings()
     resolved.validate_for_environment()
+    configure_logging(resolved.log_level)
     for path in (resolved.rag_db_path, resolved.jobs_db_path, resolved.audit_log_path):
         path.parent.mkdir(parents=True, exist_ok=True)
     dependencies = build_dependencies(resolved)
@@ -297,10 +331,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 close_reranker()
             dependencies.queue.close()
 
-    app = FastAPI(title="ClaimsRAG API", lifespan=lifespan)
+    # Outside development/test, the interactive docs/schema are not served:
+    # they map the whole API surface for an unauthenticated caller.
+    docs_kwargs: dict[str, Any] = (
+        {} if resolved.app_env in {"development", "test"}
+        else {"docs_url": None, "redoc_url": None, "openapi_url": None}
+    )
+    app = FastAPI(title="ClaimsRAG API", lifespan=lifespan, **docs_kwargs)
     app.state.settings = resolved
     app.state.dependencies = dependencies
     app.state.runtime = runtime
+    # add_middleware inserts at the front, so adding this first makes it the
+    # innermost user middleware: it catches route exceptions, and its 500 still
+    # passes through the header/request-id middleware added after it.
+    app.add_middleware(UnhandledErrorMiddleware)
     app.add_middleware(CORSMiddleware, allow_origins=list(resolved.cors_origins),
                        allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
     from backend.body_limits import BodyLimitMiddleware

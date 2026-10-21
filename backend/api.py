@@ -13,6 +13,7 @@ from fastapi.responses import JSONResponse, FileResponse, RedirectResponse, Stre
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from typing import Optional
+from backend.blob_store import PRESIGN_EXPIRES_SECONDS
 from backend.rag_engine import EmbeddingEngine, safe_filename
 from backend.document_limits import parse_bounded, DocumentLimitError, CONTENT_TYPES
 from backend.agentic_router import CLAIMS_DATA
@@ -114,12 +115,6 @@ class _ConcurrencyGate:
 
 
 def register_routes(app, runtime):
-    @app.exception_handler(Exception)
-    async def unexpected_error(request, exc):
-        import logging
-        logging.getLogger(__name__).error("request failed: %s", type(exc).__name__)
-        return JSONResponse({"detail": "An internal error occurred."}, status_code=500)
-
     @app.middleware("http")
     async def request_id_middleware(request: Request, call_next):
         supplied = request.headers.get("X-Request-ID", "")
@@ -135,6 +130,10 @@ def register_routes(app, runtime):
         response.headers["X-Request-ID"] = request_id
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "no-referrer"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Content-Security-Policy"] = "frame-ancestors 'none'"
+        if runtime.settings.app_env == "production":
+            response.headers["Strict-Transport-Security"] = "max-age=31536000"
         if request.url.path.startswith("/api/"):
             response.headers["Cache-Control"] = "no-store"
         return response
@@ -390,13 +389,14 @@ def register_routes(app, runtime):
 
 
     @app.get("/api/status", dependencies=[Depends(get_current_tenant)])
-    def get_status():
+    def get_status(principal=Depends(get_current_tenant)):  # noqa: B008 - idiomatic FastAPI dependency injection
         """Checks the status of the configured LLM gateway (Phase 5.1).
         Model discovery now runs through the injected ChatClient (an
         OpenAICompatibleClient with a TTL'd model cache) rather than an inline
         HTTP round-trip, so this endpoint and /api/chat agree on the served
         models. With LLM_PROVIDER=none (simulation only) there is nothing to
         probe and the Lemonade block reports inactive."""
+        require_permission_403(principal, "documents:read")
         models = runtime._llm_client.models() if runtime._llm_client is not None else []
         lm_studio_models = models or []
         lm_studio_active = bool(models and models != ["local-model"] and any("embed" not in name.lower() for name in models))
@@ -598,9 +598,9 @@ def register_routes(app, runtime):
             # safe_filename() rejections are client errors, not server failures.
             _audit(request, principal, "upload", outcome="failed", filename=filename, reason=str(e))
             raise HTTPException(status_code=400, detail="Document processing failed.") from None
-        except Exception:
-            import traceback
-            traceback.print_exc()
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).error("upload failed: %s", type(exc).__name__)
             _audit(request, principal, "upload", outcome="failed", filename=filename, reason="internal error")
             raise HTTPException(status_code=500, detail="Document processing failed.") from None
         finally:
@@ -610,15 +610,22 @@ def register_routes(app, runtime):
 
 
     @app.get("/api/documents/claim/{claim_id}", dependencies=[Depends(get_current_tenant)])
-    def list_claim_documents(claim_id: str, principal=Depends(get_current_tenant)):  # noqa: B008 - idiomatic FastAPI dependency injection
+    def list_claim_documents(request: Request, claim_id: str, principal=Depends(get_current_tenant)):  # noqa: B008 - idiomatic FastAPI dependency injection
         """Lists all documents attached to a specific claim."""
         require_permission_403(principal, "claims:read")
-        require_claim_access_403(principal, claim_id)
-        return runtime.vector_store.get_claim_documents(claim_id)
+        try:
+            require_claim_access_403(principal, claim_id)
+        except HTTPException:
+            _audit(request, principal, "claim_documents", outcome="denied", claim_id=claim_id)
+            raise
+        documents = runtime.vector_store.get_claim_documents(claim_id)
+        _audit(request, principal, "claim_documents", outcome="listed", claim_id=claim_id,
+               document_count=len(documents))
+        return documents
 
 
     @app.get("/api/documents/content/{filename}", dependencies=[Depends(get_current_tenant)])
-    def get_document_content(filename: str, version: str | None = None, claim_id: str | None = None, principal=Depends(get_current_tenant)):  # noqa: B008 - idiomatic FastAPI dependency injection
+    def get_document_content(request: Request, filename: str, version: str | None = None, claim_id: str | None = None, principal=Depends(get_current_tenant)):  # noqa: B008 - idiomatic FastAPI dependency injection
         """Fetches the full text content of a document by joining all its parent chunks."""
         require_permission_403(principal, "documents:read")
         _rate_limit_429(principal)
@@ -629,12 +636,19 @@ def register_routes(app, runtime):
         # Backend-neutral: the store joins its own parent chunks. (This previously
         # opened an inline sqlite connection on vector_store.db_path, which could
         # not work on a Postgres backend.)
-        metadata = authorize_document(principal, filename, claim_id)
+        try:
+            metadata = authorize_document(principal, filename, claim_id)
+        except HTTPException as exc:
+            _audit(request, principal, "content", outcome="not_found" if exc.status_code == 404 else "denied",
+                   filename=filename, claim_id=claim_id)
+            raise
         if version is not None and version != metadata["document_version"]:
             raise HTTPException(status_code=409, detail="This source has changed. Run the query again.")
         full_text = runtime.vector_store.get_document_content(filename, claim_id)
         if not full_text:
+            _audit(request, principal, "content", outcome="not_found", filename=filename, claim_id=claim_id)
             raise HTTPException(status_code=404, detail="Document content not found.")
+        _audit(request, principal, "content", outcome="served", filename=filename, claim_id=claim_id)
         return {"filename": filename, "content": full_text}
 
 
@@ -665,7 +679,7 @@ def register_routes(app, runtime):
             if key is None:
                 _audit(request, principal, "download", outcome="not_found", filename=filename, claim_id=claim_id)
                 raise HTTPException(status_code=404, detail="File not found.")
-            url = blob_store.create_download_url(key, 3600)
+            url = blob_store.create_download_url(key, PRESIGN_EXPIRES_SECONDS, filename=filename)
             _audit(request, principal, "download", outcome="redirected", filename=filename, claim_id=claim_id)
             return RedirectResponse(url)
         from backend.blob_store import LocalDocumentBlobStore
@@ -738,7 +752,11 @@ def register_routes(app, runtime):
         validate_chat(req)
         if req.claim_id:
             require_permission_403(principal, "claims:read")
-            require_claim_access_403(principal, req.claim_id)
+            try:
+                require_claim_access_403(principal, req.claim_id)
+            except HTTPException:
+                _audit(request, principal, "chat", outcome="denied", claim_id=req.claim_id)
+                raise
         principal_key = _acquire_slot(principal, _chat_gate, "chat", runtime.settings.max_concurrent_chat)
         try:
             result = runtime.agentic_router.run_query(
@@ -781,7 +799,11 @@ def register_routes(app, runtime):
         validate_chat(req)
         if req.claim_id:
             require_permission_403(principal, "claims:read")
-            require_claim_access_403(principal, req.claim_id)
+            try:
+                require_claim_access_403(principal, req.claim_id)
+            except HTTPException:
+                _audit(request, principal, "chat", outcome="denied", claim_id=req.claim_id)
+                raise
         principal_key = _acquire_slot(principal, _chat_gate, "chat", runtime.settings.max_concurrent_chat)
         finished = threading.Event()
 
@@ -866,7 +888,7 @@ def register_routes(app, runtime):
 
 
     @app.post("/api/eval/search", dependencies=[Depends(get_current_tenant)])
-    def eval_search(req: SearchRequest, principal=Depends(get_current_tenant)):  # noqa: B008 - idiomatic FastAPI dependency injection
+    def eval_search(request: Request, req: SearchRequest, principal=Depends(get_current_tenant)):  # noqa: B008 - idiomatic FastAPI dependency injection
         """Raw retrieval endpoint (no LLM synthesis) for the eval harness to compare
         retrieval strategies. Not used by the frontend. Gated to roles with the
         eval:search permission (siu/admin) per Phase 4.2/4.4."""
@@ -882,7 +904,11 @@ def register_routes(app, runtime):
             raise HTTPException(status_code=400, detail="mode must be 'naive', 'hybrid', or 'hybrid_rerank'")
 
         if req.claim_id:
-            require_claim_access_403(principal, req.claim_id)
+            try:
+                require_claim_access_403(principal, req.claim_id)
+            except HTTPException:
+                _audit(request, principal, "eval_search", outcome="denied", claim_id=req.claim_id, mode=req.mode)
+                raise
         query_emb = runtime._get_embedding_engine().embed_query(req.query)
         matches = runtime.vector_store.search_similarity(
             query_emb,
@@ -893,6 +919,8 @@ def register_routes(app, runtime):
             candidate_pool=runtime.settings.rerank_candidate_pool,
             use_fts=(req.mode != "naive"),
         )
+        _audit(request, principal, "eval_search", outcome="completed", claim_id=req.claim_id, mode=req.mode,
+               result_count=len(matches))
         return {"mode": req.mode, "matches": matches}
 
     runtime._get_embedding_engine = _get_embedding_engine

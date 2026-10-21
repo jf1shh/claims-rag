@@ -1,9 +1,11 @@
+from urllib.parse import parse_qs, urlparse
+
 import boto3
 import botocore
 import pytest
 from moto import mock_aws
 
-from backend.blob_store import S3DocumentBlobStore
+from backend.blob_store import PRESIGN_EXPIRES_SECONDS, S3DocumentBlobStore
 
 BUCKET = "test-bucket"
 
@@ -62,6 +64,26 @@ def test_given_non_positive_expiration_when_url_requested_then_rejected(s3):
     store.put("report.txt", b"x", "text/plain")
     with pytest.raises(ValueError):
         store.create_download_url("report.txt", 0)
+
+
+def test_given_filename_when_presigned_url_requested_then_content_disposition_is_attachment(s3):
+    _, store = s3
+    store.put("report.txt", b"x", "application/pdf")
+    url = store.create_download_url("report.txt", 3600, filename="loss statement Brooks.pdf")
+    query = parse_qs(urlparse(url).query)
+    assert query["response-content-disposition"][0] == "attachment; filename*=UTF-8''loss%20statement%20Brooks.pdf"
+
+
+def test_given_no_filename_when_presigned_url_requested_then_no_disposition_override(s3):
+    _, store = s3
+    store.put("report.txt", b"x", "application/pdf")
+    url = store.create_download_url("report.txt", 3600)
+    query = parse_qs(urlparse(url).query)
+    assert "response-content-disposition" not in query
+
+
+def test_presign_lifetime_constant_is_300_seconds():
+    assert PRESIGN_EXPIRES_SECONDS == 300
 
 
 def test_given_traversal_key_when_written_then_rejected(s3):

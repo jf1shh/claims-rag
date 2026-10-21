@@ -918,3 +918,13 @@ existing California and Texas regulation docs.
 - #7: Postgres `add_document` chunks, embeds and stages before `_connect()`, so a slow embed never holds a connection or row lock. Review correction: a `_connect()` failure after staging now discards the staged blob, since it was previously orphaned (`discard_staged` in `backend/source_storage.py`, used by both stores; tests in `test_store_blob_wiring.py` and `test_postgres_store.py`).
 - Worker logs now name the job id, not the filename.
 - Verified: ruff clean; offline suite 1105 passed, 22 skipped, 1 xfailed (the strict prompt-defense xfail); Postgres suite (local pgvector container) 1126 passed.
+
+### 2026-10-21 — API hardening (M12b)
+
+- Scope: enterprise audit findings #2, #13, #14, #22, #23 and #24. Built by a Sonnet worker (nexus-route `code`) from 60c0111, reviewed by Claude, then rebased onto M12a (93195d9) with no conflicts.
+- Audit (`backend/api.py`): `_audit` records for content reads (served, denied, not_found), `/api/eval/search`, `/api/documents/claim/{id}`, and claim-access 403s on chat, chat stream and content. No query, answer or document text, as the sink requires.
+- Logging (`backend/logging_setup.py`): `configure_logging(settings.log_level)` runs once in `app_factory`. Before this, `LOG_LEVEL` was parsed and then ignored. A filter on `uvicorn.access` drops the query string and redacts the path segment after `/api/documents/content/`, `/download/` and `/claim/`.
+- 500 path: `traceback.print_exc()` removed. `UnhandledErrorMiddleware` (`app_factory.py`) is the innermost user middleware. It sends the generic 500 itself, so Starlette's ServerErrorMiddleware never re-raises to uvicorn, and the response still gets the request-id and security headers.
+- Surface: `/api/status` requires `documents:read` (every shipped role has it). OpenAPI and docs are off outside development/test. `frame-ancestors 'none'` is the only CSP directive, because the frontend's assets were not audited for a full script/style policy. HSTS is production-only.
+- Presigns: `PRESIGN_EXPIRES_SECONDS = 300` (`backend/blob_store.py`), plus `ResponseContentDisposition` attachment with `filename*=UTF-8''…`. The frontend fetches the download into a Blob, so attachment does not change the viewer.
+- Verified: offline suite 1129 passed, 22 skipped, 1 xfailed; Postgres suite 1150 passed; ruff clean.

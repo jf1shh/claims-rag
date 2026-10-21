@@ -142,10 +142,17 @@ As of September 6, the authoritative state is [portfolio-hardening.md](docs/port
 > - Both stores embed and stage the source before opening a connection. If the connection or the transaction fails, the staged blob is discarded (`source_storage.discard_staged`). After commit, the replaced version's blob is deleted, but only for app-written `versions/` keys. Legacy plain files stay with `scripts/collect_source_garbage.py`.
 > - Verified: offline suite 1105 passed; Postgres suite 1126 passed.
 >
+> **API hardening 2026-10-21 (M12b, branch `fix/api-hardening`)**: audit findings #2, #13, #14, #22, #23 and #24.
+> - Audit records cover document-content reads (served, denied, not found), `/api/eval/search`, claim document lists, and claim-access 403s on `/api/chat`, `/api/chat/stream` and content. They never carry query, answer or document text.
+> - `LOG_LEVEL` is now applied at app creation. The `uvicorn.access` filter strips query strings and replaces the filename or claim-id segment of `/api/documents/{content,download,claim}/` with `<redacted>`.
+> - An unhandled route exception returns the generic 500 JSON from a pure-ASGI middleware, which logs the exception type only. uvicorn no longer prints the traceback, which could carry filenames or claim ids.
+> - `/api/status` requires `documents:read`. Outside `APP_ENV` development/test, `/docs`, `/redoc` and `/openapi.json` are not served. Every response carries `X-Frame-Options: DENY`, `Content-Security-Policy: frame-ancestors 'none'` and `Referrer-Policy: no-referrer`, and HSTS is added in production.
+> - S3 presigned downloads last 300 s (was 3600) and force `Content-Disposition: attachment` with the RFC 5987-encoded filename.
+> - Verified after rebasing on M12a: offline suite 1129 passed; Postgres suite 1150 passed; ruff clean.
+>
 > **Next:** M12 in this order:
-> 1. **M12b API hardening** (#2, #13 access log, #14, #22, #23, #24): built and green on branch `fix/api-hardening`. It adds audit records on content, eval-search and claim-list reads and on chat 403s, redacts paths in the access log, adds a generic 500 middleware, makes `/api/status` require auth, turns docs off outside dev, adds frame/HSTS headers, and sets 300 s attachment presigns.
-> 2. **M12c medium findings**: #3 cross-process vector cache and #11 single-flight rebuild, #8 PG pool with timeouts, #9 overall chat deadline, #10 SQS visibility extension, #12 zip EOCD check, #6 claim purge and job retention (needs an owner design call).
-> 3. **Lows**: #15–#21, #25.
+> 1. **M12c medium findings**: #3 cross-process vector cache and #11 single-flight rebuild, #8 PG pool with timeouts, #9 overall chat deadline, #10 SQS visibility extension, #12 zip EOCD check, #6 claim purge and job retention (needs an owner design call).
+> 2. **Lows**: #15–#21, #25.
 >
 > Then roadmap P5 (demo/README workflow table) and P6 (NAIC governance mapping).
 

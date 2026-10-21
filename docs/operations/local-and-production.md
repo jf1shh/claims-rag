@@ -96,6 +96,8 @@ Runtime state (`rag_store.db`, `stored_documents/`, `jobs.db`, `audit.log.jsonl`
 
 The image sets `APP_ENV=production` so it fails closed: a plain `docker run` with no further configuration refuses to start, because production validation rejects the no-credential `development` auth provider, rather than exposing the development admin identity on whatever interface/port is published. `docker-compose.yml` overrides `APP_ENV` back to `development` for local use and binds the port to `127.0.0.1` only; it still works with the Host allowlist (`ALLOWED_HOSTS`, wired in only when `AUTH_PROVIDERS` includes `development`) because its healthcheck and default browser access both use `127.0.0.1`/`localhost`, which are in the development default.
 
+Outside `APP_ENV` development/test the app does not serve `/docs`, `/redoc` or `/openapi.json`, and it adds `Strict-Transport-Security` in production. `LOG_LEVEL` sets the root log level. The uvicorn access log drops query strings and shows `<redacted>` in place of document filenames and claim ids.
+
 This image is a development/portfolio-demo profile, same as local SQLite mode (see Production boundary below) — it isn't a production deployment artifact on its own.
 
 ## CI
