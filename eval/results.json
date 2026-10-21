@@ -4,11 +4,11 @@
     "n_queries": 34,
     "naive_precision_avg": 0.764,
     "naive_recall_avg": 0.934,
-    "hybrid_precision_avg": 0.796,
+    "hybrid_precision_avg": 0.825,
     "hybrid_recall_avg": 0.983,
-    "faithfulness_avg": 0.857,
-    "correctness_avg": 0.835,
-    "elapsed_seconds": 3144.6,
+    "faithfulness_avg": 0.839,
+    "correctness_avg": 0.84,
+    "elapsed_seconds": 3482.3,
     "metric_samples": {
       "naive_precision": {
         "scored": 34,
@@ -27,12 +27,12 @@
         "failed": 0
       },
       "faithfulness": {
-        "scored": 32,
-        "failed": 2
-      },
-      "correctness": {
         "scored": 33,
         "failed": 1
+      },
+      "correctness": {
+        "scored": 34,
+        "failed": 0
       }
     },
     "correctness_mode": "recall (reference-fact coverage)"
@@ -46,8 +46,8 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.9999999999,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.75,
-      "correctness": 0.5,
+      "faithfulness": 0.5714285714285714,
+      "correctness": 0.67,
       "naive_top_filenames": [
         "SOP_Auto_Repair_Labor_Rates.pdf",
         "SOP_Supplement_Review.pdf",
@@ -57,8 +57,8 @@
       "hybrid_top_filenames": [
         "SOP_Auto_Repair_Labor_Rates.pdf",
         "SOP_Supplement_Review.pdf",
-        "Auto_Claims_Guidelines.docx",
-        "Case_Study_Rear_End_Collision.pdf"
+        "Case_Study_Stolen_Honda_Civic.pdf",
+        "Rider_Roadside_Assistance_Plus.pdf"
       ]
     },
     {
@@ -69,7 +69,7 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.9999999999,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.8333333333333334,
+      "faithfulness": 0.8,
       "correctness": 0.75,
       "naive_top_filenames": [
         "SOP_Auto_Repair_Labor_Rates.pdf",
@@ -92,8 +92,8 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.7499999999625,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.75,
-      "correctness": 0.33,
+      "faithfulness": 1.0,
+      "correctness": 0.5,
       "naive_top_filenames": [
         "DUI_Exclusion_Directive.txt",
         "Rider_Roadside_Assistance_Plus.pdf",
@@ -115,8 +115,8 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.9999999999,
       "hybrid_recall": 1.0,
-      "faithfulness": 1.0,
-      "correctness": 0.43,
+      "faithfulness": 0.9230769230769231,
+      "correctness": 0.5,
       "naive_top_filenames": [
         "Rider_OEM_Parts_Guarantee.pdf",
         "SOP_Auto_Repair_Labor_Rates.pdf",
@@ -126,8 +126,8 @@
       "hybrid_top_filenames": [
         "Rider_OEM_Parts_Guarantee.pdf",
         "Endorsement_Windshield_Zero_Deductible.docx",
-        "Endorsement_Custom_Equipment_Form402.pdf",
-        "Case_Study_Stolen_Honda_Civic.pdf"
+        "Endorsement_Rental_Car_Upgrade.docx",
+        "Endorsement_Custom_Equipment_Form402.pdf"
       ]
     },
     {
@@ -138,8 +138,8 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.9999999999,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.75,
-      "correctness": 0.87,
+      "faithfulness": 0.9230769230769231,
+      "correctness": 0.75,
       "naive_top_filenames": [
         "Endorsement_Custom_Equipment_Form402.pdf",
         "Auto_Deductibles_And_Limits.xlsx",
@@ -207,8 +207,8 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.9999999999,
       "hybrid_recall": 1.0,
-      "faithfulness": 1.0,
-      "correctness": 0.75,
+      "faithfulness": 0.7142857142857143,
+      "correctness": 0.67,
       "naive_top_filenames": [
         "Adjuster_Guide_Rollover_Claims.docx",
         "Guideline_Diminished_Value.docx",
@@ -219,7 +219,7 @@
         "Adjuster_Guide_Rollover_Claims.docx",
         "SOP_Total_Loss_Valuation.pdf",
         "Guideline_Diminished_Value.docx",
-        "Case_Study_Hail_Damage_PlanA.pdf"
+        "SOP_Coverage_Verification.pdf"
       ]
     },
     {
@@ -230,7 +230,7 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.9999999999,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.5,
+      "faithfulness": 0.5714285714285714,
       "correctness": 1.0,
       "naive_top_filenames": [
         "SOP_Claims_Fraud_Red_Flags.pdf",
@@ -276,7 +276,7 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.8333333332916666,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.7272727272727273,
+      "faithfulness": 0.9090909090909091,
       "correctness": 1.0,
       "naive_top_filenames": [
         "Adjuster_Guide_Rear_Impact.docx",
@@ -299,8 +299,8 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.6388888888675925,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.8,
-      "correctness": 0.67,
+      "faithfulness": 0.6,
+      "correctness": 0.5,
       "naive_top_filenames": [
         "Case_Study_Hail_Damage_PlanA.pdf",
         "Case_Study_Stolen_Honda_Civic.pdf",
@@ -322,7 +322,7 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.499999999975,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.84,
+      "faithfulness": 0.8695652173913043,
       "correctness": 0.86,
       "naive_top_filenames": [
         "shop_email_thread_Sterling.pdf",
@@ -345,8 +345,8 @@
       "naive_recall": 0.0,
       "hybrid_precision": 0.9999999999,
       "hybrid_recall": 1.0,
-      "faithfulness": 1.0,
-      "correctness": 0.75,
+      "faithfulness": 0.92,
+      "correctness": 1.0,
       "naive_top_filenames": [
         "SOP_Auto_Repair_Labor_Rates.pdf",
         "Case_Study_Rear_End_Collision.pdf",
@@ -368,8 +368,8 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.99999999995,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.76,
-      "correctness": 0.87,
+      "faithfulness": 1.0,
+      "correctness": 0.62,
       "naive_top_filenames": [
         "Case_Study_Hail_Damage_PlanA.pdf",
         "dent_photos_description_Jenkins.pdf",
@@ -389,10 +389,10 @@
       "query": "Does David Chen's stolen custom equipment exceed his endorsement's coverage cap, and by how much?",
       "naive_precision": 0.0,
       "naive_recall": 1.0,
-      "hybrid_precision": 0.0,
+      "hybrid_precision": 0.9999999999,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.9375,
-      "correctness": 0.5,
+      "faithfulness": 1.0,
+      "correctness": 0.6,
       "naive_top_filenames": [
         "Endorsement_Custom_Equipment_Form402.pdf",
         "Rider_Roadside_Assistance_Plus.pdf",
@@ -400,10 +400,10 @@
         "Auto_Deductibles_And_Limits.xlsx"
       ],
       "hybrid_top_filenames": [
+        "custom_equipment_receipts_Chen.xlsx",
         "Endorsement_Custom_Equipment_Form402.pdf",
-        "inspection_photos_Chen.pdf",
-        "Auto_Claims_Guidelines.docx",
-        "Endorsement_Rideshare_TNC_Form702.pdf"
+        "police_theft_report_Chen.pdf",
+        "inspection_photos_Chen.pdf"
       ]
     },
     {
@@ -437,8 +437,8 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.9999999999,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.96,
-      "correctness": 0.85,
+      "faithfulness": 0.9545454545454546,
+      "correctness": 1.0,
       "naive_top_filenames": [
         "Case_Study_Engine_Hydro_Lock.pdf",
         "Adjuster_Guide_Rollover_Claims.docx",
@@ -449,7 +449,7 @@
         "Case_Study_Engine_Hydro_Lock.pdf",
         "Adjuster_Guide_Rollover_Claims.docx",
         "SOP_Coverage_Verification.pdf",
-        "Guideline_Diminished_Value.docx"
+        "SOP_Vehicle_Storage_Fees.txt"
       ]
     },
     {
@@ -460,8 +460,8 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.0,
       "hybrid_recall": 1.0,
-      "faithfulness": 1.0,
-      "correctness": 0.91,
+      "faithfulness": 0.6923076923076923,
+      "correctness": 1.0,
       "naive_top_filenames": [
         "DUI_Exclusion_Directive.txt",
         "Case_Study_Rear_End_Collision.pdf",
@@ -494,8 +494,8 @@
       "hybrid_top_filenames": [
         "SOP_Subrogation_Recovery.pdf",
         "SOP_Claims_Fraud_Red_Flags.pdf",
-        "California_Auto_Claims_Regulations.pdf",
-        "Texas_Auto_Insurance_Code_2026.pdf"
+        "SOP_Coverage_Verification.pdf",
+        "California_Auto_Claims_Regulations.pdf"
       ]
     },
     {
@@ -506,8 +506,8 @@
       "naive_recall": 0.6666666666666666,
       "hybrid_precision": 0.9999999999,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.6666666666666666,
-      "correctness": 0.89,
+      "faithfulness": 0.75,
+      "correctness": 0.87,
       "naive_top_filenames": [
         "Case_Study_Stolen_Honda_Civic.pdf",
         "Case_Study_Rear_End_Collision.pdf",
@@ -517,8 +517,8 @@
       "hybrid_top_filenames": [
         "SOP_Subrogation_Recovery.pdf",
         "Texas_Auto_Insurance_Code_2026.pdf",
-        "Case_Study_Hail_Damage_PlanA.pdf",
-        "Auto_Claims_Guidelines.docx"
+        "Auto_Claims_Guidelines.docx",
+        "California_Auto_Claims_Regulations.pdf"
       ]
     },
     {
@@ -530,7 +530,7 @@
       "hybrid_precision": 0.9999999999,
       "hybrid_recall": 1.0,
       "faithfulness": 0.875,
-      "correctness": 0.8,
+      "correctness": 0.75,
       "naive_top_filenames": [
         "SOP_Supplement_Review.pdf",
         "Rider_OEM_Parts_Guarantee.pdf",
@@ -539,9 +539,9 @@
       ],
       "hybrid_top_filenames": [
         "SOP_Supplement_Review.pdf",
-        "SOP_Subrogation_Recovery.pdf",
         "SOP_Coverage_Verification.pdf",
-        "Rider_OEM_Parts_Guarantee.pdf"
+        "Rider_OEM_Parts_Guarantee.pdf",
+        "Adjuster_Guide_Rollover_Claims.docx"
       ]
     },
     {
@@ -552,8 +552,8 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.7499999999625,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.8888888888888888,
-      "correctness": 0.67,
+      "faithfulness": 0.625,
+      "correctness": 0.4,
       "naive_top_filenames": [
         "SOP_Total_Loss_Valuation.pdf",
         "SOP_Vehicle_Storage_Fees.txt",
@@ -575,7 +575,7 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.9999999999,
       "hybrid_recall": 1.0,
-      "faithfulness": 1.0,
+      "faithfulness": 0.9615384615384616,
       "correctness": 1.0,
       "naive_top_filenames": [
         "Guideline_Diminished_Value.docx",
@@ -598,7 +598,7 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.9999999999,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.95,
+      "faithfulness": 1.0,
       "correctness": 1.0,
       "naive_top_filenames": [
         "Guideline_Betterment_Adjustments.docx",
@@ -621,7 +621,7 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.8333333332916666,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.6470588235294118,
+      "faithfulness": 0.5882352941176471,
       "correctness": 1.0,
       "naive_top_filenames": [
         "Texas_Auto_Insurance_Code_2026.pdf",
@@ -644,7 +644,7 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.9999999999,
       "hybrid_recall": 1.0,
-      "faithfulness": 1.0,
+      "faithfulness": 0.8333333333333334,
       "correctness": 1.0,
       "naive_top_filenames": [
         "Rider_Roadside_Assistance_Plus.pdf",
@@ -656,7 +656,7 @@
         "Rider_Roadside_Assistance_Plus.pdf",
         "Auto_Deductibles_And_Limits.xlsx",
         "SOP_Vehicle_Storage_Fees.txt",
-        "California_Auto_Claims_Regulations.pdf"
+        "Endorsement_Rideshare_TNC_Form702.pdf"
       ]
     },
     {
@@ -667,7 +667,7 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.9999999999,
       "hybrid_recall": 1.0,
-      "faithfulness": 1.0,
+      "faithfulness": 0.8,
       "correctness": 1.0,
       "naive_top_filenames": [
         "SOP_Vehicle_Storage_Fees.txt",
@@ -690,7 +690,7 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.4166666666458333,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.6615384615384615,
+      "faithfulness": 0.875,
       "correctness": 1.0,
       "naive_top_filenames": [
         "shop_email_thread_Sterling.pdf",
@@ -713,7 +713,7 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.99999999995,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.8947368421052632,
+      "faithfulness": null,
       "correctness": 1.0,
       "naive_top_filenames": [
         "Case_Study_Stolen_Honda_Civic.pdf",
@@ -736,7 +736,7 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.49999999995,
       "hybrid_recall": 1.0,
-      "faithfulness": null,
+      "faithfulness": 0.9310344827586207,
       "correctness": 1.0,
       "naive_top_filenames": [
         "SOP_Claims_Fraud_Red_Flags.pdf",
@@ -747,8 +747,8 @@
       "hybrid_top_filenames": [
         "inspection_photos_Brooks.pdf",
         "SOP_Claims_Fraud_Red_Flags.pdf",
-        "Case_Study_Rear_End_Collision.pdf",
-        "Case_Study_Hail_Damage_PlanA.pdf"
+        "loss_statement_Brooks.pdf",
+        "Case_Study_Rear_End_Collision.pdf"
       ]
     },
     {
@@ -759,7 +759,7 @@
       "naive_recall": 0.3333333333333333,
       "hybrid_precision": 0.3333333333,
       "hybrid_recall": 0.6666666666666666,
-      "faithfulness": null,
+      "faithfulness": 0.8823529411764706,
       "correctness": 1.0,
       "naive_top_filenames": [
         "engine_diagnostic_report_Rostova.pdf",
@@ -782,8 +782,8 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.7499999999625,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.9538461538461539,
-      "correctness": 0.94,
+      "faithfulness": 0.8863636363636364,
+      "correctness": 1.0,
       "naive_top_filenames": [
         "SOP_Subrogation_Recovery.pdf",
         "Case_Study_Rear_End_Collision.pdf",
@@ -805,8 +805,8 @@
       "naive_recall": 1.0,
       "hybrid_precision": 0.249999999975,
       "hybrid_recall": 1.0,
-      "faithfulness": 0.9354838709677419,
-      "correctness": null,
+      "faithfulness": 0.8852459016393442,
+      "correctness": 0.9,
       "naive_top_filenames": [
         "SOP_Subrogation_Recovery.pdf",
         "dent_photos_description_Jenkins.pdf",

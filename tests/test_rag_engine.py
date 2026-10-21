@@ -307,6 +307,29 @@ class TestSQLiteVectorStore:
         results = store.search_similarity(embedder.embed_query(q), q, top_k=2)
         assert "glass.txt" in [r["filename"] for r in results]
 
+    def test_fts_keyword_leg_matches_question_missing_some_words(self, store, embedder):
+        # Regression: the keyword leg ANDed every query token, so a question
+        # with any word absent from the chunk ("cracked", "what") matched
+        # nothing and hybrid search was vector-only. With OR'ed terms the only
+        # keyword match outranks every filler doc in RRF (1/61 + its vector
+        # term > a vector-only 1/61), whatever the hash embedder says.
+        for i in range(10):
+            store.add_document(f"filler{i}.txt", "txt", 100,
+                               f"Filler note {i} about towing yards and storage invoices.", embedder)
+        store.add_document("glass.txt", "txt", 100, GLASS_TEXT, embedder)
+        q = "What is the deductible for a cracked windshield?"
+        results = store.search_similarity(embedder.embed_query(q), q, top_k=1)
+        assert [r["filename"] for r in results] == ["glass.txt"]
+
+    def test_fts_operator_words_in_query_do_not_drop_keyword_leg(self, store, embedder):
+        for i in range(10):
+            store.add_document(f"filler{i}.txt", "txt", 100,
+                               f"Filler note {i} about towing yards and storage invoices.", embedder)
+        store.add_document("glass.txt", "txt", 100, GLASS_TEXT, embedder)
+        q = "windshield OR NOT NEAR deductible AND"
+        results = store.search_similarity(embedder.embed_query(q), q, top_k=1)
+        assert [r["filename"] for r in results] == ["glass.txt"]
+
     def test_search_after_delete_serves_fresh_results(self, store, embedder):
         # Regression guard for the vector-cache invalidation constraint.
         store.add_document("labor.txt", "txt", 100, LABOR_TEXT, embedder)

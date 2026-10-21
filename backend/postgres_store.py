@@ -421,12 +421,14 @@ class PostgresVectorStore:
                 logger.warning("Vector search leg failed, falling back to keyword-only: %s", type(exc).__name__)
                 vector_ranked = []
 
-            # --- 2. Keyword leg: Postgres FTS, quoted tokens + ts_rank order.  #
-            # Token-quoting keeps operator words (and/or/not) literal (AND).
-            tokens = [t for t in query_text.split() if t.isalnum()]
+            # --- 2. Keyword leg: Postgres FTS, quoted OR'ed terms + ts_rank. #
+            # Same terms as the SQLite leg; websearch_to_tsquery reads a bare
+            # `or` between quoted terms as OR (see fts_match_query).
+            from backend.rag_engine import fts_match_query
+
+            clean_query = fts_match_query(query_text, joiner=" or ")
             fts_ranked: List[dict] = []
-            if use_fts and tokens:
-                clean_query = " ".join(f'"{t}"' for t in tokens)
+            if use_fts and clean_query:
                 try:
                     with conn.transaction():
                         fts_rows = conn.execute(
@@ -437,7 +439,9 @@ class PostgresVectorStore:
                             WHERE p.tenant_id = %(t)s
                               AND (d.claim_id IS NULL OR d.claim_id = %(c)s)
                               AND p.content_tsv @@ websearch_to_tsquery('english', %(q)s)
-                            ORDER BY ts_rank(p.content_tsv, websearch_to_tsquery('english', %(q)s)) DESC
+                            -- Normalization 1 (rank / (1 + log(length))) mirrors bm25's
+                            -- length term; ts_rank has no IDF, the remaining gap to SQLite.
+                            ORDER BY ts_rank(p.content_tsv, websearch_to_tsquery('english', %(q)s), 1) DESC
                             LIMIT 40
                             """,
                             {"t": self.tenant_id, "c": claim_id, "q": clean_query},
