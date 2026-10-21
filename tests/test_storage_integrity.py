@@ -32,42 +32,58 @@ def embedder():
 
 
 # ---------------------------------------------------------------------------
-# M2 -- vector-cache race between a build and a concurrent invalidation.
+# M2 -- vector-cache race between a build and a concurrent write.
+#
+# Staleness is now detected via `store_meta.vector_generation`, a DB row
+# bumped by triggers on `documents` (so every process sharing the db file
+# sees it), not the local counter this used to exercise. A build's read
+# transaction (BEGIN; SELECT generation; SELECT rows; COMMIT) takes a
+# snapshot consistent as of some generation G; a write landing after that
+# snapshot is taken (but before the result is installed as the shared cache)
+# no longer needs to be discarded -- the built cache is tagged with G, and
+# the next call to _get_vector_cache compares G against the DB's current
+# generation and rebuilds if a later write has landed. Correctness comes
+# from that comparison, not from refusing to install a build that raced.
 # ---------------------------------------------------------------------------
 
 class TestVectorCacheRace:
     @staticmethod
-    def _racing_vstack(store, original_vstack):
+    def _racing_write(store, embedder, original_vstack):
         def racing(*args, **kwargs):
-            # Simulates an add_document/delete_document landing on another
-            # thread while this build is still reading -- right after rows
-            # are fetched, before the matrix is installed.
-            store._invalidate_vector_cache()
+            # Simulates an add_document landing on another thread after this
+            # build's read snapshot was taken (its transaction has already
+            # committed by the time control reaches np.vstack) but before
+            # the result is installed as the shared cache.
+            store.add_document("glass.txt", "txt", 100, GLASS_TEXT, embedder)
             return original_vstack(*args, **kwargs)
         return racing
 
-    def test_build_discards_stale_result_when_invalidated_mid_build(self, store, embedder, monkeypatch):
+    def test_build_installs_a_consistent_snapshot_even_when_a_write_lands_mid_build(self, store, embedder, monkeypatch):
         store.add_document("labor.txt", "txt", 100, LABOR_TEXT, embedder)
         store._vector_cache = None
 
-        monkeypatch.setattr(np, "vstack", self._racing_vstack(store, np.vstack))
+        monkeypatch.setattr(np, "vstack", self._racing_write(store, embedder, np.vstack))
         built = store._build_vector_cache()
 
-        # The in-flight search still gets a usable matrix...
+        # The snapshot reflects state as of before the race write landed...
         assert built["matrix"].shape[0] > 0
-        # ...but the race means it must not be installed as the shared cache.
-        assert store._vector_cache is None
+        assert "glass.txt" not in built["filenames"]
+        # ...and it is still installed; it's a correct cache for generation G,
+        # just no longer the latest one.
+        assert store._vector_cache is built
 
-    def test_search_similarity_still_returns_results_during_the_race(self, store, embedder, monkeypatch):
+    def test_next_search_after_the_race_detects_the_write_and_rebuilds(self, store, embedder, monkeypatch):
         store.add_document("labor.txt", "txt", 100, LABOR_TEXT, embedder)
         store._vector_cache = None
 
-        monkeypatch.setattr(np, "vstack", self._racing_vstack(store, np.vstack))
-        q = "labor rate"
-        results = store.search_similarity(embedder.embed_query(q), q, top_k=4)
+        monkeypatch.setattr(np, "vstack", self._racing_write(store, embedder, np.vstack))
+        # Installs a snapshot missing glass.txt; the race write lands during
+        # this call, bumping the DB generation past what gets cached here.
+        store._build_vector_cache()
 
-        assert results
-        assert store._vector_cache is None
+        q = "windshield glass deductible"
+        results = store.search_similarity(embedder.embed_query(q), q, top_k=4)
+        assert "glass.txt" in [r["filename"] for r in results]
 
     def test_normal_build_with_no_race_is_installed(self, store, embedder):
         store.add_document("labor.txt", "txt", 100, LABOR_TEXT, embedder)
