@@ -11,6 +11,15 @@ from backend.ingestion import IngestionJob, IngestionStatus
 # the previous claim is.
 _TERMINAL_SUCCESS_STATUSES = (IngestionStatus.indexed.value, IngestionStatus.deleted.value)
 
+# Terminal statuses for claim purge / retention sweep (M12c-E): a job in one
+# of these will never change state again, so it is safe to count as
+# "inactive" for purge conflict detection and safe to expire once stale.
+_TERMINAL_STATUSES = (
+    IngestionStatus.indexed.value,
+    IngestionStatus.failed.value,
+    IngestionStatus.deleted.value,
+)
+
 # Fields the worker/API may update on an existing job. Everything else is
 # immutable once created (job_id, tenant_id, filename, scope, checksum).
 _UPDATABLE_FIELDS = {
@@ -218,6 +227,95 @@ class SqliteJobStore:
         if row["status"] in _TERMINAL_SUCCESS_STATUSES:
             return "duplicate"
         return "held"
+
+    # -- claim purge / job retention (M12c-E) ------------------------------ #
+
+    def active_jobs_for_claim(self, tenant_id: str, claim_id: str) -> int:
+        """Counts jobs for this (tenant, claim) that are not yet terminal --
+        a claim purge must refuse while any of these are in flight, or the
+        purge could race an in-progress ingestion/delete."""
+        conn = self._connect()
+        try:
+            row = conn.execute(
+                f"""
+                SELECT COUNT(*) FROM ingestion_jobs
+                WHERE tenant_id = ? AND claim_id IS ?
+                  AND status NOT IN ({",".join("?" * len(_TERMINAL_STATUSES))})
+                """,
+                (tenant_id, claim_id, *_TERMINAL_STATUSES),
+            ).fetchone()
+        finally:
+            conn.close()
+        return row[0]
+
+    def count_for_claim(self, tenant_id: str, claim_id: str) -> int:
+        """Total job rows for this (tenant, claim), regardless of status --
+        a read-only count of what ``delete_for_claim`` would remove."""
+        conn = self._connect()
+        try:
+            row = conn.execute(
+                "SELECT COUNT(*) FROM ingestion_jobs WHERE tenant_id = ? AND claim_id IS ?",
+                (tenant_id, claim_id),
+            ).fetchone()
+        finally:
+            conn.close()
+        return row[0]
+
+    def delete_for_claim(self, tenant_id: str, claim_id: str) -> int:
+        """Deletes every job row for this (tenant, claim). Returns the count
+        deleted. Called only after ``active_jobs_for_claim`` confirms nothing
+        is in flight."""
+        conn = self._connect()
+        try:
+            cursor = conn.execute(
+                "DELETE FROM ingestion_jobs WHERE tenant_id = ? AND claim_id IS ?",
+                (tenant_id, claim_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        return cursor.rowcount
+
+    def scrub_document(self, tenant_id: str, claim_id: str | None, filename: str) -> int:
+        """Scrubs identifying fields from every job row matching this
+        (tenant, claim, filename) scope -- called after a document delete so
+        the job store can no longer confirm a given file was ever uploaded.
+        Keeps status/timestamps so job history is still legible. Returns the
+        count of rows scrubbed."""
+        conn = self._connect()
+        try:
+            cursor = conn.execute(
+                """
+                UPDATE ingestion_jobs
+                SET filename = '[deleted]', checksum = NULL, idempotency_key = NULL, error_message = NULL
+                WHERE tenant_id = ? AND claim_id IS ? AND filename = ?
+                """,
+                (tenant_id, claim_id, filename),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        return cursor.rowcount
+
+    def sweep_terminal(self, tenant_id: str, older_than: datetime) -> int:
+        """Deletes terminal job rows for this tenant whose ``updated_at`` is
+        older than ``older_than`` (JOB_RETENTION_DAYS). Returns the count
+        deleted."""
+        cutoff = older_than.isoformat()
+        conn = self._connect()
+        try:
+            cursor = conn.execute(
+                f"""
+                DELETE FROM ingestion_jobs
+                WHERE tenant_id = ? AND updated_at < ?
+                  AND status IN ({",".join("?" * len(_TERMINAL_STATUSES))})
+                """,
+                (tenant_id, cutoff, *_TERMINAL_STATUSES),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+        return cursor.rowcount
 
 
 def _row_to_job(row: sqlite3.Row) -> IngestionJob:

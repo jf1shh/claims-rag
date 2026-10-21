@@ -8,6 +8,7 @@ _REDACT_PREFIXES = (
     "/api/documents/content/",
     "/api/documents/download/",
     "/api/documents/claim/",
+    "/api/claims/",
 )
 
 

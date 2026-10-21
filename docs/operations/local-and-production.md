@@ -138,6 +138,19 @@ Defaults are in `.env.example`; values are read once at startup.
 | `CHAT_DEADLINE_SECONDS` | 180 | Overall budget for a non-streaming `/api/chat`, shared by planning, synthesis and the answer checks. A request that runs out gets a 504. It can overshoot by at most one socket read timeout. |
 | `LLM_CHECK_TIMEOUT_SECONDS` | 30 | Per-call timeout for the provenance and conflict check stages. A timeout there degrades the check; it does not fail the answer. |
 | `SQS_VISIBILITY_TIMEOUT_SECONDS` | 60 | Visibility timeout for dequeued ingestion messages. The worker extends it every half period while parsing and renews the job claim (lease = 2x this value). |
+| `JOB_RETENTION_DAYS` | 30 (min 1) | Terminal ingestion job rows (indexed, failed, deleted) older than this are deleted at startup, hourly by the ingestion worker, and by `scripts/purge_claim.py --sweep-jobs`. |
+
+## Purging a claim
+
+Deleting a whole claim removes its documents (index, FTS rows and stored source versions) and its ingestion job rows. It is admin-only and is refused while any job for the claim is in flight.
+
+```bash
+.venv/bin/python scripts/purge_claim.py --claim-id '#2026-99382'        # dry run: prints document and job counts
+.venv/bin/python scripts/purge_claim.py --claim-id '#2026-99382' --yes # deletes; exit 2 if a job is in flight
+.venv/bin/python scripts/purge_claim.py --sweep-jobs                 # one JOB_RETENTION_DAYS sweep
+```
+
+Over HTTP: `DELETE /api/claims/{claim_id}` with an admin token returns `{"claim_id", "documents_deleted", "jobs_deleted"}`, or 409 while a job is in flight and 400 for an invalid id. URL-encode the id (`/api/claims/%232026-99382`). Both write one `claim_purge` audit event with counts. The audit log itself is append-only and is never purged.
 
 ## Health
 

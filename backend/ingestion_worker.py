@@ -4,8 +4,9 @@ import logging
 import os
 import tempfile
 import threading
+import time
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Callable
 
 from backend.ingestion import IngestionJob, IngestionStatus
@@ -31,6 +32,10 @@ _MAX_BACKOFF_SECONDS = 60.0
 # is attached without SQS -- unlikely, but a job claimed under this lease
 # must still eventually be reclaimable by a crashed worker's replacement).
 _DEFAULT_CLAIM_LEASE_SECONDS = 120.0
+
+# M12c-E: the job-retention sweep runs at most this often from inside the
+# worker loop, independent of how frequently run_once() itself is polled.
+_JOB_SWEEP_INTERVAL_SECONDS = 3600.0
 
 
 STATS_FIELDS = ("processed", "indexed", "deleted", "rejected", "dead_lettered", "duplicates", "malformed")
@@ -133,6 +138,8 @@ class IngestionWorker:
         max_document_chars: int = 2_000_000,
         parse_timeout_seconds: int = 120,
         heartbeat_interval_seconds: float | None = None,
+        tenant_id: str | None = None,
+        job_retention_days: int | None = None,
     ):
         if blob_store is None:
             raise ValueError("IngestionWorker requires a blob store (filesystem or S3 adapter)")
@@ -150,6 +157,9 @@ class IngestionWorker:
         self.backoff_base_seconds = backoff_base_seconds
         self.poll_interval_seconds = poll_interval_seconds
         self._heartbeat_interval_seconds = heartbeat_interval_seconds
+        self._tenant_id = tenant_id
+        self._job_retention_days = job_retention_days
+        self._last_job_sweep_monotonic: float | None = None
         # Stable for this instance's lifetime -- used as the job-claim token
         # so this worker's own sequential retries of a message always renew
         # its own claim, while a different worker's claim is a different
@@ -354,6 +364,7 @@ class IngestionWorker:
             self.queue.dead_letter(message)
             return DEAD_LETTERED
         self._set_job(job, status=IngestionStatus.deleted, progress=100)
+        self._scrub_job_rows(job, filename, claim_id)
         self.queue.ack(message)
         logger.info("deleted document for job %s", payload.get("job_id"))
         return DELETED
@@ -543,12 +554,44 @@ class IngestionWorker:
             error_message=error_message,
         )
 
+    def _scrub_job_rows(self, job: IngestionJob | None, filename: str, claim_id: str | None) -> None:
+        """Scrubs job-store rows for a just-deleted document (M12c-E), the
+        async-delete counterpart to api.py's sync-path scrub. Never raises:
+        a scrub failure must not turn an already-committed deletion into a
+        worker error."""
+        if self.job_store is None or job is None:
+            return
+        try:
+            self.job_store.scrub_document(job.tenant_id, claim_id, filename)
+        except Exception:
+            logger.warning("job scrub failed for deleted document; continuing", exc_info=True)
+
+    def _maybe_sweep_jobs(self) -> None:
+        """Expires terminal job rows older than JOB_RETENTION_DAYS, at most
+        once per _JOB_SWEEP_INTERVAL_SECONDS (M12c-E). No-op without a job
+        store, tenant id, or retention setting."""
+        if self.job_store is None or self._tenant_id is None or self._job_retention_days is None:
+            return
+        now = time.monotonic()
+        if (
+            self._last_job_sweep_monotonic is not None
+            and now - self._last_job_sweep_monotonic < _JOB_SWEEP_INTERVAL_SECONDS
+        ):
+            return
+        self._last_job_sweep_monotonic = now
+        try:
+            cutoff = datetime.now(timezone.utc) - timedelta(days=self._job_retention_days)
+            self.job_store.sweep_terminal(self._tenant_id, cutoff)
+        except Exception:
+            logger.warning("job retention sweep failed; continuing", exc_info=True)
+
     # ------------------------------------------------------------------ #
     # Run loops
     # ------------------------------------------------------------------ #
 
     def run_once(self) -> int:
         """Processes every currently-visible message; returns how many were handled."""
+        self._maybe_sweep_jobs()
         handled = 0
         while True:
             message = self.queue.dequeue()
@@ -619,4 +662,6 @@ def build_ingestion_worker(
         max_upload_bytes=settings.max_upload_bytes,
         max_document_chars=settings.max_document_chars,
         parse_timeout_seconds=settings.request_timeout_seconds,
+        tenant_id=settings.tenant_id,
+        job_retention_days=settings.job_retention_days,
     )

@@ -161,9 +161,15 @@ As of September 6, the authoritative state is [portfolio-hardening.md](docs/port
 > - New settings: `POSTGRES_CONNECT_TIMEOUT_SECONDS`, `POSTGRES_STATEMENT_TIMEOUT_MS`, `POSTGRES_POOL_MAX_SIZE`, `POSTGRES_POOL_TIMEOUT_SECONDS`, `CHAT_DEADLINE_SECONDS`, `LLM_CHECK_TIMEOUT_SECONDS`, `SQS_VISIBILITY_TIMEOUT_SECONDS` ([operations](operations/local-and-production.md#timeouts-and-pools)).
 > - Verified on the combined A+B+C+D tree: offline suite 1182 passed, 28 skipped, 1 xfailed; Postgres suite 1209 passed, 1 skipped, 1 xfailed; ruff clean.
 >
+> **Claim purge and job retention 2026-10-21 (M12c-E, branch `feat/claim-purge`)**: audit finding #6, built to the owner's design call.
+> - `DELETE /api/claims/{claim_id}` (admin only, new `claims:purge` permission) and `scripts/purge_claim.py --claim-id ID [--yes]` share `backend/claim_purge.py`. A purge deletes the claim's documents (index, FTS and source versions) and its ingestion job rows, and writes one `claim_purge` audit event with counts and no filenames. It refuses with 409 (CLI exit 2) while any job for the claim is still queued, parsing or embedding. Without `--yes` the CLI only prints the counts.
+> - Deleting a document scrubs its job rows (`filename` becomes `[deleted]`; checksum, idempotency key and error cleared), on both the sync and the async path, so `GET /api/jobs/{id}` no longer confirms which file was uploaded.
+> - `JOB_RETENTION_DAYS` (default 30, min 1) expires terminal job rows at startup, hourly in the ingestion worker, and on demand with `scripts/purge_claim.py --sweep-jobs`. The audit log is not touched.
+> - `/api/claims/{id}` paths are redacted in the uvicorn access log.
+> - Verified on the M12c A+B+C+D base: offline suite 1228 passed, 29 skipped, 1 xfailed; Postgres suite 1256 passed, 1 skipped, 1 xfailed; ruff clean.
+>
 > **Next:** M12 in this order:
-> 1. **#6 claim purge and job retention**: the last medium finding. Needs an owner design call before it is built.
-> 2. **Lows**: #15–#21, #25.
+> 1. **Lows**: #15–#21, #25.
 >
 > Then roadmap P5 (demo/README workflow table) and P6 (NAIC governance mapping).
 

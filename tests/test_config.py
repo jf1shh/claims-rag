@@ -280,6 +280,23 @@ def test_given_nonpositive_rate_limit_then_parsing_fails():
         Settings.from_env({"RATE_LIMIT_WINDOW_SECONDS": "-1"})
 
 
+def test_given_no_job_retention_setting_then_default_is_30_days():
+    settings = Settings.from_env({"APP_ENV": "development"})
+    assert settings.job_retention_days == 30
+
+
+def test_given_job_retention_setting_when_parsed_then_value_is_configured():
+    settings = Settings.from_env({"JOB_RETENTION_DAYS": "7"})
+    assert settings.job_retention_days == 7
+
+
+def test_given_nonpositive_job_retention_then_parsing_fails():
+    with pytest.raises(ValueError, match="JOB_RETENTION_DAYS"):
+        Settings.from_env({"JOB_RETENTION_DAYS": "0"})
+    with pytest.raises(ValueError, match="JOB_RETENTION_DAYS"):
+        Settings.from_env({"JOB_RETENTION_DAYS": "-1"})
+
+
 def test_given_stage_models_when_parsed_then_catalog_is_configured():
     s = Settings.from_env({
         "PLANNING_MODEL": "fast-plan",

@@ -309,6 +309,45 @@ def test_add_search_and_delete_roundtrip(store):
 
 
 @needs_postgres
+def test_claim_purge_against_postgres_store(store, tmp_path):
+    """M12c-E: purge_claim works against PostgresVectorStore, not just the
+    SQLite fixture used by tests/test_claim_purge.py."""
+    from backend.claim_purge import ClaimPurgeConflict, PurgeResult, purge_claim
+    from backend.job_store import SqliteJobStore
+    from backend.ingestion import IngestionJob, IngestionStatus
+    from datetime import datetime, timezone
+
+    job_store = SqliteJobStore(str(tmp_path / "jobs.db"))
+    _add_global(store, "report.pdf", "loss report text", claim_id="claim-1")
+    now = datetime.now(timezone.utc)
+    job_store.create(
+        IngestionJob(
+            job_id="job_1", tenant_id=store.tenant_id, document_id="doc_1", claim_id="claim-1",
+            filename="report.pdf", checksum="sha256:x", status=IngestionStatus.indexed,
+            created_at=now, updated_at=now,
+        )
+    )
+
+    result = purge_claim(vector_store=store, job_store=job_store, tenant_id=store.tenant_id, claim_id="claim-1")
+
+    assert result == PurgeResult(documents_deleted=1, jobs_deleted=1)
+    assert store.get_claim_documents("claim-1") == []
+
+    # Conflict path too: an active job must block the purge.
+    job_store.create(
+        IngestionJob(
+            job_id="job_2", tenant_id=store.tenant_id, document_id="pending_x", claim_id="claim-2",
+            filename="in_flight.txt", checksum="sha256:y", status=IngestionStatus.queued,
+            created_at=now, updated_at=now,
+        )
+    )
+    _add_global(store, "other.pdf", "other claim text", claim_id="claim-2")
+    with pytest.raises(ClaimPurgeConflict):
+        purge_claim(vector_store=store, job_store=job_store, tenant_id=store.tenant_id, claim_id="claim-2")
+    assert len(store.get_claim_documents("claim-2")) == 1
+
+
+@needs_postgres
 def test_claim_chunks_return_generated_dossier(store):
     _add_global(store, "police_report.txt", "Stationary 8.4 seconds prior to impact, brake pressure 100 percent.",
                 claim_id="#2026-99382")

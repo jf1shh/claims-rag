@@ -954,3 +954,11 @@ Owner asked for a web search of current RAG techniques and to implement the ones
 - Why: retrieval is saturated on this corpus. The only PDFs are prose (no tables), the two spreadsheets are small, and every remaining fact gap is a computed number (Chen 5,900 / 900 over cap, Webb recovery amounts) or absent from the corpus, which is synthesis work, not retrieval.
 - Watch out: `backend/rag_engine.py` forces `HF_HUB_OFFLINE=1`, so trying a new model needs `huggingface_hub.snapshot_download` first. The probe's top-15 ranks are pre-pin; the served flag is the production view.
 - Next: these techniques only become measurable with a harder test. Add distractor documents (similar SOPs across states) and harder golden rows, then rerun the probe before revisiting.
+
+### 2026-10-21 — Claim purge and job retention (M12c-E)
+
+Audit finding #6. The owner chose the design: both an admin API and a CLI; a purge deletes the claim's job rows, document deletes scrub theirs, and terminal rows expire after `JOB_RETENTION_DAYS`; the audit log is untouched and a purge writes one event with counts. Built by a Sonnet worker through nexus-route (`code`, 652 s), reviewed and corrected by Claude.
+
+- Defect found in review: the sync `POST /api/delete` scrub was unguarded, so a job-store error after the document was already deleted returned 500 (`test_given_scrub_failure_when_sync_delete_then_still_200` failed on the worker's code with `500 == 200`). It now logs the error type and returns 200, like the worker path. The worker also omitted the brief's API-level sync scrub test; added.
+- Decided: terminal = indexed, failed, deleted; anything else blocks a purge with 409. `IngestionJob.checksum` is now optional so scrubbed rows still load. The purge checks for active jobs and then deletes without a lock; an upload that lands in between is not covered (admin operation, documented 409 contract).
+- Verified on the M12c A+B+C+D base: offline suite 1228 passed, 29 skipped, 1 xfailed; Postgres suite 1256 passed, 1 skipped, 1 xfailed; ruff clean.

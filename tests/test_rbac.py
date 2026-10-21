@@ -41,6 +41,8 @@ def test_given_adjuster_then_claim_work_permissions_are_granted_but_delete_and_g
         require_permission(principal, "documents:upload")
     with pytest.raises(PermissionError):
         require_permission(principal, "eval:search")
+    with pytest.raises(PermissionError):
+        require_permission(principal, "claims:purge")
 
 
 def test_given_supervisor_then_upload_and_delete_are_granted():
@@ -52,6 +54,8 @@ def test_given_supervisor_then_upload_and_delete_are_granted():
     require_permission(principal, "claims:write")
     with pytest.raises(PermissionError):
         require_permission(principal, "eval:search")
+    with pytest.raises(PermissionError):
+        require_permission(principal, "claims:purge")
 
 
 def test_given_siu_then_read_only_investigation_permissions_are_granted():
@@ -65,6 +69,8 @@ def test_given_siu_then_read_only_investigation_permissions_are_granted():
         require_permission(principal, "documents:upload")
     with pytest.raises(PermissionError):
         require_permission(principal, "documents:delete")
+    with pytest.raises(PermissionError):
+        require_permission(principal, "claims:purge")
 
 
 def test_given_admin_then_every_permission_is_granted():
