@@ -349,6 +349,42 @@ def pin_named_documents(query_text, ranked, top_k, max_pins=2):
     return [entry[1] for entry in selection]
 
 
+# English function words plus question scaffolding that carries no topic. The
+# keyword leg ORs the remaining terms, so these would otherwise match nearly
+# every chunk and drown the bm25 ranking.
+_FTS_STOPWORDS = frozenset("""
+a an and are as at be been being but by can could did do does doing for from had
+has have how i if in into is it its may me might must my no nor not of on or our
+should so than that the their them then there these they this those to under up
+us was we were what when where which while who whom why will with would you your
+""".split())
+FTS_MAX_TERMS = 32
+
+
+def fts_terms(query_text):
+    """Distinct lowercase content words of the query, in order, capped at
+    FTS_MAX_TERMS. Splits on any non-alphanumeric character, so "claim's",
+    "$1,500" and "OEM?" still contribute "claim", "1", "500" and "oem"."""
+    seen = []
+    for token in re.findall(r"[a-z0-9]+", query_text.lower()):
+        if len(token) > 1 and token not in _FTS_STOPWORDS and token not in seen:
+            seen.append(token)
+    return seen[:FTS_MAX_TERMS]
+
+
+def fts_match_query(query_text, joiner=" OR "):
+    """The keyword leg's query: every content term quoted and OR'ed.
+
+    Quoting keeps FTS5 operator words literal (a bare OR/NOT/NEAR is query
+    syntax and a stray one is a syntax error). OR, not the implicit AND,
+    because a natural-language question almost never has every one of its
+    words in a single chunk: the AND form matched nothing for 33 of 34 golden
+    queries. bm25 (FTS5 `rank`, Postgres `ts_rank`) then orders by how many
+    and how rare the matched terms are. Postgres passes joiner=" or ", which
+    websearch_to_tsquery reads as OR."""
+    return joiner.join(f'"{t}"' for t in fts_terms(query_text))
+
+
 CLAIM_RERANK_CANDIDATES = 6
 
 
@@ -1007,13 +1043,8 @@ class SQLiteVectorStore(VectorStore):
 
         # --- 2. Keyword Search (FTS5 on Parent Chunks) Scoped by claim_id ---
         fts_ranked = []
-        # Quote every token: FTS5 reserved words (AND, OR, NOT, NEAR, etc.)
-        # passed bare are parsed as operators, which raises a syntax error the
-        # except below swallows -- silently dropping the entire keyword leg
-        # for queries like "deductible or not covered". Quoting forces each
-        # token to be a literal term, preserving the implicit-AND semantics.
-        tokens = [t for t in query_text.split() if t.isalnum()]
-        clean_query = " ".join(f'"{t}"' for t in tokens)
+        # Quoted, OR'ed content terms; see fts_match_query.
+        clean_query = fts_match_query(query_text)
         if use_fts and clean_query:
             try:
                 # ORDER BY rank (bm25) is load-bearing: RRF below scores each

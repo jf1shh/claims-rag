@@ -20,7 +20,7 @@ What this project shows, in the order a claims-AI team tends to ask:
 
 - **Claims domain knowledge drives the design.** The test questions cover what adjusters and appraisers actually decide: labor rate caps, OEM versus aftermarket parts, total-loss thresholds, deductibles and endorsements, stacked exclusions, SIU red flags.
 - **The math is computed, not generated.** Labor caps, OEM parts eligibility, total loss and net settlement come from small, unit-tested functions. The model explains; the code computes. Each answer ends with a table of every input and the document it came from.
-- **Quality is measured, with dates.** A 28-question golden set covering fourteen claims topics is scored on retrieval, groundedness and correctness. A separate adversarial suite attacks the system with poisoned and conflicting documents. Every number below has a run date and a judge model.
+- **Quality is measured, with dates.** A 34-question golden set covering fourteen claims topics is scored on retrieval, groundedness and correctness. A separate adversarial suite attacks the system with poisoned and conflicting documents. Every number below has a run date and a judge model.
 - **It says no when it should.** If nothing relevant is found, it refuses rather than inventing an answer. Answers that announce a claim decision (approved, paid, denied) that the claim record doesn't support are held back for a human.
 - **It stays on the machine.** Search, reranking, generation and evaluation all run locally by default. No claim content goes to a cloud API unless someone configures one.
 - **It is built like software a team would run:** sign-in on every API route, role and claim-level permissions (adjuster, supervisor, SIU, admin), an audit log, rate limits, a Postgres option, Docker, and CI on every pull request.
@@ -67,7 +67,18 @@ Today the claims tools run in the demo's labelled simulation mode, which works w
 
 34 claims questions, each with a reference answer checked against the source documents. They cover labor rates, OEM parts, total loss, deductibles, rental, glass, fraud/SIU, subrogation, supplement review, salvage, diminished value, betterment, liability and storage/towing; six of them (added 2026-10-20) are claim-scoped audit-button questions answered with the computed coverage, SIU and subrogation sections. Scored with Ragas by a local judge model, so nothing goes to a hosted API.
 
-Latest: **re-scored on 2026-10-20 with named-document pinning** (a query that names a reference document by title, such as "the Subrogation and Liability SOPs", gets that document into the results even when the reranker scores it lower). Same 34 questions, judge, generator and 48-document corpus as the run below. Faithfulness scored 32/34 and coverage 33/34 (judge failures); everything else 34/34.
+Latest: **re-scored on 2026-10-21 with a working keyword leg.** The keyword half of hybrid search used to require every word of the question, so it matched almost nothing and hybrid was in practice vector search plus reranking. It now matches any content word (stopwords dropped) and ranks by how many it hits. Same 34 questions, judge, generator and 48-document corpus as the runs below. Faithfulness scored 33/34 (one judge failure); everything else 34/34.
+
+| Metric | Plain vector search | Hybrid + reranking (all 34) | Hybrid, original 28 | Hybrid, new 6 |
+|---|---|---|---|---|
+| Context precision | 0.764 | **0.825** | 0.886 | 0.542 |
+| Context recall | 0.934 | **0.983** | 0.991 | 0.944 |
+| Faithfulness | — | **0.839** | 0.830 | 0.892 |
+| Reference-fact coverage | — | **0.840** | 0.809 | 0.983 |
+
+Recall is unchanged and precision rose from 0.796 to 0.825. All of that gain is one question, `chen-custom-equipment-cap` (0 → 1), which also benefits from claim documents always reaching the reranker (merged just before this run). No other question's retrieval moved by more than 0.05. Faithfulness and coverage moved within judge noise. Hybrid beat plain search on precision in 9 of 34 questions and lost in 4. Results: `eval/results-2026-10-21-34row-fts-or.json`.
+
+Earlier: **re-scored on 2026-10-20 with named-document pinning** (a query that names a reference document by title, such as "the Subrogation and Liability SOPs", gets that document into the results even when the reranker scores it lower). Same 34 questions, judge, generator and 48-document corpus as the run below. Faithfulness scored 32/34 and coverage 33/34 (judge failures); everything else 34/34.
 
 | Metric | Plain vector search | Hybrid + reranking (all 34) | Hybrid, original 28 | Hybrid, new 6 |
 |---|---|---|---|---|
@@ -78,7 +89,7 @@ Latest: **re-scored on 2026-10-20 with named-document pinning** (a query that na
 
 Pinning fired only on the new six, as intended, and retrieval on the original 28 matched the run below on every question. On the new six, recall rose from 0.911 to 0.944 (`webb-subrogation-triage` 0.8 → 1.0) and precision from 0.528 to 0.542. The precision gain is small because Ragas weights precision by rank, and a pinned document takes one of the bottom slots. Coverage on the original 28 moved by question in both directions (−0.015 overall) with identical retrieval, so it is generation noise. `rostova-hydrolock-coverage` recovered (0.0 → 0.85), as its replays predicted. Hybrid beat plain search on precision in 8 of 34 questions and lost in 4. Results: `eval/results-2026-10-20-34row-pinned.json`.
 
-Earlier the same day: **one full run on 2026-10-20**, 34 questions, same judge and generator (`Qwen3-Coder-30B-A3B-Instruct-GGUF` on Lemonade), corpus re-seeded to 48 documents. 34/34 scored on every metric except faithfulness (33/34; the judge failed on one answer).
+Before that, the same day: **one full run on 2026-10-20**, 34 questions, same judge and generator (`Qwen3-Coder-30B-A3B-Instruct-GGUF` on Lemonade), corpus re-seeded to 48 documents. 34/34 scored on every metric except faithfulness (33/34; the judge failed on one answer).
 
 | Metric | Plain vector search | Hybrid + reranking (all 34) | Hybrid, original 28 | Hybrid, new 6 |
 |---|---|---|---|---|

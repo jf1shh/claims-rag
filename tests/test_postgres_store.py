@@ -567,3 +567,31 @@ def test_claim_document_outside_the_pool_still_reaches_the_reranker(store):
 
     store.search_similarity(_ALONG, query, claim_id="C1", reranking_engine=reranker, top_k=2, candidate_pool=2, use_fts=False)
     assert "loss_statement_C1.txt" not in reranker.seen
+
+
+class _GlassAcrossEmbedder:
+    """Filler docs point along the query and the glass endorsement is
+    orthogonal, so only the keyword leg can bring it into a small pool."""
+
+    def embed_chunks(self, chunks):
+        return [_ACROSS if "Windshield" in c else _ALONG for c in chunks]
+
+    def embed_query(self, query):
+        return _ALONG
+
+
+@needs_postgres
+def test_keyword_leg_matches_question_missing_some_words(store):
+    # Regression (parity with tests/test_rag_engine.py): websearch_to_tsquery
+    # ANDed every quoted token, so "cracked" and "what" -- absent from the
+    # chunk -- emptied the keyword leg. The OR'ed terms match it.
+    embedder = _GlassAcrossEmbedder()
+    for i in range(6):
+        text = f"Filler note {i} about towing yards and storage invoices."
+        store.add_document(f"filler{i}.txt", "txt", len(text), text, embedder)
+    glass = "Zero-deductible glass endorsement. Windshield replacement waives the comprehensive deductible."
+    store.add_document("glass.txt", "txt", len(glass), glass, embedder)
+
+    q = "What is the deductible for a cracked windshield? Not covered OR near"
+    results = store.search_similarity(_ALONG, q, top_k=3, candidate_pool=3)
+    assert "glass.txt" in [r["filename"] for r in results]

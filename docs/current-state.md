@@ -129,9 +129,20 @@ As of September 6, the authoritative state is [portfolio-hardening.md](docs/port
 >
 > **Claim rerank candidates 2026-10-20** (branch `fix/security-hardening`): in claim-scoped hybrid search, up to 6 of the active claim's own chunks join the 15-item rerank pool when they fell outside it, so the cross-encoder can score them (`.claude/rules/backend-constraints.md` "Claim Rerank Candidates"). Root cause: `loss_statement_Brooks.pdf` was 16th or lower in the fused list, so it was never reranked; once reranked it ranks 3rd. Top-4 probe (all 34 rows, pool 15): 33/34 → 34/34. Only Brooks and `chen-custom-equipment-cap` change, and Chen gains its receipts and police report. Cost: mean +1.0 rerank pair, max +3. Parity PASS (recall@4 0.9907). Live answers already got these files through the guaranteed dossier; this fixes the ranked retrieval list.
 >
-> **Found, open:** the FTS keyword leg ANDs every quoted token and returns nothing for 33/34 golden queries, so "hybrid" is in practice vector plus rerank. OR'ing the tokens alone changed nothing on the probe.
+> **FTS keyword leg fixed 2026-10-21 (M11, branch `feat/fts-or-keyword-leg`)**: the keyword leg used to AND every quoted token, so it matched nothing for 33/34 golden queries. It now ORs the stopword-filtered, quoted content terms (`fts_match_query`, shared by both stores; `.claude/rules/backend-constraints.md` "The FTS Keyword Leg ORs Content Terms"). Postgres ranks with `ts_rank(..., 1)`.
+> - Golden probe (48 docs), SQLite and Postgres identical: hybrid recall 0.929 → 0.960, hybrid + rerank 1.0 → 1.0. Parity PASS 0.9398 (the default `ts_rank` fell to 0.912).
+> - 34-row RAGAS run (`eval/results-2026-10-21-34row-fts-or.json`, Qwen3-Coder on Lemonade, 3482 s) against the pinned run: hybrid P/R 0.796/0.983 → **0.825/0.983**, faithfulness 0.857 → 0.839 (33/34 scored), correctness 0.835 → 0.840 (34/34). The whole precision gain is `chen-custom-equipment-cap` (0 → 1), which PR #31's claim rerank candidates also touch; no other row moved by more than 0.05. Precision did not drop, so no minimum-match rule.
+> - Verified: `crag check` 1095 passed, gate 0 blocking; Postgres suite 1113 passed.
 >
-> **Next:** fix the keyword leg (stopwords plus OR/bm25 or a minimum-match rule) and re-score the 34-row set. Then roadmap P5 (demo/README workflow table) and P6 (NAIC governance mapping).
+> **Enterprise audit 2026-10-21 (M12)**: Opus read-only audit of 60c0111, 25 findings (1 high, 11 medium, 13 low): [docs/agent-work/enterprise-audit-2026-10-21.md](agent-work/enterprise-audit-2026-10-21.md).
+>
+> **Next:** M12 in this order:
+> 1. **M12b API hardening** (#2, #13 access log, #14, #22, #23, #24): built and green on branch `fix/api-hardening`. It adds audit records on content, eval-search and claim-list reads and on chat 403s, redacts paths in the access log, adds a generic 500 middleware, makes `/api/status` require auth, turns docs off outside dev, adds frame/HSTS headers, and sets 300 s attachment presigns.
+> 2. **M12a data lifecycle** (#1 high, #4, #5, #7): the S3 bridge accepts only an inbound prefix and reserved scopes; staging is deleted on every final outcome; the replaced blob is deleted after commit; Postgres `add_document` embeds before its transaction.
+> 3. **M12c medium findings**: #3 cross-process vector cache and #11 single-flight rebuild, #8 PG pool with timeouts, #9 overall chat deadline, #10 SQS visibility extension, #12 zip EOCD check, #6 claim purge and job retention (needs an owner design call).
+> 4. **Lows**: #15–#21, #25.
+>
+> Then roadmap P5 (demo/README workflow table) and P6 (NAIC governance mapping).
 
 > **License changed 2026-10-17**: MIT → AGPL-3.0 (owner decision; `LICENSE`, README badge and a new License section). Code copied before the change stays under MIT.
 

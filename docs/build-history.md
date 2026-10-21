@@ -896,3 +896,15 @@ existing California and Texas regulation docs.
   - Tried: OR'ing the FTS tokens. Probe unchanged at 33/34; it only reshuffled the bottom slots. Reverted.
   - Found: the FTS leg returns zero rows for 33/34 golden queries, because quoted tokens are ANDed. Left open as the next milestone.
   - The probe harness reads a copy of the seeded `rag_store.db` and calls `search_similarity` with `candidate_pool=15`. The store default of 50 hides this bug.
+
+### 2026-10-21 — FTS keyword leg ORs content terms
+
+- Problem: the keyword leg quoted every `isalnum()` token and joined them with FTS5's implicit AND, so it matched nothing for nearly every golden query (33/34 on the 2026-10-20 probe), and punctuated words ("claim's", "$1,500") were dropped. "Hybrid" was in practice vector plus rerank.
+- Fix: `fts_terms` / `fts_match_query` (`backend/rag_engine.py`), used by both stores. The query is split on any non-alphanumeric character, English function words and question scaffolding are dropped, at most 32 distinct terms are kept, each is quoted (so a literal OR/NOT/NEAR is not syntax), and the terms are OR'ed. Postgres builds the same string for `websearch_to_tsquery` and ranks with `ts_rank(p.content_tsv, q, 1)`, log-length normalization.
+- Golden probe, 48 docs, both stores identical: naive recall 0.899; hybrid 0.929 → 0.960; hybrid + rerank 1.0 → 1.0. SQLite and Postgres top-k file overlap after rerank is 0.94, and it differs only in unlabelled slots.
+- Verified: `crag check` 1095 passed, 19 skipped, gate 0 blocking; Postgres suite 1113 passed; parity PASS 0.9398 (`--tolerance 0.9`, as CI runs it).
+- 34-row RAGAS run (`eval/results-2026-10-21-34row-fts-or.json`, Qwen3-Coder on Lemonade, 3482 s, port-8010 server on the worktree): hybrid P/R 0.796/0.983 → 0.825/0.983, faithfulness 0.857 → 0.839 (33/34), coverage 0.835 → 0.840 (34/34). The only row that moved by more than 0.05 is `chen-custom-equipment-cap` (P 0 → 1), and PR #31 also changed that row, so the gain is shared. Precision did not drop, so no minimum-match rule.
+- **Debugging history:**
+  - Ruled out: implicit AND (matches nothing), a bigger rerank pool (latency), the `isalnum()` split (drops punctuated words). OR alone (2026-10-20) changed nothing on the top-4 probe because stopwords swamped the bm25 order; the stopword filter is what makes OR work.
+  - Postgres ranking: the default `ts_rank` dropped parity from 0.9907 to 0.912 (CI floor 0.9). `ts_rank_cd(...,1)` gave 0.935 but worse PG hybrid recall (0.944); `ts_rank(...,8)` gave 0.935; `ts_rank(...,1)` gave 0.940 and identical golden recall, so it stays. Python IDF re-scoring was ruled out for latency and complexity. The remaining SQLite/PG gap is IDF, which bm25 has and `ts_rank` does not.
+  - Judge parity by golden recall per backend, not by `parity_runner` alone: its vector leg is a hash embedder, so it exaggerates keyword-ranking gaps.
