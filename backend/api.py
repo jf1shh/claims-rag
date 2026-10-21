@@ -17,6 +17,7 @@ from backend.blob_store import PRESIGN_EXPIRES_SECONDS
 from backend.rag_engine import EmbeddingEngine, safe_filename
 from backend.document_limits import parse_bounded, DocumentLimitError, CONTENT_TYPES
 from backend.agentic_router import CLAIMS_DATA
+from backend.llm_client import LLMDeadlineExceeded, llm_deadline_scope
 from backend.health import live_status, ready_status
 from backend.authn import AuthenticationError
 from backend.rbac import require_permission
@@ -759,17 +760,18 @@ def register_routes(app, runtime):
                 raise
         principal_key = _acquire_slot(principal, _chat_gate, "chat", runtime.settings.max_concurrent_chat)
         try:
-            result = runtime.agentic_router.run_query(
-                query_text=req.query,
-                claim_id=req.claim_id,
-                engine=req.engine,
-                embedding_engine=runtime._get_embedding_engine(),
-                vector_store=runtime.vector_store,
-                reranking_engine=runtime._reranker,
-                llm_client=runtime._llm_client,
-                caps=runtime.settings,
-            )
-            result = tools_result(conflict_result(provenance_result(guard_result(result, req.claim_id)), req.query))
+            with llm_deadline_scope(runtime.settings.chat_deadline_seconds):
+                result = runtime.agentic_router.run_query(
+                    query_text=req.query,
+                    claim_id=req.claim_id,
+                    engine=req.engine,
+                    embedding_engine=runtime._get_embedding_engine(),
+                    vector_store=runtime.vector_store,
+                    reranking_engine=runtime._reranker,
+                    llm_client=runtime._llm_client,
+                    caps=runtime.settings,
+                )
+                result = tools_result(conflict_result(provenance_result(guard_result(result, req.claim_id)), req.query))
             _audit(
                 request,
                 principal,
@@ -782,6 +784,9 @@ def register_routes(app, runtime):
                 **guard_audit_fields(result),
             )
             return project_result(request, result)
+        except LLMDeadlineExceeded:
+            _audit(request, principal, "chat", outcome="timeout", query=req.query, claim_id=req.claim_id, engine=req.engine)
+            raise HTTPException(status_code=504, detail="The answer took too long; try again.") from None
         finally:
             _release_slot(principal_key, _chat_gate, "chat")
 

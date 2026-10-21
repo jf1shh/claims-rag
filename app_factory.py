@@ -209,6 +209,7 @@ def _build_llm_client(settings: Settings):
         api_key=settings.llm_api_key,
         timeout=float(settings.llm_synthesis_timeout_seconds),
         plan_timeout=float(settings.llm_plan_timeout_seconds),
+        check_timeout=float(settings.llm_check_timeout_seconds),
         models_ttl_seconds=float(settings.model_cache_ttl_seconds),
     )
 
