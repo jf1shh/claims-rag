@@ -154,6 +154,28 @@ def test_given_sqs_queue_provider_without_url_then_validation_fails():
         settings.validate_for_environment()
 
 
+def test_given_sqs_visibility_timeout_then_parsed():
+    settings = Settings.from_env({"SQS_VISIBILITY_TIMEOUT_SECONDS": "90"})
+    assert settings.sqs_visibility_timeout_seconds == 90
+
+
+def test_given_default_sqs_visibility_timeout_then_sixty_seconds():
+    settings = Settings.from_env({})
+    assert settings.sqs_visibility_timeout_seconds == 60
+
+
+def test_given_sqs_visibility_timeout_out_of_range_then_validation_fails():
+    settings = Settings.from_env({"SQS_VISIBILITY_TIMEOUT_SECONDS": "5"})
+    with pytest.raises(ValueError, match="SQS_VISIBILITY_TIMEOUT_SECONDS"):
+        settings.validate_for_environment()
+
+
+def test_given_sqs_visibility_timeout_above_sqs_max_then_validation_fails():
+    settings = Settings.from_env({"SQS_VISIBILITY_TIMEOUT_SECONDS": "50000"})
+    with pytest.raises(ValueError, match="SQS_VISIBILITY_TIMEOUT_SECONDS"):
+        settings.validate_for_environment()
+
+
 def test_given_auth_providers_when_parsed_then_comma_separated_and_lowercased():
     settings = Settings.from_env({"AUTH_PROVIDERS": "OIDC, service-accounts"})
     assert settings.auth_providers == ("oidc", "service-accounts")

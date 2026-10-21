@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from backend.ingestion import IngestionJob, IngestionStatus
+
+# Statuses a claim treats as already-finished success: re-claiming (and
+# therefore re-processing) one of these is always wrong, no matter how stale
+# the previous claim is.
+_TERMINAL_SUCCESS_STATUSES = (IngestionStatus.indexed.value, IngestionStatus.deleted.value)
 
 # Fields the worker/API may update on an existing job. Everything else is
 # immutable once created (job_id, tenant_id, filename, scope, checksum).
@@ -72,6 +77,10 @@ class SqliteJobStore:
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS ix_ingestion_jobs_dedupe ON ingestion_jobs (tenant_id, idempotency_key)"
             )
+            columns = {row[1] for row in conn.execute("PRAGMA table_info(ingestion_jobs)")}
+            for column in ("claimed_at", "claim_token"):
+                if column not in columns:
+                    conn.execute(f"ALTER TABLE ingestion_jobs ADD COLUMN {column} TEXT")
             conn.commit()
         finally:
             conn.close()
@@ -163,6 +172,52 @@ class SqliteJobStore:
         finally:
             conn.close()
         return self.get(job_id, tenant_id)
+
+    def claim(
+        self, job_id: str, tenant_id: str, claim_token: str, lease_seconds: float, now: datetime | None = None
+    ) -> str:
+        """Atomically claims a job for processing: a message delivered twice
+        (two queue redeliveries, or two worker replicas) must index it at
+        most once. Returns ``"claimed"`` when this call now holds the claim,
+        ``"duplicate"`` when the job already reached a terminal-success
+        status (the index is already correct; the caller should ack without
+        reprocessing), or ``"held"`` when a live claim (``claimed_at`` within
+        ``lease_seconds``) belongs to a *different* ``claim_token``. A caller
+        presenting the same ``claim_token`` it already holds always renews
+        (refreshes ``claimed_at``) even before the lease expires -- that is
+        how one worker's own sequential retries of the same message stay
+        claimed throughout, while a different worker (different token) is
+        blocked until the lease lapses. A claim never changes ``status`` --
+        that stays the worker's own progress tracking -- it only records who
+        currently owns the job and since when."""
+        now = now or datetime.now(timezone.utc)
+        cutoff = (now - timedelta(seconds=lease_seconds)).isoformat()
+        conn = self._connect()
+        try:
+            cursor = conn.execute(
+                f"""
+                UPDATE ingestion_jobs SET claimed_at = ?, claim_token = ?, updated_at = ?
+                WHERE job_id = ? AND tenant_id = ?
+                  AND status NOT IN ({",".join("?" * len(_TERMINAL_SUCCESS_STATUSES))})
+                  AND (claimed_at IS NULL OR claimed_at = '' OR claimed_at < ? OR claim_token = ?)
+                """,
+                (now.isoformat(), claim_token, now.isoformat(), job_id, tenant_id,
+                 *_TERMINAL_SUCCESS_STATUSES, cutoff, claim_token),
+            )
+            if cursor.rowcount > 0:
+                conn.commit()
+                return "claimed"
+            conn.rollback()
+            row = conn.execute(
+                "SELECT status FROM ingestion_jobs WHERE job_id = ? AND tenant_id = ?", (job_id, tenant_id)
+            ).fetchone()
+        finally:
+            conn.close()
+        if row is None:
+            raise KeyError(job_id)
+        if row["status"] in _TERMINAL_SUCCESS_STATUSES:
+            return "duplicate"
+        return "held"
 
 
 def _row_to_job(row: sqlite3.Row) -> IngestionJob:

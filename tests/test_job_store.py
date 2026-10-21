@@ -1,6 +1,6 @@
 """Durable ingestion-job store tests (Phase 3.2)."""
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -103,3 +103,48 @@ def test_given_jobs_then_persist_across_store_instances(tmp_path):
 def test_given_empty_db_path_then_store_is_rejected():
     with pytest.raises(ValueError):
         SqliteJobStore("")
+
+
+# ---------------------------------------------------------------------------
+# M12c-D -- claim-by-job-id (concurrent redelivery / replica protection)
+# ---------------------------------------------------------------------------
+
+def test_given_unclaimed_job_when_claimed_then_claimed(tmp_path):
+    store = SqliteJobStore(str(tmp_path / "jobs.db"))
+    store.create(_job())
+    assert store.claim("job_abc123", "tenant-a", "token-1", lease_seconds=60) == "claimed"
+
+
+def test_given_live_claim_when_claimed_again_then_held(tmp_path):
+    store = SqliteJobStore(str(tmp_path / "jobs.db"))
+    store.create(_job())
+    now = datetime.now(timezone.utc)
+    assert store.claim("job_abc123", "tenant-a", "token-1", lease_seconds=60, now=now) == "claimed"
+    assert store.claim("job_abc123", "tenant-a", "token-2", lease_seconds=60, now=now) == "held"
+
+
+def test_given_stale_claim_older_than_lease_when_claimed_then_reclaimable(tmp_path):
+    store = SqliteJobStore(str(tmp_path / "jobs.db"))
+    store.create(_job())
+    first = datetime.now(timezone.utc)
+    assert store.claim("job_abc123", "tenant-a", "token-1", lease_seconds=60, now=first) == "claimed"
+    later = first + timedelta(seconds=61)
+    assert store.claim("job_abc123", "tenant-a", "token-2", lease_seconds=60, now=later) == "claimed"
+
+
+def test_given_job_already_indexed_when_claimed_then_duplicate(tmp_path):
+    store = SqliteJobStore(str(tmp_path / "jobs.db"))
+    store.create(_job(status=IngestionStatus.indexed))
+    assert store.claim("job_abc123", "tenant-a", "token-1", lease_seconds=60) == "duplicate"
+
+
+def test_given_job_already_deleted_when_claimed_then_duplicate(tmp_path):
+    store = SqliteJobStore(str(tmp_path / "jobs.db"))
+    store.create(_job(status=IngestionStatus.deleted))
+    assert store.claim("job_abc123", "tenant-a", "token-1", lease_seconds=60) == "duplicate"
+
+
+def test_given_missing_job_when_claimed_then_key_error(tmp_path):
+    store = SqliteJobStore(str(tmp_path / "jobs.db"))
+    with pytest.raises(KeyError):
+        store.claim("job_nope", "tenant-a", "token-1", lease_seconds=60)

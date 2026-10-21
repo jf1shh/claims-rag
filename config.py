@@ -76,6 +76,7 @@ class Settings:
     sqs_dlq_url: str | None = None
     sqs_region: str = "us-east-1"
     sqs_endpoint_url: str | None = None
+    sqs_visibility_timeout_seconds: int = 60
     worker_max_retries: int = 5
     worker_backoff_base_seconds: float = 2.0
     worker_poll_interval_seconds: float = 1.0
@@ -236,6 +237,9 @@ class Settings:
             sqs_dlq_url=env.get("SQS_DLQ_URL") or None,
             sqs_region=env.get("SQS_REGION", "us-east-1").strip(),
             sqs_endpoint_url=env.get("SQS_ENDPOINT_URL") or None,
+            sqs_visibility_timeout_seconds=_int(
+                env.get("SQS_VISIBILITY_TIMEOUT_SECONDS"), 60, "SQS_VISIBILITY_TIMEOUT_SECONDS"
+            ),
             worker_max_retries=_int(env.get("WORKER_MAX_RETRIES"), 5, "WORKER_MAX_RETRIES"),
             worker_backoff_base_seconds=_float(env.get("WORKER_BACKOFF_BASE_SECONDS"), 2.0, "WORKER_BACKOFF_BASE_SECONDS"),
             worker_poll_interval_seconds=_float(env.get("WORKER_POLL_INTERVAL_SECONDS"), 1.0, "WORKER_POLL_INTERVAL_SECONDS"),
@@ -337,6 +341,8 @@ class Settings:
             raise ValueError("QUEUE_PROVIDER must be in-process or sqs")
         if self.queue_provider == "sqs" and not self.sqs_queue_url:
             raise ValueError("SQS_QUEUE_URL is required when QUEUE_PROVIDER is sqs")
+        if not 10 <= self.sqs_visibility_timeout_seconds <= 43200:
+            raise ValueError("SQS_VISIBILITY_TIMEOUT_SECONDS must be between 10 and 43200")
         if self.ingestion_mode not in {"sync", "async"}:
             raise ValueError("INGESTION_MODE must be sync or async")
         if not self.auth_providers:

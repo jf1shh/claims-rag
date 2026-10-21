@@ -1,6 +1,52 @@
 """Shared ingestion bounds, used by the HTTP and queue paths."""
+import struct
 from pathlib import Path
 from zipfile import ZipFile, is_zipfile
+
+# End-of-central-directory record (fixed part, 22 bytes) and its ZIP64
+# counterparts. A zip's declared entry count lives in this record, which sits
+# at the end of the file, so it can be read with a small bounded seek instead
+# of constructing a ZipInfo for every entry (zipfile.ZipFile's constructor
+# does that -- expensive and unbounded for a crafted archive with thousands
+# of entries, and it runs in the API process, outside the parser subprocess's
+# RLIMIT_AS / wall timeout).
+_EOCD_SIGNATURE = b"PK\x05\x06"
+_EOCD64_LOCATOR_SIGNATURE = b"PK\x06\x07"
+_EOCD64_SIGNATURE = b"PK\x06\x06"
+_EOCD_MAX_TAIL = 22 + 65535  # fixed record + max comment length
+_MIN_CENTRAL_DIR_ENTRY_SIZE = 46  # every central-directory entry is at least this many bytes
+
+
+def _zip_entry_count(path) -> tuple[int, int] | None:
+    """Returns (total_entries, central_directory_size) read from the zip's
+    EOCD record (following the ZIP64 locator/record when the 16-bit count or
+    32-bit offsets overflow), or None when no EOCD signature is found --
+    callers fall back to the existing is_zipfile/ZipFile handling for a
+    malformed archive rather than inventing a new error path here."""
+    size = Path(path).stat().st_size
+    with Path(path).open("rb") as handle:
+        tail_size = min(size, _EOCD_MAX_TAIL)
+        handle.seek(size - tail_size)
+        tail = handle.read(tail_size)
+        index = tail.rfind(_EOCD_SIGNATURE)
+        if index == -1 or len(tail) - index < 22:
+            return None
+        total_entries, cd_size, cd_offset = struct.unpack("<HII", tail[index + 10:index + 20])
+        if total_entries != 0xFFFF and cd_size != 0xFFFFFFFF and cd_offset != 0xFFFFFFFF:
+            return total_entries, cd_size
+        locator_start = index - 20
+        if locator_start < 0 or tail[locator_start:locator_start + 4] != _EOCD64_LOCATOR_SIGNATURE:
+            return None
+        (eocd64_offset,) = struct.unpack("<Q", tail[locator_start + 8:locator_start + 16])
+        if eocd64_offset > size - 56:
+            return None
+        handle.seek(eocd64_offset)
+        record = handle.read(56)
+        if len(record) < 56 or record[:4] != _EOCD64_SIGNATURE:
+            return None
+        total_entries = struct.unpack("<Q", record[32:40])[0]
+        cd_size = struct.unpack("<Q", record[40:48])[0]
+        return total_entries, cd_size
 
 # Shared by the sync and async upload paths, and by source_storage.stage_source,
 # so a staged file's declared content type always matches its extension.
@@ -30,6 +76,11 @@ def check_container(path, max_bytes, max_chars):
     if Path(path).stat().st_size > max_bytes:
         raise DocumentLimitError('Document exceeds byte limit.')
     if is_zipfile(path):
+        counted = _zip_entry_count(path)
+        if counted is not None:
+            entry_count, cd_size = counted
+            if entry_count > 10000 or cd_size / _MIN_CENTRAL_DIR_ENTRY_SIZE > 10000:
+                raise DocumentLimitError('Document archive exceeds expanded size limit.')
         with ZipFile(path) as archive:
             entries = archive.infolist()
             if len(entries) > 10000:

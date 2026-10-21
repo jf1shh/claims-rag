@@ -125,6 +125,20 @@ gh api repos/jf1shh/claims-rag/actions/runners --jq '.runners[] | {name, status}
 
 The runner does not follow the git repo: on a new host it must be re-registered (`~/actions-runner-claims-rag/config.sh` with a token from `gh api -X POST repos/jf1shh/claims-rag/actions/runners/registration-token`), with Docker and system Python 3.12 available.
 
+## Timeouts and pools
+
+Defaults are in `.env.example`; values are read once at startup.
+
+| Setting | Default | Effect |
+|---|---|---|
+| `POSTGRES_CONNECT_TIMEOUT_SECONDS` | 5 | psycopg connect timeout for each new pooled connection. |
+| `POSTGRES_STATEMENT_TIMEOUT_MS` | 30000 (min 1000) | Server-side `statement_timeout` set on every pooled connection. |
+| `POSTGRES_POOL_MAX_SIZE` | 10 | Connections per `PostgresVectorStore` (one store per process). Size it against `max_connections` x worker processes. |
+| `POSTGRES_POOL_TIMEOUT_SECONDS` | 10 | How long a checkout waits before raising `PoolTimeout`. |
+| `CHAT_DEADLINE_SECONDS` | 180 | Overall budget for a non-streaming `/api/chat`, shared by planning, synthesis and the answer checks. A request that runs out gets a 504. It can overshoot by at most one socket read timeout. |
+| `LLM_CHECK_TIMEOUT_SECONDS` | 30 | Per-call timeout for the provenance and conflict check stages. A timeout there degrades the check; it does not fail the answer. |
+| `SQS_VISIBILITY_TIMEOUT_SECONDS` | 60 | Visibility timeout for dequeued ingestion messages. The worker extends it every half period while parsing and renews the job claim (lease = 2x this value). |
+
 ## Health
 
 - `GET /health/live` only checks that the process is responding.

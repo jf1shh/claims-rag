@@ -9,6 +9,9 @@ torch-free deterministic fake embedder.
 """
 
 import hashlib
+import threading
+import time
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -24,7 +27,7 @@ from backend.ingestion_worker import (
     IngestionWorker,
 )
 from backend.job_store import SqliteJobStore
-from backend.queue import InProcessQueue
+from backend.queue import InProcessQueue, QueueMessage
 from backend.rag_engine import SQLiteVectorStore
 
 LABOR_TEXT = (
@@ -464,3 +467,227 @@ def test_given_sqs_queue_when_retries_exhausted_then_message_lands_in_dlq(tmp_pa
         assert dlq_message is not None
         assert '"job_id": "job_1"' in dlq_message["Body"]
         assert store.get_all_documents() == []  # no half-state on the SQS path either
+
+
+# ---------------------------------------------------------------------------
+# M12c-D -- visibility heartbeat
+# ---------------------------------------------------------------------------
+
+class _SlowBlobStore(LocalDocumentBlobStore):
+    """Adds a fixed delay to every fetch, to hold a message in flight long
+    enough for the heartbeat to fire more than once."""
+
+    def __init__(self, path, delay):
+        super().__init__(path)
+        self._delay = delay
+
+    def get(self, key):
+        time.sleep(self._delay)
+        return super().get(key)
+
+
+class _HeartbeatQueue(InProcessQueue):
+    """An in-process queue that also exposes a visibility timeout and
+    records every extend_visibility call, mirroring SQSQueue's seam."""
+
+    def __init__(self, visibility_timeout):
+        super().__init__()
+        self.visibility_timeout = visibility_timeout
+        self.extend_calls: list[int] = []
+
+    def extend_visibility(self, message, seconds):
+        self.extend_calls.append(seconds)
+
+
+def test_given_slow_processing_then_heartbeat_extends_and_stops_after(tmp_path):
+    queue = _HeartbeatQueue(visibility_timeout=30)
+    blob = _SlowBlobStore(tmp_path / "blobs", delay=0.3)
+    store = SQLiteVectorStore(
+        db_path=str(tmp_path / "test.db"), storage_dir=str(tmp_path / "stored_documents"), blob_store=blob
+    )
+    worker = IngestionWorker(
+        queue=queue,
+        vector_store=store,
+        blob_store=blob,
+        embedding_engine_factory=_FakeEmbedder,
+        backoff_base_seconds=0.0,
+        max_retries=3,
+        heartbeat_interval_seconds=0.05,
+    )
+    blob.put("global/labor.txt", LABOR_TEXT.encode(), "text/plain")
+    queue.enqueue(_job_message("labor.txt", "global/labor.txt"))
+
+    assert worker.process_message(queue.dequeue()) == INDEXED
+    assert len(queue.extend_calls) >= 2
+    assert queue.extend_calls == [30] * len(queue.extend_calls)
+
+    calls_after_processing = len(queue.extend_calls)
+    time.sleep(0.2)
+    assert len(queue.extend_calls) == calls_after_processing  # stopped, no further extensions
+
+
+def test_given_exception_during_processing_then_heartbeat_still_stops(tmp_path):
+    queue = _HeartbeatQueue(visibility_timeout=30)
+    blob = _SlowBlobStore(tmp_path / "blobs", delay=0.3)
+    store = SQLiteVectorStore(
+        db_path=str(tmp_path / "test.db"), storage_dir=str(tmp_path / "stored_documents"), blob_store=blob
+    )
+    worker = IngestionWorker(
+        queue=queue,
+        vector_store=store,
+        blob_store=blob,
+        embedding_engine_factory=_FailingEmbedder,
+        backoff_base_seconds=0.0,
+        max_retries=3,
+        heartbeat_interval_seconds=0.05,
+    )
+    blob.put("global/labor.txt", LABOR_TEXT.encode(), "text/plain")
+    queue.enqueue(_job_message("labor.txt", "global/labor.txt"))
+
+    assert worker.process_message(queue.dequeue()) == REJECTED
+    calls_after_processing = len(queue.extend_calls)
+    time.sleep(0.2)
+    assert len(queue.extend_calls) == calls_after_processing
+
+
+def test_given_in_process_queue_then_no_heartbeat_started(harness):
+    queue, blob, store = harness
+    blob.put("global/labor.txt", LABOR_TEXT.encode(), "text/plain")
+    queue.enqueue(_job_message("labor.txt", "global/labor.txt"))
+    worker = _worker(harness)
+    assert worker._start_heartbeat(queue.dequeue()) is None
+
+
+# ---------------------------------------------------------------------------
+# M12c-D -- claim-by-job-id
+# ---------------------------------------------------------------------------
+
+def test_given_message_delivered_to_two_replicas_concurrently_then_indexed_once(harness, tmp_path):
+    queue, blob, store = harness
+    job_store = SqliteJobStore(str(tmp_path / "jobs.db"))
+    blob.put("global/labor.txt", LABOR_TEXT.encode(), "text/plain")
+
+    class _SlowEmbedder:
+        def embed_chunks(self, chunks):
+            time.sleep(0.15)
+            return _FakeEmbedder().embed_chunks(chunks)
+
+    worker_a = _worker(harness, embedder=_SlowEmbedder(), job_store=job_store)
+    worker_b = _worker(harness, embedder=_SlowEmbedder(), job_store=job_store)
+    payload = _job_message("labor.txt", "global/labor.txt", job_id="job_x")
+    msg_a = QueueMessage(message_id="m1", payload=dict(payload))
+    msg_b = QueueMessage(message_id="m2", payload=dict(payload))
+
+    outcomes = {}
+    barrier = threading.Barrier(2)
+
+    def _run(worker, msg, key):
+        barrier.wait()
+        outcomes[key] = worker.process_message(msg)
+
+    t1 = threading.Thread(target=_run, args=(worker_a, msg_a, "a"))
+    t2 = threading.Thread(target=_run, args=(worker_b, msg_b, "b"))
+    t1.start()
+    t2.start()
+    t1.join()
+    t2.join()
+
+    winner, loser = ("a", "b") if outcomes["a"] == INDEXED else ("b", "a")
+    assert outcomes[winner] == INDEXED
+    assert outcomes[loser] in (REJECTED, DUPLICATE)  # never failed -- held or already-duplicate
+    assert len(store.get_all_documents()) == 1
+    job = job_store.get("job_x", "tenant-a")
+    assert job.status is IngestionStatus.indexed
+
+
+def test_given_redelivery_after_success_with_staging_blob_gone_then_acked_duplicate(harness, tmp_path):
+    queue, blob, store = harness
+    job_store = SqliteJobStore(str(tmp_path / "jobs.db"))
+    worker = _worker(harness, job_store=job_store)
+    blob.put("staging/u1/labor.txt", LABOR_TEXT.encode(), "text/plain")
+    queue.enqueue(_job_message("labor.txt", "staging/u1/labor.txt", job_id="job_y"))
+
+    assert worker.process_message(queue.dequeue()) == INDEXED
+    with pytest.raises(FileNotFoundError):
+        blob.get("staging/u1/labor.txt")  # cleaned up by the successful run
+
+    # This is the audit's exact scenario: a stale receipt handle causes the
+    # same message to be redelivered a third time, after the staging blob is
+    # already gone. Must be acked as a duplicate, never marked failed.
+    queue.enqueue(_job_message("labor.txt", "staging/u1/labor.txt", job_id="job_y"))
+    assert worker.process_message(queue.dequeue()) == DUPLICATE
+
+    job = job_store.get("job_y", "tenant-a")
+    assert job.status is IngestionStatus.indexed
+    assert job.error_code is None
+    assert worker.stats()["duplicates"] == 1
+
+
+def test_given_job_turns_indexed_during_blob_fetch_then_acked_duplicate_not_failed(harness, tmp_path):
+    """Narrower race than the above: the claim succeeds (job not yet
+    terminal), but another path indexes the job before this fetch returns --
+    the content-is-None branch must re-check and ack as duplicate rather than
+    marking an already-successful job failed."""
+    queue, blob, store = harness
+    job_store = SqliteJobStore(str(tmp_path / "jobs.db"))
+    worker = _worker(harness, job_store=job_store)
+    queue.enqueue(_job_message("labor.txt", "global/labor.txt", job_id="job_z"))
+    message = queue.dequeue()
+
+    def _racy_get(key):
+        job_store.update("job_z", "tenant-a", status=IngestionStatus.indexed, document_id="doc_1")
+        raise FileNotFoundError(key)
+
+    blob.get = _racy_get
+
+    assert worker.process_message(message) == DUPLICATE
+    job = job_store.get("job_z", "tenant-a")
+    assert job.status is IngestionStatus.indexed
+    assert job.error_code is None
+
+
+def test_given_stale_claim_when_redelivered_then_reclaimable(harness, tmp_path):
+    queue, blob, store = harness
+    job_store = SqliteJobStore(str(tmp_path / "jobs.db"))
+    worker = _worker(harness, job_store=job_store)
+    blob.put("global/labor.txt", LABOR_TEXT.encode(), "text/plain")
+    queue.enqueue(_job_message("labor.txt", "global/labor.txt", job_id="job_w"))
+    job = worker._ensure_job(queue.dequeue())
+
+    # Simulate a crashed worker's claim, already past its lease.
+    stale = datetime.now(timezone.utc) - timedelta(seconds=10_000)
+    job_store.claim(job.job_id, job.tenant_id, "crashed-worker-token", lease_seconds=1, now=stale)
+
+    queue.enqueue(_job_message("labor.txt", "global/labor.txt", job_id="job_w"))
+    assert worker.process_message(queue.dequeue()) == INDEXED
+    assert job_store.get("job_w", "tenant-a").status is IngestionStatus.indexed
+
+
+def test_given_delete_message_delivered_twice_then_second_acked_duplicate(harness, tmp_path):
+    queue, blob, store = harness
+    job_store = SqliteJobStore(str(tmp_path / "jobs.db"))
+    worker = _worker(harness, job_store=job_store)
+    store.add_document("labor.txt", "txt", 100, LABOR_TEXT, _FakeEmbedder())
+
+    queue.enqueue(_delete_message("labor.txt", job_id="job_del_dup"))
+    assert worker.process_message(queue.dequeue()) == DELETED
+
+    queue.enqueue(_delete_message("labor.txt", job_id="job_del_dup"))
+    assert worker.process_message(queue.dequeue()) == DUPLICATE
+    assert job_store.get("job_del_dup", "tenant-a").status is IngestionStatus.deleted
+
+
+def test_heartbeat_renews_the_job_claim_each_tick():
+    # The claim lease must not lapse mid-processing, or a duplicate delivery
+    # of the same job could reclaim it and index it concurrently.
+    from backend.ingestion_worker import _VisibilityHeartbeat
+
+    queue = _HeartbeatQueue(visibility_timeout=30)
+    renewals = []
+    message = QueueMessage(message_id="m1", payload={"job_id": "job_1", "tenant_id": "t"}, receipt_handle="r")
+    heartbeat = _VisibilityHeartbeat(queue, message, 30, 0.05, renew_claim=lambda: renewals.append(1))
+    heartbeat.start()
+    time.sleep(0.3)
+    heartbeat.stop()
+    assert len(renewals) >= 2
+    assert len(renewals) == len(queue.extend_calls)
