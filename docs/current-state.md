@@ -179,7 +179,9 @@ As of September 6, the authoritative state is [portfolio-hardening.md](docs/port
 > - #25: Alembic `0003` turns on `FORCE ROW LEVEL SECURITY` for `documents`, `parent_chunks` and `child_chunks`. `PostgresVectorStore` warns once at startup if its role is a superuser or has `BYPASSRLS`, because those roles skip RLS even when forced.
 > - Verified: storage branch offline 1245 passed, 30 skipped, 1 xfailed, Postgres 1274 passed; runtime branch offline 1235 passed, 29 skipped, 1 xfailed, Postgres 1263 passed; ruff clean.
 >
-> **Next:** roadmap P5 (demo/README workflow table), then P6 (NAIC governance mapping).
+> **Roadmap P5 "Show it" done 2026-10-21 (branch `feat/p5-show-it`)**: the README has a `## Claims workflows` table (mode, button, demo claims, tool, unit tests, golden cases with 2026-10-21 coverage). `docs/workflows/` holds one write-up per mode (supplement review, total-loss explainer, subrogation triage, SIU checklist), an index and a 90-second demo shot list. Every number is copied from simulation-mode output captured on 2026-10-21. Known eval gap, stated in the README: supplement review and the total-loss explainer have no claim-scoped golden question that runs the button, so only unit tests cover their button output. The owner records the video.
+>
+> **Next:** roadmap P6 (NAIC AI Model Bulletin governance mapping, `docs/roadmap-focus.md` "### P6"). Later: claim-scoped golden questions for the supplement and total-loss buttons (needs a GPU judge re-score).
 
 > **License changed 2026-10-17**: MIT → AGPL-3.0 (owner decision; `LICENSE`, README badge and a new License section). Code copied before the change stays under MIT.
 

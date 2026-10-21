@@ -1,12 +1,12 @@
-# Claims Workflows
+# Claims workflows
 
-This directory contains write-ups for each of the four claims-handling modes in ClaimsRAG: review and triage tools that read standards of practice, policy riders, and claim documents to assist adjusters with structured decision-making.
+One write-up per claims mode. Each mode is a button in the claim workspace that runs a deterministic tool over the claim's documents and the synthetic SOPs, then answers with the result and its citations. The README's [Claims workflows](../../README.md#claims-workflows) table summarises them.
 
-| Mode | Write-up | Coverage |
+| Mode | What it does | Tests |
 |---|---|---|
-| [Supplement Review](supplement-review.md) | Assess reinspection thresholds, labor caps, parts standards and betterment on supplemental repair estimates. | 20 unit tests; 2 golden eval cases (`supplement-reinspection-threshold`, `betterment-tires`). |
-| [Total Loss Explainer](total-loss-explainer.md) | Determine total-loss status, compute salvage deduction, and cite state valuation and title-branding rules. | 18 unit tests; 2 golden eval cases (`rollover-total-loss-threshold`, `salvage-owner-retention`). |
-| [Subrogation Triage](subrogation-triage.md) | Identify third-party fault and referral criteria; compute expected recovery and deductible reimbursement. | 27 unit tests; 4 golden eval cases (`webb-subrogation-triage`, `jenkins-subrogation-no-indicator`, `subrogation-referral-trigger`, `subrogation-partial-deductible`). |
-| [SIU Indicator Checklist](siu-checklist.md) | Screen for four fraud red flags (chronology, paper accident, pre-existing damage, duplicate invoices) and cite SOP referral procedures. | 33 unit tests; 4 golden eval cases (`chen-siu-checklist`, `brooks-siu-checklist`, `rostova-siu-flag-unexplained`, `fraud-chronology-red-flag`). |
+| [Supplement Review](supplement-review.md) | Checks each supplement line against the labor caps, parts standard and betterment rules, and says whether reinspection is required. | 20 unit tests; golden cases `supplement-reinspection-threshold`, `betterment-tires` (rules only, not the button) |
+| [Total Loss Explainer](total-loss-explainer.md) | Shows the state total-loss threshold math, the salvage deduction and the title-branding rule. | 18 unit tests; golden cases `rollover-total-loss-threshold`, `salvage-owner-retention` (rules only, not the button) |
+| [Subrogation Triage](subrogation-triage.md) | Checks the referral criteria, and computes the expected recovery, the deductible reimbursement and the referral deadline. | 27 unit tests; golden cases `webb-subrogation-triage`, `jenkins-subrogation-no-indicator`, `subrogation-referral-trigger`, `subrogation-partial-deductible` |
+| [SIU Indicator Checklist](siu-checklist.md) | Screens the four Fraud Red Flags SOP indicators, cites each one, and shows the referral procedure. | 33 unit tests; golden cases `chen-siu-checklist`, `brooks-siu-checklist`, `rostova-siu-flag-unexplained`, `fraud-chronology-red-flag` |
 
-See also [demo-shot-list.md](demo-shot-list.md) for the 90-second screen-record plan.
+[demo-shot-list.md](demo-shot-list.md) is the plan for a 90-second screen recording.

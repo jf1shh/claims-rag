@@ -973,3 +973,11 @@ Findings #15–#21 and #25, split by file set between two Sonnet workers through
 - Runtime review accepted without changes. The `models()` failure cache uses the injected monotonic clock and only applies after a real probe failure; the pooled session keeps the `post(..., stream=True)` contract the M12c deadline reader relies on.
 - Watch out: the two branches share the Postgres verify database. After the storage suite migrates it to `0003`, the runtime branch fails with "Can't locate revision '0003'" until the database is recreated.
 - Verified: storage offline 1245 passed, 30 skipped, 1 xfailed, Postgres 1274 passed, 1 skipped, 1 xfailed; runtime offline 1235 passed, 29 skipped, 1 xfailed, Postgres 1263 passed, 1 skipped, 1 xfailed; ruff clean.
+
+### 2026-10-21 — Show it (roadmap P5)
+
+README `## Claims workflows` table, `docs/workflows/` (one write-up per mode, an index, a 90-second demo shot list). Drafted by a Haiku docs worker through nexus-route; Claude reviewed and corrected every file against simulation-mode output captured on 2026-10-21 and the golden set.
+
+- Tried and ruled out: trusting Haiku for factual docs that quote numbers. The drafts passed the structural check but had wrong facts in 3 of 4 write-ups and in the shot list: a wrong deductible, an invented forum threshold, wrong golden-case descriptions, "Shift Technology uses this tool", the "do not inform the policyholder" rule reversed, a sign-in step that does not exist locally, and a refusal shot that can't be triggered. Use Sonnet or Claude for docs that quote figures.
+- Decided: vendors are named only as "fits teams/platforms such as ...", never as users or partners. The demo's refusal shot is the SIU probe on #2026-55912 (the record says "SIU Flagged" with no supporting indicator), because the live zero-context refusal needs both a loaded model and a query that retrieves nothing.
+- Watch out: the total-loss write-up's example is a typed prompt with its own ACV and salvage figures, so the **Explain Total Loss** button gives different numbers. The README's golden "coverage" column is reference-fact coverage (`correctness` in `eval/results-*.json`).
