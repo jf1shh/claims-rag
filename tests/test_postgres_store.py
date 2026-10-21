@@ -518,3 +518,52 @@ def test_ingestion_worker_embed_failure_leaves_no_half_state_in_postgres(provisi
             conn.commit()
         finally:
             conn.close()
+
+
+# --------------------------------------------------------------------------- #
+# Claim rerank candidates (parity with SQLite, tests/test_claim_rerank_candidates.py)
+# --------------------------------------------------------------------------- #
+
+_ALONG = np.eye(384, dtype=np.float32)[0]
+_ACROSS = np.eye(384, dtype=np.float32)[1]
+
+
+class _AxisEmbedder:
+    """Global docs point along the query; the claim statement is orthogonal,
+    so it ranks last on the vector leg and falls outside a small pool."""
+
+    def embed_chunks(self, chunks):
+        return [_ACROSS if "deer" in c else _ALONG for c in chunks]
+
+    def embed_query(self, query):
+        return _ALONG
+
+
+class _PreferStatementReranker:
+    def __init__(self):
+        self.seen = []
+
+    def rerank(self, query, passages, top_k=4):
+        self.seen = [p["filename"] for p in passages]
+        scored = [dict(p, rerank_score=2.0 if "statement" in p["filename"] else 1.0) for p in passages]
+        scored.sort(key=lambda x: x["rerank_score"], reverse=True)
+        return scored[:top_k]
+
+
+@needs_postgres
+def test_claim_document_outside_the_pool_still_reaches_the_reranker(store):
+    embedder = _AxisEmbedder()
+    for name in ("SOP_A.txt", "SOP_B.txt", "SOP_C.txt"):
+        text = f"{name} checklist indicators referral"
+        store.add_document(name, "txt", len(text), text, embedder)
+    for claim, text in (("C1", "a deer ran into the road at 2:40 AM"), ("C2", "a deer on another claim")):
+        store.add_document(f"loss_statement_{claim}.txt", "txt", len(text), text, embedder, claim_id=claim)
+    query = "Run the SIU indicator checklist and say whether a referral is indicated"
+    reranker = _PreferStatementReranker()
+
+    results = store.search_similarity(_ALONG, query, claim_id="C1", reranking_engine=reranker, top_k=2, candidate_pool=2)
+    assert results[0]["filename"] == "loss_statement_C1.txt"
+    assert "loss_statement_C2.txt" not in reranker.seen
+
+    store.search_similarity(_ALONG, query, claim_id="C1", reranking_engine=reranker, top_k=2, candidate_pool=2, use_fts=False)
+    assert "loss_statement_C1.txt" not in reranker.seen

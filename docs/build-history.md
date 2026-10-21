@@ -885,3 +885,14 @@ existing California and Texas regulation docs.
 - Original 28: hybrid precision and recall identical on every row. All coverage movement is generation noise (`rostova-hydrolock-coverage` 0.0 → 0.85, `labor-mechanical-cap` 1.0 → 0.5).
 - New 6: P 0.528 → 0.542, R 0.911 → 0.944. Precision is rank-weighted and pins take the bottom slots, so recall is where pinning shows. The remaining new-6 precision gap is ranking order, not missing documents.
 - Launched detached (`setsid nohup`) so it survived the session handoff, per the earlier learning.
+
+### 2026-10-20 — Claim documents always reach the rerank pool
+
+- Problem: `loss_statement_Brooks.pdf` (expected source for `brooks-siu-checklist`) never made the hybrid top 4. The app reranks only the top `RERANK_CANDIDATE_POOL` = 15 fused candidates, and the narrative statement ranked below 15 on the vector leg. With pool 50 the cross-encoder puts it 3rd. Live answers were unaffected, because the router loads every claim chunk as the guaranteed dossier.
+- Fix: `add_claim_candidates` (`backend/rag_engine.py`), plus `PostgresVectorStore._claim_ranked`, adds up to 6 of the active claim's best chunks to the rerank pool. Hybrid with a reranker only; never in naive mode; only the requesting claim.
+- Result: top-4 probe 33/34 → 34/34. The only other change is `chen-custom-equipment-cap`, which gains its receipts and police report. Mean +1.0 rerank pairs, max +3. Parity PASS 0.9907. SQLite 1086 passed; Postgres 1103 passed.
+- **Debugging history:**
+  - Ruled out: raising `RERANK_CANDIDATE_POOL` (lowered 50→15 for latency in the Phase 6.1 work).
+  - Tried: OR'ing the FTS tokens. Probe unchanged at 33/34; it only reshuffled the bottom slots. Reverted.
+  - Found: the FTS leg returns zero rows for 33/34 golden queries, because quoted tokens are ANDed. Left open as the next milestone.
+  - The probe harness reads a copy of the seeded `rag_store.db` and calls `search_similarity` with `candidate_pool=15`. The store default of 50 hides this bug.

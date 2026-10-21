@@ -349,6 +349,26 @@ def pin_named_documents(query_text, ranked, top_k, max_pins=2):
     return [entry[1] for entry in selection]
 
 
+CLAIM_RERANK_CANDIDATES = 6
+
+
+def add_claim_candidates(candidates, claim_ranked, limit=CLAIM_RERANK_CANDIDATES):
+    """Append the active claim's own parent chunks to the rerank pool.
+
+    The rerank pool is the top `candidate_pool` of the fused list, and a claim
+    document whose wording is far from the query (a narrative loss statement
+    against a checklist query) can fall outside it, so the cross-encoder never
+    scores it. The router already treats the claim's documents as always
+    relevant (the guaranteed dossier); this lets them compete in the rerank too.
+    `claim_ranked` is the claim's parents, best vector score first. At most
+    `limit` new items are added; ones already in the pool are skipped. They
+    still have to win on rerank score to reach top_k.
+    """
+    present = {c["id"] for c in candidates}
+    extra = [c for c in claim_ranked if c["id"] not in present][:limit]
+    return candidates + extra if extra else candidates
+
+
 class VectorStore(ABC):
     """Contract every storage backend must implement.
 
@@ -1058,6 +1078,10 @@ class SQLiteVectorStore(VectorStore):
         top_candidates = fused_results[:candidate_pool]
 
         # --- 4. Cross-Encoder Reranking ---
+        if reranking_engine and use_fts and claim_id is not None:
+            # vector_ranked holds every in-scope parent, best first.
+            claim_ranked = [r for r in vector_ranked if r.get("claim_id") == claim_id]
+            top_candidates = add_claim_candidates(top_candidates, claim_ranked)
         if reranking_engine and top_candidates:
             reranked = reranking_engine.rerank(query_text, top_candidates, top_k=len(top_candidates))
             for item in reranked:

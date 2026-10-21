@@ -330,6 +330,36 @@ class PostgresVectorStore:
         return metadata["storage_key"] or _blob_key(metadata["claim_id"], filename)
 
 
+    def _claim_ranked(self, conn, query, claim_id) -> List[dict]:
+        """The active claim's parents, best vector score first, capped at
+        CLAIM_RERANK_CANDIDATES. Same shape as the vector leg's items."""
+        from backend.rag_engine import CLAIM_RERANK_CANDIDATES
+
+        try:
+            with conn.transaction():
+                rows = conn.execute(
+                    """
+                    SELECT p.id, p.content, d.filename, d.file_type, d.id, d.document_version, d.claim_id,
+                           max(1.0 - (c.embedding <=> %(q)s)) AS sim
+                    FROM child_chunks c
+                    JOIN parent_chunks p ON c.parent_id = p.id
+                    JOIN documents d ON p.document_id = d.id
+                    WHERE c.tenant_id = %(t)s AND d.claim_id = %(c)s
+                    GROUP BY p.id, d.id
+                    ORDER BY sim DESC
+                    LIMIT %(lim)s
+                    """,
+                    {"q": query, "t": self.tenant_id, "c": claim_id, "lim": CLAIM_RERANK_CANDIDATES},
+                ).fetchall()
+        except Exception as exc:
+            logger.warning("Claim candidate query failed, reranking the fused pool only: %s", type(exc).__name__)
+            return []
+        return [
+            {"id": r[0], "content": r[1], "filename": r[2], "file_type": r[3], "score": float(r[7]),
+             "document_id": str(r[4]), "document_version": r[5] or "legacy-unversioned", "claim_id": r[6]}
+            for r in rows
+        ]
+
     def search_similarity(self, query_embedding, query_text, claim_id=None, reranking_engine=None, top_k=15, use_fts=True, candidate_pool=50):
         """Hybrid retrieval with RRF and optional cross-encoder rerank, scoped by
         tenant and (optionally) claim. Result shape identical to SQLiteVectorStore.
@@ -440,6 +470,13 @@ class PostgresVectorStore:
                 )
             fused.sort(key=lambda x: x["score"], reverse=True)
             candidates = fused[:candidate_pool]
+
+            # The vector leg is LIMITed to the pool, so fetch the active claim's
+            # own best parents separately for the rerank (see add_claim_candidates).
+            if reranking_engine and use_fts and claim_id is not None:
+                from backend.rag_engine import add_claim_candidates
+
+                candidates = add_claim_candidates(candidates, self._claim_ranked(conn, query, claim_id))
         finally:
             conn.close()
 
