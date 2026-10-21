@@ -990,3 +990,11 @@ README `## Claims workflows` table, `docs/workflows/` (one write-up per mode, an
 - Decided: evidence is pinned by text, not line number, so unrelated edits don't break the test but a renamed control or a changed default does.
 - Watch out: a first draft said every authenticated action is audited. The list endpoints (documents, claims, job status) are not; the map now says so.
 
+
+### 2026-10-21 — Demo video recorded (roadmap P5 follow-up)
+
+Recorded the 90-second shot list with Playwright (headless Chromium, 1280x720, Simulation Mode) against a detached checkout of 597d8c3 on port 8010, seeded and ingested. Six captioned shots: intro, Sterling supplement, Webb subrogation, Brooks SIU, the Rostova SIU probe, and the README results table. Final cut 98.5 s, H.264, kept in the owner's notes hub (not this repo).
+
+- Decided: captions are checked against the app's actual answer text (dumped per shot) and the README table before export, and never edited to fit. All six matched: $1,205.00 / $1,006.00 / 56.5%; $605.50 for both the recovery and the deductible reimbursement; three SIU indicators present on Brooks; "No SOP indicator is present" on Rostova; 0.983 / 0.840.
+- Watch out: Playwright keeps recording a page until its context closes, so the first page's video carries a static copy of the screen while the second page plays. Trim the first page where its last caption clears, and drop the second page's final black frame.
+- Tried and ruled out: running the recorder from a worktree-pinned subagent (the isolation guard refused the browser and server launches outside the worktree).
