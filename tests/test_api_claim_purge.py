@@ -235,3 +235,23 @@ def test_given_scrub_failure_when_sync_delete_then_still_200(harness, monkeypatc
     assert store.get_claim_documents("claim-1") == []
     deleted = [e for e in _events(sink_path) if e["event"] == "delete" and e["outcome"] == "deleted"]
     assert len(deleted) == 1
+
+
+def test_given_record_result_failure_when_sync_delete_then_upload_job_still_scrubbed(harness, monkeypatch):
+    """A job-store error recording the delete must not leave the upload's own
+    job row naming the file."""
+    client, store, job_store, sink_path, token = harness
+    service = _sync_delete_service(monkeypatch, job_store)
+    store.add_document("report.pdf", "pdf", 10, "loss report text", _FakeEmbedder(), claim_id="claim-1")
+    _add_job(job_store, "claim-1")
+
+    def _boom(**kwargs):
+        raise RuntimeError("job store locked")
+
+    monkeypatch.setattr(service, "record_result", _boom)
+    headers = _auth(token("admin-1", ["admin"]))
+    response = client.post("/api/delete", json={"filename": "report.pdf", "claim_id": "claim-1"}, headers=headers)
+
+    assert response.status_code == 200
+    assert response.json()["job_id"] is None
+    assert client.get("/api/jobs/job_1", headers=headers).json()["filename"] == "[deleted]"

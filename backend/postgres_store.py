@@ -134,6 +134,9 @@ class PostgresVectorStore:
         # that never touches the DB (scripts, offline tests) opens nothing.
         self._pool = None
         self._pool_lock = threading.Lock()
+        # Set once the BYPASSRLS/superuser check has run on a real connection,
+        # so a long-lived store only logs the warning (if any) a single time.
+        self._rls_bypass_checked = False
 
     # ------------------------------------------------------------------ #
     # Connection helpers
@@ -153,6 +156,28 @@ class PostgresVectorStore:
         register_vector(conn)
         conn.execute("SELECT set_config(%s, %s, false)", ("app.tenant_id", self.tenant_id))
         conn.commit()
+        if not self._rls_bypass_checked:
+            self._check_rls_bypass(conn)
+
+    def _check_rls_bypass(self, conn) -> None:
+        """Warns once if the connecting role bypasses row-level security
+        (superuser or BYPASSRLS), since RLS -- even FORCEd -- never applies
+        to such a role: tenant isolation would then rely on query filters
+        alone. Never raises -- a failed check must not fail startup."""
+        self._rls_bypass_checked = True
+        try:
+            row = conn.execute(
+                "SELECT rolsuper OR rolbypassrls FROM pg_roles WHERE rolname = current_user"
+            ).fetchone()
+            conn.commit()
+        except Exception as exc:
+            logger.warning("RLS bypass check failed (%s)", type(exc).__name__)
+            return
+        if row and row[0]:
+            logger.warning(
+                "Postgres role bypasses row-level security; tenant isolation relies on "
+                "query filters only. Use a non-superuser role without BYPASSRLS."
+            )
 
     def _get_pool(self):
         if self._pool is None:

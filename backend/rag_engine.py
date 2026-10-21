@@ -490,6 +490,9 @@ class SQLiteVectorStore(VectorStore):
         concurrent writers slack instead of the 5s default)."""
         conn = sqlite3.connect(self.db_path, timeout=30)  # sole raw connect in this class
         conn.execute("PRAGMA foreign_keys = ON")
+        # secure_delete overwrites freed pages instead of leaving old row
+        # bytes sitting in them -- per-connection, not persisted in the file.
+        conn.execute("PRAGMA secure_delete = ON")
         return conn
 
     def _invalidate_vector_cache(self):
@@ -627,6 +630,12 @@ class SQLiteVectorStore(VectorStore):
     def _init_db(self):
         conn = self._connect()
         cursor = conn.cursor()
+
+        # WAL mode persists in the db file itself, so this only needs setting
+        # once at store init -- readers never block on a writer's open
+        # transaction, which is what lets stage_source run before the write
+        # transaction (M12d-E17) without starving concurrent reads.
+        cursor.execute("PRAGMA journal_mode = WAL")
 
         # Documents table (with claim_id tag). No column-level UNIQUE on
         # filename -- identity is (claim_id, filename), enforced below by
@@ -967,6 +976,27 @@ class SQLiteVectorStore(VectorStore):
             elif not keep_legacy_file:
                 source_store(self).delete(filename)
         return True
+
+    def compact(self):
+        """Reclaims deleted rows' bytes from the SQLite file on disk.
+
+        FTS5's `optimize` merges the b-tree segments so deleted content stops
+        sitting in old shadow-table pages, and VACUUM then rewrites the whole
+        file to drop freed pages entirely. VACUUM fails inside a transaction,
+        so it runs on its own connection with nothing else open on it.
+        """
+        conn = self._connect()
+        try:
+            conn.execute("INSERT INTO parent_chunks_fts(parent_chunks_fts) VALUES('optimize')")
+            conn.commit()
+        finally:
+            conn.close()
+
+        conn = self._connect()
+        try:
+            conn.execute("VACUUM")
+        finally:
+            conn.close()
 
     def get_all_documents(self):
         """Returns list of all uploaded global reference documents (claim_id is NULL)."""

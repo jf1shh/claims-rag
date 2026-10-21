@@ -608,25 +608,34 @@ def register_routes(app, runtime):
             total_time = (time.time() - start_time) * 1000
 
             # Record the finished job so the response carries a job_id (the async
-            # contract), keeping sync and async response shapes compatible.
-            job = runtime.ingestion_service.record_result(
-                tenant_id=runtime.settings.tenant_id,
-                filename=filename,
-                content=content,
-                document_id=str(doc_id),
-            claim_id=claim_id,
-            )
+            # contract), keeping sync and async response shapes compatible. The
+            # document is already indexed and searchable at this point, so a
+            # job-store failure here (e.g. a locked jobs.db) must not turn a
+            # committed upload into a 500.
+            job = None
+            try:
+                job = runtime.ingestion_service.record_result(
+                    tenant_id=runtime.settings.tenant_id,
+                    filename=filename,
+                    content=content,
+                    document_id=str(doc_id),
+                    claim_id=claim_id,
+                )
+            except Exception as exc:  # noqa: BLE001 -- the upload is already committed
+                import logging
+                logging.getLogger(__name__).error("job record_result failed after upload: %s", type(exc).__name__)
 
             _audit(request, principal, "upload", outcome="indexed", filename=filename, claim_id=claim_id,
-                   file_size=file_size, chunks_count=parent_count, job_id=job.job_id)
+                   file_size=file_size, chunks_count=parent_count, job_id=job.job_id if job else None,
+                   job_record="ok" if job else "failed")
 
             return {
                 "filename": filename,
             "claim_id": claim_id,
                 "chunks_count": parent_count,
                 "total_time_ms": round(total_time, 1),
-                "job_id": job.job_id,
-                "status": job.status.value,
+                "job_id": job.job_id if job else None,
+                "status": job.status.value if job else IngestionStatus.indexed.value,
                 "steps": {
                     "parsing_ms": round(parse_time, 1),
                     "db_storage_ms": round(db_time, 1)
@@ -772,15 +781,25 @@ def register_routes(app, runtime):
         if not deleted:
             _audit(request, principal, "delete", outcome="not_found", filename=filename, claim_id=req.claim_id)
             raise HTTPException(status_code=404, detail="Document not found.")
-        job = runtime.ingestion_service.record_result(
-            tenant_id=runtime.settings.tenant_id,
-            filename=filename,
-            content=b"",
-            claim_id=req.claim_id,
-            status=IngestionStatus.deleted,
-        )
+        # The document is already deleted from the vector store; a job-store
+        # failure here must not turn the committed delete into a 500.
+        job = None
+        try:
+            job = runtime.ingestion_service.record_result(
+                tenant_id=runtime.settings.tenant_id,
+                filename=filename,
+                content=b"",
+                claim_id=req.claim_id,
+                status=IngestionStatus.deleted,
+            )
+        except Exception as exc:  # noqa: BLE001 -- the delete is already committed
+            import logging
+            logging.getLogger(__name__).error("job record_result failed after delete: %s", type(exc).__name__)
+
         # The document is already gone; a scrub failure must not turn the
         # committed delete into a 500 (the worker path swallows it the same way).
+        # Scrub even when record_result failed: the upload's own job row still
+        # names the file.
         try:
             runtime.ingestion_service.scrub_document(
                 tenant_id=runtime.settings.tenant_id, filename=filename, claim_id=req.claim_id
@@ -788,11 +807,12 @@ def register_routes(app, runtime):
         except Exception as exc:  # noqa: BLE001 -- the delete is already committed
             import logging
             logging.getLogger(__name__).warning("job scrub failed after delete: %s", type(exc).__name__)
-        _audit(request, principal, "delete", outcome="deleted", filename=filename, claim_id=req.claim_id, job_id=job.job_id)
+        _audit(request, principal, "delete", outcome="deleted", filename=filename, claim_id=req.claim_id,
+               job_id=job.job_id if job else None, job_record="ok" if job else "failed")
         return {
             "message": f"Successfully deleted '{filename}'.",
-            "job_id": job.job_id,
-            "status": job.status.value,
+            "job_id": job.job_id if job else None,
+            "status": job.status.value if job else IngestionStatus.deleted.value,
         }
 
 

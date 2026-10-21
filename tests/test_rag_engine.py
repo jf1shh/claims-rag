@@ -448,3 +448,62 @@ class TestSQLiteVectorStore:
         store.add_document("clean.txt", "txt", 100, LABOR_TEXT, embedder)
         # The staged *.part file must be gone after a successful add.
         assert not os.path.exists(os.path.join(store.storage_dir, store.get_blob_key("clean.txt.part") or "clean.txt.part"))
+
+    def test_connection_has_secure_delete_enabled(self, store):
+        conn = store._connect()
+        try:
+            assert conn.execute("PRAGMA secure_delete").fetchone()[0] == 1
+        finally:
+            conn.close()
+
+    def test_store_init_sets_wal_journal_mode(self, store):
+        conn = store._connect()
+        try:
+            assert conn.execute("PRAGMA journal_mode").fetchone()[0].lower() == "wal"
+        finally:
+            conn.close()
+
+    def test_compact_removes_deleted_text_from_raw_database_bytes(self, store, embedder):
+        marker = "UNIQUE-SECRET-MARKER-ZQX7"
+        text = f"Confidential settlement note. {marker} must not survive a purge."
+        store.add_document("secret.txt", "txt", 100, text, embedder)
+
+        conn = store._connect()
+        conn.execute("PRAGMA wal_checkpoint(FULL)")
+        conn.close()
+        with open(store.db_path, "rb") as f:
+            before = f.read()
+        assert marker.encode() in before
+
+        store.delete_document("secret.txt")
+        store.compact()
+
+        with open(store.db_path, "rb") as f:
+            after = f.read()
+        assert marker.encode() not in after
+
+    def test_compact_returns_none(self, store, embedder):
+        store.add_document("labor.txt", "txt", 100, LABOR_TEXT, embedder)
+        assert store.compact() is None
+
+    def test_stage_source_runs_before_the_write_transaction_opens(self, store, embedder):
+        # Regression guard: a staging PUT that takes a while must not hold
+        # the SQLite write lock. A second connection's BEGIN IMMEDIATE with
+        # timeout=0 only succeeds if no write transaction is open yet.
+        class _AssertingBlobStore:
+            def __init__(self, db_path):
+                self.db_path = db_path
+
+            def put(self, key, content, content_type):
+                probe = sqlite3.connect(self.db_path, timeout=0)
+                try:
+                    probe.execute("BEGIN IMMEDIATE")
+                    probe.execute("ROLLBACK")
+                finally:
+                    probe.close()
+
+            def delete(self, key):
+                pass
+
+        store.blob_store = _AssertingBlobStore(store.db_path)
+        store.add_document("staged.txt", "txt", 100, LABOR_TEXT, embedder)
