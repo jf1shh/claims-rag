@@ -255,6 +255,10 @@ def build_dependencies(settings: Settings) -> AppDependencies:
             storage_dir=str(settings.stored_documents_dir),
             embedding_dimensions=settings.embedding_dimensions,
             blob_store=blob_store,
+            pool_connect_timeout_seconds=settings.postgres_connect_timeout_seconds,
+            pool_statement_timeout_ms=settings.postgres_statement_timeout_ms,
+            pool_max_size=settings.postgres_pool_max_size,
+            pool_timeout_seconds=settings.postgres_pool_timeout_seconds,
         )
     else:
         vector_store = SQLiteVectorStore(
@@ -329,6 +333,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             close_reranker = getattr(dependencies.reranker, "close", None)
             if callable(close_reranker):
                 close_reranker()
+            close_vector_store = getattr(dependencies.vector_store, "close", None)
+            if callable(close_vector_store):
+                close_vector_store()
             dependencies.queue.close()
 
     # Outside development/test, the interactive docs/schema are not served:

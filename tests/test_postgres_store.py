@@ -124,6 +124,7 @@ def store(provisioned_db, tmp_path):
         embedding_dimensions=384,
     )
     yield s
+    s.close()
     # cleanup this tenant's rows (cascade removes chunks)
     conn = _connect(provisioned_db)
     try:
@@ -184,6 +185,7 @@ def test_blob_store_wiring_routes_bytes_to_object_store(provisioned_db, tmp_path
             keys = [o["Key"] for o in client.list_objects_v2(Bucket="test-bucket").get("Contents", [])]
             assert f"{tenant}/claim-1/labor.txt" not in keys
         finally:
+            s.close()
             conn = _connect(provisioned_db)
             try:
                 conn.execute("DELETE FROM documents WHERE tenant_id = %s", (tenant,))
@@ -226,6 +228,7 @@ def test_reupload_same_scope_deletes_replaced_blob(provisioned_db, tmp_path):
             assert old_key not in keys
             assert new_key in keys
         finally:
+            s.close()
             conn = _connect(provisioned_db)
             try:
                 conn.execute("DELETE FROM documents WHERE tenant_id = %s", (tenant,))
@@ -381,6 +384,8 @@ def test_tenant_isolation_between_stores(provisioned_db, tmp_path):
         hits = b.search_similarity(_hash_embed("confidential guideline"), "confidential guideline", top_k=4)
         assert not any(m["filename"] == "secret_a.txt" for m in hits)
     finally:
+        a.close()
+        b.close()
         for t in (tenant_a, tenant_b):
             conn = _connect(provisioned_db)
             try:
@@ -529,6 +534,7 @@ def test_ingestion_worker_indexes_into_postgres(provisioned_db, tmp_path):
         assert hits and hits[0]["filename"] == "labor.txt"
         assert queue.pending_count == 0
     finally:
+        store.close()
         conn = _connect(provisioned_db)
         try:
             conn.execute("DELETE FROM documents WHERE tenant_id = %s", (tenant,))
@@ -591,6 +597,7 @@ def test_ingestion_worker_embed_failure_leaves_no_half_state_in_postgres(provisi
         finally:
             conn.close()
     finally:
+        store.close()
         conn = _connect(provisioned_db)
         try:
             conn.execute("DELETE FROM documents WHERE tenant_id = %s", (tenant,))

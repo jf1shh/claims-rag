@@ -304,3 +304,42 @@ def test_given_no_context_caps_then_defaults_used():
     assert s.context_max_claim_chunks == 8
     assert s.context_max_global_matches == 4
     assert s.context_max_prompt_chars == 60000
+
+
+def test_given_no_postgres_pool_settings_then_defaults_used():
+    s = Settings.from_env({})
+    assert s.postgres_connect_timeout_seconds == 5
+    assert s.postgres_statement_timeout_ms == 30000
+    assert s.postgres_pool_max_size == 10
+    assert s.postgres_pool_timeout_seconds == 10.0
+
+
+def test_given_postgres_pool_settings_when_parsed_then_configured():
+    s = Settings.from_env({
+        "POSTGRES_CONNECT_TIMEOUT_SECONDS": "2",
+        "POSTGRES_STATEMENT_TIMEOUT_MS": "5000",
+        "POSTGRES_POOL_MAX_SIZE": "20",
+        "POSTGRES_POOL_TIMEOUT_SECONDS": "1.5",
+    })
+    assert s.postgres_connect_timeout_seconds == 2
+    assert s.postgres_statement_timeout_ms == 5000
+    assert s.postgres_pool_max_size == 20
+    assert s.postgres_pool_timeout_seconds == 1.5
+
+
+def test_postgres_pool_settings_reject_non_positive_values():
+    for name in (
+        "POSTGRES_CONNECT_TIMEOUT_SECONDS",
+        "POSTGRES_STATEMENT_TIMEOUT_MS",
+        "POSTGRES_POOL_MAX_SIZE",
+    ):
+        with pytest.raises(ValueError, match=name):
+            Settings.from_env({name: "0"})
+    with pytest.raises(ValueError, match="POSTGRES_POOL_TIMEOUT_SECONDS"):
+        Settings.from_env({"POSTGRES_POOL_TIMEOUT_SECONDS": "0"})
+
+
+def test_postgres_statement_timeout_below_minimum_rejected_on_validate():
+    settings = Settings.from_env({"POSTGRES_STATEMENT_TIMEOUT_MS": "500"})
+    with pytest.raises(ValueError, match="POSTGRES_STATEMENT_TIMEOUT_MS"):
+        settings.validate_for_environment()

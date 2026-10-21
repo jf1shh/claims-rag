@@ -61,6 +61,10 @@ class Settings:
     ingestion_mode: str = "sync"  # "sync" | "async" (Phase 3 async ingestion)
     vector_store: str = "sqlite"  # "sqlite" | "postgres" (Phase 1 data plane)
     postgres_dsn: str | None = None
+    postgres_connect_timeout_seconds: int = 5
+    postgres_statement_timeout_ms: int = 30000
+    postgres_pool_max_size: int = 10
+    postgres_pool_timeout_seconds: float = 10.0
     tenant_id: str = "local-development"
     object_storage_provider: str = "filesystem"
     object_storage_bucket: str | None = None
@@ -206,6 +210,16 @@ class Settings:
             ingestion_mode=env.get("INGESTION_MODE", "sync").strip().lower(),
             vector_store=env.get("VECTOR_STORE", "sqlite").strip().lower(),
             postgres_dsn=env.get("POSTGRES_DSN") or None,
+            postgres_connect_timeout_seconds=_int(
+                env.get("POSTGRES_CONNECT_TIMEOUT_SECONDS"), 5, "POSTGRES_CONNECT_TIMEOUT_SECONDS"
+            ),
+            postgres_statement_timeout_ms=_int(
+                env.get("POSTGRES_STATEMENT_TIMEOUT_MS"), 30000, "POSTGRES_STATEMENT_TIMEOUT_MS"
+            ),
+            postgres_pool_max_size=_int(env.get("POSTGRES_POOL_MAX_SIZE"), 10, "POSTGRES_POOL_MAX_SIZE"),
+            postgres_pool_timeout_seconds=_float(
+                env.get("POSTGRES_POOL_TIMEOUT_SECONDS"), 10.0, "POSTGRES_POOL_TIMEOUT_SECONDS"
+            ),
             tenant_id=env.get("TENANT_ID", "local-development").strip(),
             object_storage_provider=env.get("OBJECT_STORAGE_PROVIDER", "filesystem").strip().lower(),
             object_storage_bucket=env.get("OBJECT_STORAGE_BUCKET") or None,
@@ -306,6 +320,8 @@ class Settings:
             raise ValueError("ANSWER_GUARD_MODE must be withhold, flag, or off")
         if self.vector_store not in {"sqlite", "postgres"}:
             raise ValueError("VECTOR_STORE must be sqlite or postgres")
+        if self.postgres_statement_timeout_ms < 1000:
+            raise ValueError("POSTGRES_STATEMENT_TIMEOUT_MS must be at least 1000")
         if not self.tenant_id.strip():
             raise ValueError("TENANT_ID must not be empty")
         if self.object_storage_provider not in {"filesystem", "s3"}:
