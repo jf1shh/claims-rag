@@ -928,3 +928,18 @@ existing California and Texas regulation docs.
 - Surface: `/api/status` requires `documents:read` (every shipped role has it). OpenAPI and docs are off outside development/test. `frame-ancestors 'none'` is the only CSP directive, because the frontend's assets were not audited for a full script/style policy. HSTS is production-only.
 - Presigns: `PRESIGN_EXPIRES_SECONDS = 300` (`backend/blob_store.py`), plus `ResponseContentDisposition` attachment with `filename*=UTF-8''…`. The frontend fetches the download into a Blob, so attachment does not change the viewer.
 - Verified: offline suite 1129 passed, 22 skipped, 1 xfailed; Postgres suite 1150 passed; ruff clean.
+
+### 2026-10-21 — Scale and resilience (M12c)
+
+Audit findings #3, #8, #9, #10, #11 and #12, as four branches off 89ae74e merged in order A (`fix/vector-cache`), B (`fix/pg-pool`), C (`fix/chat-deadline`), D (`fix/queue-visibility`). Each was implemented by a Sonnet worker through nexus-route and reviewed by Claude. Every review found a defect that the worker's tests missed:
+
+- A: the parent-content fetch was deduped per child row only after the `fetchall()`, so the memory peak was unchanged. Claude moved parent text to a separate query keyed by parent id.
+- B: the pooled connection proxy's `close()` called the pool context's `__exit__(None, None, None)`, which **commits** uncommitted work. It now throws into the checkout context so the pool rolls back (`test_close_rolls_back_uncommitted_work_instead_of_committing` failed on the old proxy with `'dirty' != 'dirty'`).
+- C: (1) the router's synthesis `except ChatClientError` caught `LLMDeadlineExceeded` and ran a simulated retrieval pass, so the 504 never fired on a real run; synthesis now re-raises it. (2) `requests` `iter_content(8192)` blocks until 8192 bytes arrive on a Content-Length body, so a byte-trickle never reached the deadline check. The body is now read with urllib3 `read1()` (`test_content_length_trickle_is_cut_off_at_the_deadline`, a real socket, hangs on the old reader).
+- D: (1) the heartbeat extended SQS visibility but not the job claim, so a parse longer than the 120 s lease let a duplicate delivery reclaim the job; each tick now renews the claim. (2) The ZIP64 locator offset was unpacked signed (`<q`); a crafted negative offset raised `OSError` out of `check_container` (500). It is now `<Q` and bounds-checked.
+
+Tried and ruled out: `PRAGMA data_version` for cross-process cache invalidation. It reports changes per connection, and every search opens a new connection, so it never changes. The generation row is bumped by triggers instead.
+
+Decided: one pool per store instance (one tenant per process). `LLMDeadlineExceeded` subclasses `ChatClientError` so check stages keep their degrade semantics; only synthesis re-raises it. The deadline covers non-streaming `/api/chat` only. The job claim is a compare-and-set with a per-worker token; renewal never steals a live claim or reopens a terminal job. The heartbeat can fire once after the ack, which logs a warning and is harmless.
+
+- Verified on the combined tree: offline suite 1182 passed, 28 skipped, 1 xfailed; Postgres suite 1209 passed, 1 skipped, 1 xfailed; ruff clean. Each PR also went through CI (pytest-linux + postgres) before merge.

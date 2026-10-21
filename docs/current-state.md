@@ -150,8 +150,17 @@ As of September 6, the authoritative state is [portfolio-hardening.md](docs/port
 > - S3 presigned downloads last 300 s (was 3600) and force `Content-Disposition: attachment` with the RFC 5987-encoded filename.
 > - Verified after rebasing on M12a: offline suite 1129 passed; Postgres suite 1150 passed; ruff clean.
 >
+> **Scale and resilience 2026-10-21 (M12c, branches `fix/vector-cache`, `fix/pg-pool`, `fix/chat-deadline`, `fix/queue-visibility`)**: audit findings #3, #8, #9, #10, #11 and #12.
+> - SQLite vector cache: a `store_meta.vector_generation` row, bumped by triggers on `documents`, tells every uvicorn worker when its cache is stale. One search rebuilds under a build lock while the others wait, and parent text is loaded once per parent.
+> - Postgres: one `psycopg_pool.ConnectionPool` per store, with connect, statement and checkout timeouts. A starved checkout raises `PoolTimeout` instead of hanging the request thread. Closing a pooled connection rolls back uncommitted work, as plain psycopg does.
+> - `/api/chat` (non-streaming) shares one `CHAT_DEADLINE_SECONDS` budget across planning, synthesis and the answer checks, and returns a generic 504 with an `outcome=timeout` audit event when it runs out. LLM bodies are read under a wall-clock bound with an 8 MiB cap, so a byte-trickling gateway can't hold a chat slot.
+> - Ingestion worker: a heartbeat extends the SQS visibility and renews the job claim while a message is in flight. Jobs are claimed by compare-and-set on `job_id`, so a redelivered message for an indexed or claimed job is acked or backed off instead of indexed twice.
+> - Zip containers (including DOCX and XLSX): the entry count comes from the EOCD or ZIP64 record before `ZipFile` is built. A malformed ZIP64 locator falls back instead of raising.
+> - New settings: `POSTGRES_CONNECT_TIMEOUT_SECONDS`, `POSTGRES_STATEMENT_TIMEOUT_MS`, `POSTGRES_POOL_MAX_SIZE`, `POSTGRES_POOL_TIMEOUT_SECONDS`, `CHAT_DEADLINE_SECONDS`, `LLM_CHECK_TIMEOUT_SECONDS`, `SQS_VISIBILITY_TIMEOUT_SECONDS` ([operations](operations/local-and-production.md#timeouts-and-pools)).
+> - Verified on the combined A+B+C+D tree: offline suite 1182 passed, 28 skipped, 1 xfailed; Postgres suite 1209 passed, 1 skipped, 1 xfailed; ruff clean.
+>
 > **Next:** M12 in this order:
-> 1. **M12c medium findings**: #3 cross-process vector cache and #11 single-flight rebuild, #8 PG pool with timeouts, #9 overall chat deadline, #10 SQS visibility extension, #12 zip EOCD check, #6 claim purge and job retention (needs an owner design call).
+> 1. **#6 claim purge and job retention**: the last medium finding. Needs an owner design call before it is built.
 > 2. **Lows**: #15–#21, #25.
 >
 > Then roadmap P5 (demo/README workflow table) and P6 (NAIC governance mapping).
