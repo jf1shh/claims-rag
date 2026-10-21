@@ -148,3 +148,109 @@ def test_given_missing_job_when_claimed_then_key_error(tmp_path):
     store = SqliteJobStore(str(tmp_path / "jobs.db"))
     with pytest.raises(KeyError):
         store.claim("job_nope", "tenant-a", "token-1", lease_seconds=60)
+
+
+# ---------------------------------------------------------------------------
+# M12c-E -- claim purge + job retention
+# ---------------------------------------------------------------------------
+
+
+def test_given_active_and_terminal_jobs_when_counted_then_only_active_counted(tmp_path):
+    store = SqliteJobStore(str(tmp_path / "jobs.db"))
+    store.create(_job(job_id="job_queued", claim_id="claim-1", status=IngestionStatus.queued))
+    store.create(_job(job_id="job_indexed", claim_id="claim-1", status=IngestionStatus.indexed))
+    store.create(_job(job_id="job_failed", claim_id="claim-1", status=IngestionStatus.failed))
+    store.create(_job(job_id="job_deleted", claim_id="claim-1", status=IngestionStatus.deleted))
+    assert store.active_jobs_for_claim("tenant-a", "claim-1") == 1
+
+
+def test_given_no_jobs_for_claim_when_counted_then_zero(tmp_path):
+    store = SqliteJobStore(str(tmp_path / "jobs.db"))
+    assert store.active_jobs_for_claim("tenant-a", "claim-1") == 0
+
+
+def test_given_claim_jobs_in_other_tenant_when_counted_then_not_counted(tmp_path):
+    store = SqliteJobStore(str(tmp_path / "jobs.db"))
+    store.create(_job(job_id="job_1", tenant_id="tenant-b", claim_id="claim-1", status=IngestionStatus.queued))
+    assert store.active_jobs_for_claim("tenant-a", "claim-1") == 0
+
+
+def test_given_claim_jobs_when_deleted_then_count_and_removed(tmp_path):
+    store = SqliteJobStore(str(tmp_path / "jobs.db"))
+    store.create(_job(job_id="job_1", claim_id="claim-1"))
+    store.create(_job(job_id="job_2", claim_id="claim-1"))
+    store.create(_job(job_id="job_other_claim", claim_id="claim-2"))
+    store.create(_job(job_id="job_other_tenant", tenant_id="tenant-b", claim_id="claim-1"))
+    assert store.delete_for_claim("tenant-a", "claim-1") == 2
+    with pytest.raises(KeyError):
+        store.get("job_1", "tenant-a")
+    # Untouched: a different claim and a different tenant with the same claim_id.
+    store.get("job_other_claim", "tenant-a")
+    store.get("job_other_tenant", "tenant-b")
+
+
+def test_given_no_jobs_for_claim_when_deleted_then_zero(tmp_path):
+    store = SqliteJobStore(str(tmp_path / "jobs.db"))
+    assert store.delete_for_claim("tenant-a", "claim-1") == 0
+
+
+def test_given_claim_jobs_when_counted_for_claim_then_total_regardless_of_status(tmp_path):
+    store = SqliteJobStore(str(tmp_path / "jobs.db"))
+    store.create(_job(job_id="job_1", claim_id="claim-1", status=IngestionStatus.queued))
+    store.create(_job(job_id="job_2", claim_id="claim-1", status=IngestionStatus.indexed))
+    assert store.count_for_claim("tenant-a", "claim-1") == 2
+
+
+def test_given_matching_job_when_document_scrubbed_then_identity_fields_cleared(tmp_path):
+    store = SqliteJobStore(str(tmp_path / "jobs.db"))
+    store.create(_job(job_id="job_1", claim_id="claim-1", filename="report.pdf", idempotency_key="k1"))
+    assert store.scrub_document("tenant-a", "claim-1", "report.pdf") == 1
+    job = store.get("job_1", "tenant-a")
+    assert job.filename == "[deleted]"
+    assert job.checksum is None
+    assert job.idempotency_key is None
+    assert job.status is IngestionStatus.queued  # status/timestamps are kept
+
+
+def test_given_global_scope_job_when_document_scrubbed_then_null_claim_matched(tmp_path):
+    """NULL-safe: claim_id IS ? must match a global (claim_id=None) job row,
+    not silently scrub zero rows."""
+    store = SqliteJobStore(str(tmp_path / "jobs.db"))
+    store.create(_job(job_id="job_1", claim_id=None, filename="policy.pdf"))
+    assert store.scrub_document("tenant-a", None, "policy.pdf") == 1
+    assert store.get("job_1", "tenant-a").filename == "[deleted]"
+
+
+def test_given_different_claim_or_filename_when_document_scrubbed_then_untouched(tmp_path):
+    store = SqliteJobStore(str(tmp_path / "jobs.db"))
+    store.create(_job(job_id="job_1", claim_id="claim-1", filename="report.pdf"))
+    assert store.scrub_document("tenant-a", "claim-2", "report.pdf") == 0
+    assert store.scrub_document("tenant-a", "claim-1", "other.pdf") == 0
+    assert store.get("job_1", "tenant-a").filename == "report.pdf"
+
+
+def test_given_old_terminal_jobs_when_swept_then_removed(tmp_path):
+    store = SqliteJobStore(str(tmp_path / "jobs.db"))
+    old = datetime.now(timezone.utc) - timedelta(days=31)
+    recent = datetime.now(timezone.utc) - timedelta(days=1)
+    store.create(_job(job_id="job_old_indexed", status=IngestionStatus.indexed, created_at=old, updated_at=old))
+    store.create(_job(job_id="job_recent_indexed", status=IngestionStatus.indexed, created_at=recent, updated_at=recent))
+    store.create(_job(job_id="job_old_active", status=IngestionStatus.queued, created_at=old, updated_at=old))
+
+    cutoff = datetime.now(timezone.utc) - timedelta(days=30)
+    assert store.sweep_terminal("tenant-a", cutoff) == 1
+    with pytest.raises(KeyError):
+        store.get("job_old_indexed", "tenant-a")
+    store.get("job_recent_indexed", "tenant-a")  # kept: not old enough
+    store.get("job_old_active", "tenant-a")  # kept: not terminal
+
+
+def test_given_old_terminal_job_in_other_tenant_when_swept_then_not_removed(tmp_path):
+    store = SqliteJobStore(str(tmp_path / "jobs.db"))
+    old = datetime.now(timezone.utc) - timedelta(days=31)
+    store.create(
+        _job(job_id="job_1", tenant_id="tenant-b", status=IngestionStatus.indexed, created_at=old, updated_at=old)
+    )
+    cutoff = datetime.now(timezone.utc) - timedelta(days=30)
+    assert store.sweep_terminal("tenant-a", cutoff) == 0
+    store.get("job_1", "tenant-b")

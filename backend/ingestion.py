@@ -27,7 +27,9 @@ class IngestionJob(BaseModel):
     document_id: str
     claim_id: str | None = None
     filename: str
-    checksum: str
+    # str | None (not just str): M12c-E's job-store scrub sets this to NULL
+    # on a just-deleted document, and a scrubbed row must still deserialize.
+    checksum: str | None
     idempotency_key: str | None = None
     status: IngestionStatus
     progress: int = 0
@@ -258,6 +260,14 @@ class IngestionService:
                     raise PermissionError("job does not belong to tenant")
                 return job
         raise KeyError(job_id)
+
+    def scrub_document(self, *, tenant_id: str, filename: str, claim_id: str | None = None) -> int:
+        """Scrubs the job-store rows for a just-deleted document (M12c-E),
+        so GET /api/jobs/{id} can no longer confirm the file was uploaded.
+        No-op (returns 0) when no durable job store is attached."""
+        if self._job_store is None:
+            return 0
+        return self._job_store.scrub_document(tenant_id, claim_id, filename)
 
     def update(self, job_id: str, tenant_id: str, **fields: Any) -> IngestionJob:
         """Advances a job (status/progress/document_id/retry_count/error fields)."""

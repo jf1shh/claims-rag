@@ -943,3 +943,11 @@ Tried and ruled out: `PRAGMA data_version` for cross-process cache invalidation.
 Decided: one pool per store instance (one tenant per process). `LLMDeadlineExceeded` subclasses `ChatClientError` so check stages keep their degrade semantics; only synthesis re-raises it. The deadline covers non-streaming `/api/chat` only. The job claim is a compare-and-set with a per-worker token; renewal never steals a live claim or reopens a terminal job. The heartbeat can fire once after the ack, which logs a warning and is harmless.
 
 - Verified on the combined tree: offline suite 1182 passed, 28 skipped, 1 xfailed; Postgres suite 1209 passed, 1 skipped, 1 xfailed; ruff clean. Each PR also went through CI (pytest-linux + postgres) before merge.
+
+### 2026-10-21 — Claim purge and job retention (M12c-E)
+
+Audit finding #6. The owner chose the design: both an admin API and a CLI; a purge deletes the claim's job rows, document deletes scrub theirs, and terminal rows expire after `JOB_RETENTION_DAYS`; the audit log is untouched and a purge writes one event with counts. Built by a Sonnet worker through nexus-route (`code`, 652 s), reviewed and corrected by Claude.
+
+- Defect found in review: the sync `POST /api/delete` scrub was unguarded, so a job-store error after the document was already deleted returned 500 (`test_given_scrub_failure_when_sync_delete_then_still_200` failed on the worker's code with `500 == 200`). It now logs the error type and returns 200, like the worker path. The worker also omitted the brief's API-level sync scrub test; added.
+- Decided: terminal = indexed, failed, deleted; anything else blocks a purge with 409. `IngestionJob.checksum` is now optional so scrubbed rows still load. The purge checks for active jobs and then deletes without a lock; an upload that lands in between is not covered (admin operation, documented 409 contract).
+- Verified on the M12c A+B+C+D base: offline suite 1228 passed, 29 skipped, 1 xfailed; Postgres suite 1256 passed, 1 skipped, 1 xfailed; ruff clean.

@@ -294,6 +294,25 @@ def test_given_delete_message_when_processed_then_document_removed_and_job_delet
     assert worker.stats()["processed"] == 1
 
 
+def test_given_delete_message_when_processed_then_job_rows_are_scrubbed(harness, tmp_path):
+    """M12c-E: the async delete path scrubs filename/checksum/idempotency_key
+    on the just-deleted job row too, the worker counterpart to api.py's sync
+    scrub after /api/delete."""
+    queue, blob, store = harness
+    job_store = SqliteJobStore(str(tmp_path / "jobs.db"))
+    worker = _worker(harness, job_store=job_store)
+    store.add_document("labor.txt", "txt", 100, LABOR_TEXT, _FakeEmbedder())
+
+    queue.enqueue(_delete_message("labor.txt"))
+    assert worker.process_message(queue.dequeue()) == DELETED
+
+    job = job_store.get("job_del1", "tenant-a")
+    assert job.status is IngestionStatus.deleted
+    assert job.filename == "[deleted]"
+    assert job.checksum is None
+    assert job.idempotency_key is None
+
+
 def test_given_delete_message_for_missing_document_then_dead_lettered(harness, tmp_path):
     queue, blob, store = harness
     job_store = SqliteJobStore(str(tmp_path / "jobs.db"))
@@ -675,6 +694,48 @@ def test_given_delete_message_delivered_twice_then_second_acked_duplicate(harnes
     queue.enqueue(_delete_message("labor.txt", job_id="job_del_dup"))
     assert worker.process_message(queue.dequeue()) == DUPLICATE
     assert job_store.get("job_del_dup", "tenant-a").status is IngestionStatus.deleted
+
+
+# ---------------------------------------------------------------------------
+# M12c-E -- job retention sweep from the worker loop
+# ---------------------------------------------------------------------------
+
+
+def test_given_old_terminal_job_when_run_once_then_swept(harness, tmp_path):
+    queue, blob, store = harness
+    job_store = SqliteJobStore(str(tmp_path / "jobs.db"))
+    worker = _worker(harness, job_store=job_store, tenant_id="tenant-a", job_retention_days=30)
+    from backend.ingestion import IngestionJob
+
+    old = datetime.now(timezone.utc) - timedelta(days=31)
+    job_store.create(
+        IngestionJob(
+            job_id="job_old", tenant_id="tenant-a", document_id="doc_1", claim_id=None,
+            filename="old.txt", checksum="sha256:x", status=IngestionStatus.indexed,
+            created_at=old, updated_at=old,
+        )
+    )
+    worker.run_once()
+    with pytest.raises(KeyError):
+        job_store.get("job_old", "tenant-a")
+
+
+def test_given_sweep_already_run_then_not_run_again_within_the_hour(harness, tmp_path):
+    queue, blob, store = harness
+    job_store = SqliteJobStore(str(tmp_path / "jobs.db"))
+    worker = _worker(harness, job_store=job_store, tenant_id="tenant-a", job_retention_days=30)
+    worker.run_once()
+    sweep_count = [0]
+    job_store.sweep_terminal = lambda *a, **k: sweep_count.__setitem__(0, sweep_count[0] + 1)
+    worker.run_once()
+    assert sweep_count[0] == 0
+
+
+def test_given_no_tenant_or_retention_configured_then_sweep_is_a_noop(harness, tmp_path):
+    queue, blob, store = harness
+    job_store = SqliteJobStore(str(tmp_path / "jobs.db"))
+    worker = _worker(harness, job_store=job_store)
+    worker.run_once()  # must not raise with no tenant_id/job_retention_days
 
 
 def test_heartbeat_renews_the_job_claim_each_tick():

@@ -437,6 +437,43 @@ def register_routes(app, runtime):
         return runtime._claim_access_policy.filter_claims(principal, CLAIMS_DATA)
 
 
+    @app.delete("/api/claims/{claim_id}", dependencies=[Depends(get_current_tenant)])
+    def purge_claim_route(request: Request, claim_id: str, principal=Depends(get_current_tenant)):  # noqa: B008
+        """Purges a whole claim: deletes its indexed documents and ingestion
+        job rows (M12c-E, enterprise audit finding #6). Admin-only
+        (claims:purge); refuses with 409 while any ingestion job for the
+        claim is still in flight, so a purge can never race an upload/delete
+        that's mid-flight."""
+        from backend.claim_purge import ClaimPurgeConflict, purge_claim
+
+        try:
+            require_permission_403(principal, "claims:purge")
+        except HTTPException:
+            _audit(request, principal, "claim_purge", outcome="denied", claim_id=claim_id)
+            raise
+        _rate_limit_429(principal)
+        try:
+            result = purge_claim(
+                vector_store=runtime.vector_store,
+                job_store=runtime.ingestion_job_store,
+                tenant_id=principal.tenant_id,
+                claim_id=claim_id,
+            )
+        except ValueError:
+            _audit(request, principal, "claim_purge", outcome="invalid", claim_id=claim_id)
+            raise HTTPException(status_code=400, detail="Invalid claim id.") from None
+        except ClaimPurgeConflict:
+            _audit(request, principal, "claim_purge", outcome="conflict", claim_id=claim_id)
+            raise HTTPException(status_code=409, detail="Claim has ingestion jobs in progress.") from None
+        _audit(request, principal, "claim_purge", outcome="purged", claim_id=claim_id,
+               document_count=result.documents_deleted, job_count=result.jobs_deleted)
+        return {
+            "claim_id": claim_id,
+            "documents_deleted": result.documents_deleted,
+            "jobs_deleted": result.jobs_deleted,
+        }
+
+
     @app.get("/api/jobs/{job_id}", dependencies=[Depends(get_current_tenant)])
     def get_ingestion_job(job_id: str, principal=Depends(get_current_tenant)):  # noqa: B008
         """Returns the durable ingestion job record for an upload (Phase 3.2).
@@ -737,6 +774,15 @@ def register_routes(app, runtime):
             claim_id=req.claim_id,
             status=IngestionStatus.deleted,
         )
+        # The document is already gone; a scrub failure must not turn the
+        # committed delete into a 500 (the worker path swallows it the same way).
+        try:
+            runtime.ingestion_service.scrub_document(
+                tenant_id=runtime.settings.tenant_id, filename=filename, claim_id=req.claim_id
+            )
+        except Exception as exc:  # noqa: BLE001 -- the delete is already committed
+            import logging
+            logging.getLogger(__name__).warning("job scrub failed after delete: %s", type(exc).__name__)
         _audit(request, principal, "delete", outcome="deleted", filename=filename, claim_id=req.claim_id, job_id=job.job_id)
         return {
             "message": f"Successfully deleted '{filename}'.",

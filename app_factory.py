@@ -325,6 +325,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(app):
+        from datetime import datetime, timedelta, timezone
+        try:
+            cutoff = datetime.now(timezone.utc) - timedelta(days=resolved.job_retention_days)
+            dependencies.job_store.sweep_terminal(resolved.tenant_id, cutoff)
+        except Exception as exc:
+            logging.getLogger(__name__).warning("startup job retention sweep failed: %s", type(exc).__name__)
         if runtime._ingestion_worker is not None:
             runtime._ingestion_worker.start()
         try:

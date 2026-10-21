@@ -19,7 +19,9 @@ _ALL_CLAIMS_ROLES = frozenset({"admin", "supervisor", "siu"})
 #   supervisor  -- adjuster + all claims, global guideline upload, deletion.
 #   siu         -- read-only investigation: sees all claims and chats, but
 #                  cannot modify anything (no upload/delete/attach).
-#   admin       -- everything, including the eval harness endpoint.
+#   admin       -- everything, including the eval harness endpoint and
+#                  claims:purge (M12c-E: deleting a whole claim is an
+#                  admin-only operation, never granted to supervisor/siu).
 PERMISSIONS: Mapping[str, frozenset[str]] = {
     "adjuster": frozenset(
         {"documents:read", "claims:read", "claims:write"}
@@ -42,6 +44,7 @@ PERMISSIONS: Mapping[str, frozenset[str]] = {
             "claims:read",
             "claims:write",
             "eval:search",
+            "claims:purge",
         }
     ),
 }

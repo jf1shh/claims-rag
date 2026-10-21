@@ -32,6 +32,12 @@ def test_given_claim_path_when_filtered_then_claim_id_is_redacted():
     assert record.args[2] == "/api/documents/claim/<redacted>"
 
 
+def test_given_claim_purge_path_when_filtered_then_claim_id_is_redacted():
+    record = _access_record("/api/claims/%232026-99382")
+    RedactDocumentPathsFilter().filter(record)
+    assert record.args[2] == "/api/claims/<redacted>"
+
+
 def test_given_unrelated_path_when_filtered_then_path_is_unchanged():
     record = _access_record("/api/claims?foo=bar")
     RedactDocumentPathsFilter().filter(record)

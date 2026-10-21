@@ -80,6 +80,11 @@ jobs remove their private staging bytes; failed/interrupted staging and external
 need an operator retention policy. Clear staging only when no queued/retry jobs require it. Deletion
 from this application does not delete backups, independent copies, S3 version history, or audit logs.
 
+Deleting a document also scrubs its ingestion job rows (filename, checksum and idempotency key). An
+admin can purge a whole claim (`DELETE /api/claims/{claim_id}` or `scripts/purge_claim.py`), which
+deletes its documents and job rows and records one audit event with counts. Terminal job rows
+expire after `JOB_RETENTION_DAYS` (default 30). Audit events are kept.
+
 ## Reporting
 
 Use a private repository security advisory or contact the maintainer privately. Include impact,

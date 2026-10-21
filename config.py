@@ -80,6 +80,11 @@ class Settings:
     worker_max_retries: int = 5
     worker_backoff_base_seconds: float = 2.0
     worker_poll_interval_seconds: float = 1.0
+    # M12c-E: terminal ingestion job rows (indexed/failed/deleted) older than
+    # this are expired by the retention sweep (startup, worker loop, and
+    # scripts/purge_claim.py --sweep-jobs). _int() already enforces > 0, so
+    # 0/negative is rejected.
+    job_retention_days: int = 30
     embedding_model: str = "all-MiniLM-L6-v2"
     embedding_dimensions: int = 384
     reranker_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
@@ -243,6 +248,7 @@ class Settings:
             worker_max_retries=_int(env.get("WORKER_MAX_RETRIES"), 5, "WORKER_MAX_RETRIES"),
             worker_backoff_base_seconds=_float(env.get("WORKER_BACKOFF_BASE_SECONDS"), 2.0, "WORKER_BACKOFF_BASE_SECONDS"),
             worker_poll_interval_seconds=_float(env.get("WORKER_POLL_INTERVAL_SECONDS"), 1.0, "WORKER_POLL_INTERVAL_SECONDS"),
+            job_retention_days=_int(env.get("JOB_RETENTION_DAYS"), 30, "JOB_RETENTION_DAYS"),
             embedding_model=env.get("EMBEDDING_MODEL", "all-MiniLM-L6-v2"),
             embedding_dimensions=_int(env.get("EMBEDDING_DIMENSIONS"), 384, "EMBEDDING_DIMENSIONS"),
             reranker_model=env.get("RERANKER_MODEL", "cross-encoder/ms-marco-MiniLM-L-6-v2"),
