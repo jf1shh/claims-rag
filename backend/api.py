@@ -53,10 +53,15 @@ class _TimeBoxedStream(StreamingResponse):
             with anyio.move_on_after(self._max_seconds):
                 await super().__call__(scope, receive, send)
         finally:
-            try:
-                self._raw_generator.close()
-            except ValueError:
-                pass
+            # The generator's finally writes the audit event (file lock + fsync);
+            # run close() in a worker thread so that blocking I/O never runs on
+            # the event loop. Shielded so an outer cancellation (e.g. the client
+            # disconnecting) can't skip the close and leak the concurrency slot.
+            with anyio.CancelScope(shield=True):
+                try:
+                    await anyio.to_thread.run_sync(self._raw_generator.close)
+                except ValueError:
+                    pass
 
 
 class ChatRequest(BaseModel):
@@ -901,7 +906,14 @@ def register_routes(app, runtime):
                 _finish(final_event)
 
         stream = gen()
-        weakref.finalize(stream, _finish, None)
+        # weakref.finalize's callback can run synchronously on whatever thread
+        # drops the last reference to `stream` -- including the event loop
+        # thread's own refcounting -- so it must not run _finish's blocking
+        # audit write (file lock + fsync) inline. Hand it to a daemon thread;
+        # the explicit close path above stays responsible for the common case.
+        weakref.finalize(
+            stream, lambda: threading.Thread(target=_finish, args=(None,), daemon=True).start()
+        )
         # MAX_STREAM_SECONDS bounds the whole SSE response, not a single call the
         # way request_timeout_seconds does -- default 300s (2.5x the default
         # request_timeout_seconds) leaves room for slow local-LLM token generation

@@ -424,6 +424,51 @@ def test_remote_reranker_rejects_malformed_results():
         )
 
 
+def test_remote_reranker_reuses_one_session_across_calls(monkeypatch):
+    import requests
+
+    created = []
+    orig_init = requests.Session.__init__
+
+    def tracking_init(self, *a, **kw):
+        created.append(self)
+        orig_init(self, *a, **kw)
+
+    monkeypatch.setattr(requests.Session, "__init__", tracking_init)
+
+    posts = []
+
+    def fake_session_post(self, url, json=None, headers=None, timeout=None, **kw):
+        posts.append(self)
+        return FakeResponse({"results": [{"index": 0, "score": 0.5}]})
+
+    monkeypatch.setattr(requests.Session, "post", fake_session_post)
+
+    def fail_module_post(*a, **kw):
+        raise AssertionError("module-level requests.post must not be called")
+
+    monkeypatch.setattr(requests, "post", fail_module_post)
+
+    reranker = RemoteReranker("http://reranker")
+    reranker.rerank("q1", [{"content": "a"}], 1)
+    reranker.rerank("q2", [{"content": "a"}], 1)
+
+    assert len(created) == 1
+    assert posts == [created[0], created[0]]
+
+
+def test_remote_reranker_close_closes_its_session():
+    closed = []
+
+    class FakeSession:
+        def close(self):
+            closed.append(True)
+
+    reranker = RemoteReranker("http://reranker", http=FakeSession())
+    reranker.close()
+    assert closed == [True]
+
+
 def test_fallback_reranker_falls_back_to_local_on_failure():
     class Boom:
         def rerank(self, query, passages, top_k=4):
