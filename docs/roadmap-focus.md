@@ -90,6 +90,8 @@ wording:
 
 ### P6. Governance evidence (lane B carriers)
 
+> **Done 2026-10-21** (branch `feat/p6-governance-evidence`): [`docs/governance/naic-ai-bulletin-map.md`](governance/naic-ai-bulletin-map.md) maps every Section 3 item (1.0–4.0) and the Section 4 examination list of the adopted (2023-12-04) bulletin to Built / Partial / Insurer / Gap, with a risk profile, a model inventory and seven ranked gaps (drift monitoring first). 36 evidence links pin a string in the cited file, and `tests/test_governance_map.py` fails if a control or quoted default changes without the map.
+
 Map the project to the NAIC AI Model Bulletin themes (governance, risk management, testing, data
 and third-party controls) using what already exists: audit log, RBAC, answer guard, adversarial
 suite, advisory-only stance. This matches Phase 6.3 "compliance evidence" in `current-state.md`.
