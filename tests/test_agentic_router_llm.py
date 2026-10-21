@@ -1,7 +1,8 @@
 import time
+import pytest
 
 from backend.agentic_router import AgenticRAGRouter
-from backend.llm_client import ChatClient, ChatClientError
+from backend.llm_client import ChatClient, ChatClientError, LLMDeadlineExceeded
 
 
 class RecordingClient(ChatClient):
@@ -289,3 +290,23 @@ def test_stream_zero_context_refuses_without_calling_complete_stream():
     assert final["type"] == "final"
     assert final["status"] == "refused"
     assert final["sources"] == []
+
+
+class DeadlineAtSynthesisClient(RecordingClient):
+    def complete(self, messages, *, model, temperature, max_tokens, stage="synthesis"):
+        if stage == "planning":
+            return super().complete(messages, model=model, temperature=temperature,
+                                    max_tokens=max_tokens, stage=stage)
+        raise LLMDeadlineExceeded("LLM call deadline already exceeded")
+
+
+def test_deadline_at_synthesis_propagates_instead_of_simulating():
+    # A spent chat budget must not trigger a second (simulated) retrieval
+    # pass; /api/chat turns this into a 504.
+    router = AgenticRAGRouter()
+    with pytest.raises(LLMDeadlineExceeded):
+        router.run_query(
+            query_text="what is the labor cap?", claim_id=None, engine="lm-studio",
+            embedding_engine=FakeEmbedder(), vector_store=FakeVectorStore(),
+            reranking_engine=None, llm_client=DeadlineAtSynthesisClient(),
+        )

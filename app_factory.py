@@ -132,6 +132,7 @@ def _build_queue(settings: Settings):
         region=settings.sqs_region,
         endpoint_url=settings.sqs_endpoint_url,
         dlq_url=settings.sqs_dlq_url,
+        visibility_timeout=settings.sqs_visibility_timeout_seconds,
     )
 
 
@@ -209,6 +210,7 @@ def _build_llm_client(settings: Settings):
         api_key=settings.llm_api_key,
         timeout=float(settings.llm_synthesis_timeout_seconds),
         plan_timeout=float(settings.llm_plan_timeout_seconds),
+        check_timeout=float(settings.llm_check_timeout_seconds),
         models_ttl_seconds=float(settings.model_cache_ttl_seconds),
     )
 
@@ -255,6 +257,10 @@ def build_dependencies(settings: Settings) -> AppDependencies:
             storage_dir=str(settings.stored_documents_dir),
             embedding_dimensions=settings.embedding_dimensions,
             blob_store=blob_store,
+            pool_connect_timeout_seconds=settings.postgres_connect_timeout_seconds,
+            pool_statement_timeout_ms=settings.postgres_statement_timeout_ms,
+            pool_max_size=settings.postgres_pool_max_size,
+            pool_timeout_seconds=settings.postgres_pool_timeout_seconds,
         )
     else:
         vector_store = SQLiteVectorStore(
@@ -329,6 +335,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             close_reranker = getattr(dependencies.reranker, "close", None)
             if callable(close_reranker):
                 close_reranker()
+            close_vector_store = getattr(dependencies.vector_store, "close", None)
+            if callable(close_vector_store):
+                close_vector_store()
             dependencies.queue.close()
 
     # Outside development/test, the interactive docs/schema are not served:

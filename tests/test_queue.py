@@ -179,3 +179,38 @@ def test_given_message_when_dead_lettered_without_dlq_then_dropped(sqs):
 def test_given_empty_queue_url_then_rejected():
     with pytest.raises(ValueError):
         SQSQueue(queue_url="", region="us-east-1")
+
+
+def test_given_default_visibility_timeout_then_sixty_seconds():
+    queue = SQSQueue(queue_url="https://sqs.us-east-1.amazonaws.com/123/q", region="us-east-1")
+    assert queue.visibility_timeout == 60
+
+
+def test_given_in_process_queue_then_extend_visibility_is_a_no_op():
+    queue = make_queue()
+    queue.enqueue({"job_id": "job_1"})
+    message = queue.dequeue()
+    # No visibility-timeout concept on the loopback; must not raise.
+    queue.extend_visibility(message, 60)
+
+
+def test_given_message_when_visibility_extended_then_sqs_called_with_receipt_handle_and_seconds(sqs):
+    _, queue, source_url, _ = sqs
+    queue.enqueue({"job_id": "job_1"})
+    message = queue.dequeue()
+
+    calls = []
+    original = queue._client.change_message_visibility
+
+    def _spy(**kwargs):
+        calls.append(kwargs)
+        return original(**kwargs)
+
+    queue._client.change_message_visibility = _spy
+    queue.extend_visibility(message, 90)
+
+    assert calls == [{
+        "QueueUrl": source_url,
+        "ReceiptHandle": message.receipt_handle,
+        "VisibilityTimeout": 90,
+    }]

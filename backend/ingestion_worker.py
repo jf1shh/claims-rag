@@ -26,6 +26,12 @@ DUPLICATE = "duplicate"  # idempotent replay of an S3 event; acked without work
 
 _MAX_BACKOFF_SECONDS = 60.0
 
+# Claim lease when the queue has no visibility timeout to double (e.g. the
+# in-process loopback never redelivers, so this only matters if a job_store
+# is attached without SQS -- unlikely, but a job claimed under this lease
+# must still eventually be reclaimable by a crashed worker's replacement).
+_DEFAULT_CLAIM_LEASE_SECONDS = 120.0
+
 
 STATS_FIELDS = ("processed", "indexed", "deleted", "rejected", "dead_lettered", "duplicates", "malformed")
 
@@ -36,6 +42,47 @@ def _s3_dedupe_key(blob_key: str, etag: str) -> str:
     processing, so a re-delivered put-event for an already-handled object
     version is acked without re-indexing."""
     return f"s3:{blob_key}:{etag}"
+
+
+class _VisibilityHeartbeat:
+    """Keeps a message's visibility timeout extended while a worker thread is
+    still processing it, so SQS doesn't redeliver it to a second consumer
+    mid-parse (parsing alone can run long past a single visibility window).
+    Also renews the job claim each tick: the claim lease (2x the visibility
+    timeout) must not lapse mid-processing, or a second delivery of the same
+    job (an S3 event duplicate) could reclaim and index it concurrently.
+    Runs on a daemon thread; stop() is always called from a finally block."""
+
+    def __init__(self, queue: Queue, message: QueueMessage, visibility_timeout: int, interval_seconds: float,
+                 renew_claim: Callable[[], object] | None = None):
+        self._queue = queue
+        self._renew_claim = renew_claim
+        self._message = message
+        self._visibility_timeout = visibility_timeout
+        self._interval_seconds = interval_seconds
+        self._job_id = message.payload.get("job_id")
+        self._stop_event = threading.Event()
+        self._thread = threading.Thread(target=self._run, daemon=True, name="visibility-heartbeat")
+
+    def start(self) -> None:
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop_event.set()
+        self._thread.join()
+
+    def _run(self) -> None:
+        while not self._stop_event.wait(self._interval_seconds):
+            try:
+                self._queue.extend_visibility(self._message, self._visibility_timeout)
+            except Exception:
+                logger.warning("visibility extension failed for job %s", self._job_id, exc_info=True)
+            if self._renew_claim is None:
+                continue
+            try:
+                self._renew_claim()
+            except Exception:
+                logger.warning("claim renewal failed for job %s", self._job_id, exc_info=True)
 
 
 class IngestionWorker:
@@ -85,6 +132,7 @@ class IngestionWorker:
         max_upload_bytes: int = 25 * 1024 * 1024,
         max_document_chars: int = 2_000_000,
         parse_timeout_seconds: int = 120,
+        heartbeat_interval_seconds: float | None = None,
     ):
         if blob_store is None:
             raise ValueError("IngestionWorker requires a blob store (filesystem or S3 adapter)")
@@ -101,6 +149,12 @@ class IngestionWorker:
         self.max_retries = max_retries
         self.backoff_base_seconds = backoff_base_seconds
         self.poll_interval_seconds = poll_interval_seconds
+        self._heartbeat_interval_seconds = heartbeat_interval_seconds
+        # Stable for this instance's lifetime -- used as the job-claim token
+        # so this worker's own sequential retries of a message always renew
+        # its own claim, while a different worker's claim is a different
+        # token and must wait out the lease.
+        self._worker_id = uuid.uuid4().hex
         self._stop_event = threading.Event()
         self._thread: threading.Thread | None = None
         self._lock = threading.Lock()
@@ -112,7 +166,12 @@ class IngestionWorker:
 
     def process_message(self, message: QueueMessage) -> str:
         """Processes one message; returns its outcome string and tallies it."""
-        outcome = self._handle(message)
+        heartbeat = self._start_heartbeat(message)
+        try:
+            outcome = self._handle(message)
+        finally:
+            if heartbeat is not None:
+                heartbeat.stop()
         with self._lock:
             self._stats["processed"] += 1
             field = {
@@ -130,6 +189,50 @@ class IngestionWorker:
         """Snapshot of the worker's job-metrics counters (thread-safe)."""
         with self._lock:
             return dict(self._stats)
+
+    def _start_heartbeat(self, message: QueueMessage) -> _VisibilityHeartbeat | None:
+        """No heartbeat when the queue has no visibility timeout (in-process
+        loopback, or a third-party queue that doesn't expose one)."""
+        visibility_timeout = getattr(self.queue, "visibility_timeout", None)
+        if not visibility_timeout:
+            return None
+        interval = self._heartbeat_interval_seconds
+        if interval is None:
+            interval = visibility_timeout / 2
+        heartbeat = _VisibilityHeartbeat(
+            self.queue, message, visibility_timeout, interval, renew_claim=self._claim_renewer(message)
+        )
+        heartbeat.start()
+        return heartbeat
+
+    def _claim_renewer(self, message: QueueMessage) -> Callable[[], object] | None:
+        """Re-claims with this worker's own token. claim() is a CAS: it only
+        refreshes a claim this worker holds (or a lapsed one) and never takes a
+        live claim from another worker or reopens a finished job."""
+        job_id = message.payload.get("job_id")
+        tenant_id = message.payload.get("tenant_id")
+        if self.job_store is None or not job_id or not tenant_id:
+            return None
+        return lambda: self.job_store.claim(job_id, tenant_id, self._worker_id, self._claim_lease_seconds())
+
+    def _claim_lease_seconds(self) -> float:
+        visibility_timeout = getattr(self.queue, "visibility_timeout", None)
+        if visibility_timeout:
+            return float(visibility_timeout) * 2
+        return _DEFAULT_CLAIM_LEASE_SECONDS
+
+    def _claim_job(self, job: IngestionJob | None) -> str | None:
+        """Atomically claims ``job`` before doing its work; returns the claim
+        outcome ("claimed" / "duplicate" / "held"), or None when there is no
+        job to claim against (no job_store attached, or a legacy payload with
+        no job_id -- ``_ensure_job`` already returns None for those)."""
+        if job is None or self.job_store is None:
+            return None
+        try:
+            return self.job_store.claim(job.job_id, job.tenant_id, self._worker_id, self._claim_lease_seconds())
+        except Exception:
+            logger.warning("job claim failed for %s; continuing without a claim", job.job_id, exc_info=True)
+            return None
 
     def _handle(self, message: QueueMessage) -> str:
         payload = message.payload
@@ -150,14 +253,29 @@ class IngestionWorker:
             return DUPLICATE
 
         job = self._ensure_job(message)
+        claim_outcome = self._claim_job(job)
+        if claim_outcome == "duplicate":
+            logger.info("job %s already succeeded; acking as duplicate", job.job_id)
+            self.queue.ack(message)
+            return DUPLICATE
+        if claim_outcome == "held":
+            logger.info("job %s claim held by another worker; rejecting", job.job_id)
+            self.queue.reject(message, backoff_seconds=self._claim_lease_seconds())
+            return REJECTED
+
         try:
-            content = self._fetch_or_dead_letter(message, blob_key)
+            content = self._fetch_blob(message, blob_key)
         except Exception as exc:
             outcome = self._retry_or_dead_letter(message, filename, exc, job)
             self._cleanup_staging(blob_key, outcome)
             return outcome
         if content is None:
+            if self._already_succeeded(job):
+                logger.info("blob missing for already-succeeded job %s; acking as duplicate", job.job_id)
+                self.queue.ack(message)
+                return DUPLICATE
             self._mark_failed(job, "BLOB_NOT_FOUND", "source document not found in object storage")
+            self.queue.dead_letter(message)
             self._cleanup_staging(blob_key, DEAD_LETTERED)
             return DEAD_LETTERED
 
@@ -173,6 +291,19 @@ class IngestionWorker:
             self.queue.ack(message)
         self._cleanup_staging(blob_key, outcome)
         return outcome
+
+    def _already_succeeded(self, job: IngestionJob | None) -> bool:
+        """Re-reads the job record to check for a terminal-success status --
+        used when the staging blob is already gone, which is exactly what a
+        third delivery of an already-indexed job looks like (the original
+        indexing deleted it)."""
+        if job is None or self.job_store is None:
+            return False
+        try:
+            current = self.job_store.get(job.job_id, job.tenant_id)
+        except Exception:
+            return False
+        return current.status in (IngestionStatus.indexed, IngestionStatus.deleted)
 
     def _cleanup_staging(self, blob_key: str, outcome: str) -> None:
         """Deletes the async-upload staging blob (`staging/<uuid>/<filename>`,
@@ -201,6 +332,15 @@ class IngestionWorker:
             self.queue.dead_letter(message)
             return MALFORMED
         job = self._ensure_job(message)
+        claim_outcome = self._claim_job(job)
+        if claim_outcome == "duplicate":
+            logger.info("delete job %s already succeeded; acking as duplicate", job.job_id)
+            self.queue.ack(message)
+            return DUPLICATE
+        if claim_outcome == "held":
+            logger.info("delete job %s claim held by another worker; rejecting", job.job_id)
+            self.queue.reject(message, backoff_seconds=self._claim_lease_seconds())
+            return REJECTED
         try:
             deleted = self.vector_store.delete_document(filename, claim_id=claim_id)
         except ValueError as exc:
@@ -271,13 +411,16 @@ class IngestionWorker:
             logger.warning("could not create job record for %s; continuing without job tracking", job_id, exc_info=True)
             return None
 
-    def _fetch_or_dead_letter(self, message: QueueMessage, blob_key: str) -> bytes | None:
-        """Fetches source bytes; a missing object is permanent (its event is stale)."""
+    def _fetch_blob(self, message: QueueMessage, blob_key: str) -> bytes | None:
+        """Fetches source bytes; returns None when the object is missing.
+        The caller decides whether that's a permanent failure or an
+        already-succeeded job whose staging blob is gone (``content is
+        None`` in ``_handle``) -- dead-lettering here, before that check,
+        would send an already-indexed job's redelivery to the DLQ."""
         try:
             return self.blob_store.get(blob_key)
         except FileNotFoundError as exc:
             logger.warning("blob fetch failed for job %s (%s)", message.payload.get("job_id"), type(exc).__name__)
-            self.queue.dead_letter(message)
             return None
 
     def _index(
@@ -460,6 +603,7 @@ def build_ingestion_worker(
             region=settings.sqs_region,
             endpoint_url=settings.sqs_endpoint_url,
             dlq_url=settings.sqs_dlq_url,
+            visibility_timeout=settings.sqs_visibility_timeout_seconds,
         )
     else:
         queue = InProcessQueue()

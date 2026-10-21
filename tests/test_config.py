@@ -154,6 +154,28 @@ def test_given_sqs_queue_provider_without_url_then_validation_fails():
         settings.validate_for_environment()
 
 
+def test_given_sqs_visibility_timeout_then_parsed():
+    settings = Settings.from_env({"SQS_VISIBILITY_TIMEOUT_SECONDS": "90"})
+    assert settings.sqs_visibility_timeout_seconds == 90
+
+
+def test_given_default_sqs_visibility_timeout_then_sixty_seconds():
+    settings = Settings.from_env({})
+    assert settings.sqs_visibility_timeout_seconds == 60
+
+
+def test_given_sqs_visibility_timeout_out_of_range_then_validation_fails():
+    settings = Settings.from_env({"SQS_VISIBILITY_TIMEOUT_SECONDS": "5"})
+    with pytest.raises(ValueError, match="SQS_VISIBILITY_TIMEOUT_SECONDS"):
+        settings.validate_for_environment()
+
+
+def test_given_sqs_visibility_timeout_above_sqs_max_then_validation_fails():
+    settings = Settings.from_env({"SQS_VISIBILITY_TIMEOUT_SECONDS": "50000"})
+    with pytest.raises(ValueError, match="SQS_VISIBILITY_TIMEOUT_SECONDS"):
+        settings.validate_for_environment()
+
+
 def test_given_auth_providers_when_parsed_then_comma_separated_and_lowercased():
     settings = Settings.from_env({"AUTH_PROVIDERS": "OIDC, service-accounts"})
     assert settings.auth_providers == ("oidc", "service-accounts")
@@ -285,7 +307,25 @@ def test_given_no_stage_models_then_defaults_fall_back_to_single_model():
     assert s.llm_api_key is None
     assert s.llm_synthesis_timeout_seconds == 120
     assert s.llm_plan_timeout_seconds == 5
+    assert s.llm_check_timeout_seconds == 30
+    assert s.chat_deadline_seconds == 180
     assert s.model_cache_ttl_seconds == 10
+
+
+def test_given_chat_deadline_settings_when_parsed_then_configured():
+    s = Settings.from_env({
+        "LLM_CHECK_TIMEOUT_SECONDS": "15",
+        "CHAT_DEADLINE_SECONDS": "90",
+    })
+    assert s.llm_check_timeout_seconds == 15
+    assert s.chat_deadline_seconds == 90
+
+
+def test_given_nonpositive_chat_deadline_settings_then_parsing_fails():
+    with pytest.raises(ValueError, match="LLM_CHECK_TIMEOUT_SECONDS"):
+        Settings.from_env({"LLM_CHECK_TIMEOUT_SECONDS": "0"})
+    with pytest.raises(ValueError, match="CHAT_DEADLINE_SECONDS"):
+        Settings.from_env({"CHAT_DEADLINE_SECONDS": "-1"})
 
 
 def test_given_context_caps_when_parsed_then_configured():
@@ -304,3 +344,42 @@ def test_given_no_context_caps_then_defaults_used():
     assert s.context_max_claim_chunks == 8
     assert s.context_max_global_matches == 4
     assert s.context_max_prompt_chars == 60000
+
+
+def test_given_no_postgres_pool_settings_then_defaults_used():
+    s = Settings.from_env({})
+    assert s.postgres_connect_timeout_seconds == 5
+    assert s.postgres_statement_timeout_ms == 30000
+    assert s.postgres_pool_max_size == 10
+    assert s.postgres_pool_timeout_seconds == 10.0
+
+
+def test_given_postgres_pool_settings_when_parsed_then_configured():
+    s = Settings.from_env({
+        "POSTGRES_CONNECT_TIMEOUT_SECONDS": "2",
+        "POSTGRES_STATEMENT_TIMEOUT_MS": "5000",
+        "POSTGRES_POOL_MAX_SIZE": "20",
+        "POSTGRES_POOL_TIMEOUT_SECONDS": "1.5",
+    })
+    assert s.postgres_connect_timeout_seconds == 2
+    assert s.postgres_statement_timeout_ms == 5000
+    assert s.postgres_pool_max_size == 20
+    assert s.postgres_pool_timeout_seconds == 1.5
+
+
+def test_postgres_pool_settings_reject_non_positive_values():
+    for name in (
+        "POSTGRES_CONNECT_TIMEOUT_SECONDS",
+        "POSTGRES_STATEMENT_TIMEOUT_MS",
+        "POSTGRES_POOL_MAX_SIZE",
+    ):
+        with pytest.raises(ValueError, match=name):
+            Settings.from_env({name: "0"})
+    with pytest.raises(ValueError, match="POSTGRES_POOL_TIMEOUT_SECONDS"):
+        Settings.from_env({"POSTGRES_POOL_TIMEOUT_SECONDS": "0"})
+
+
+def test_postgres_statement_timeout_below_minimum_rejected_on_validate():
+    settings = Settings.from_env({"POSTGRES_STATEMENT_TIMEOUT_MS": "500"})
+    with pytest.raises(ValueError, match="POSTGRES_STATEMENT_TIMEOUT_MS"):
+        settings.validate_for_environment()

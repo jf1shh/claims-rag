@@ -1,6 +1,8 @@
+import json as _json
+
 import pytest
 
-from backend.llm_client import ChatClient, ChatClientError
+from backend.llm_client import ChatClient, ChatClientError, LLMDeadlineExceeded, llm_deadline_scope
 
 
 def test_chat_client_is_abstract_and_contract_is_shape_safe():
@@ -39,6 +41,7 @@ class _FakeResponse:
     def __init__(self, payload=None, status=200):
         self._payload = payload
         self.status_code = status
+        self.closed = False
     def raise_for_status(self):
         if self.status_code >= 400:
             raise RuntimeError(f"status {self.status_code}")
@@ -46,6 +49,13 @@ class _FakeResponse:
         if callable(self._payload):
             return self._payload()
         return self._payload or {}
+    def iter_content(self, chunk_size=8192):
+        body = self._payload() if callable(self._payload) else (self._payload or {})
+        data = _json.dumps(body).encode()
+        for i in range(0, len(data), chunk_size):
+            yield data[i:i + chunk_size]
+    def close(self):
+        self.closed = True
 
 
 def _completion_body(content="hi there"):
@@ -195,3 +205,145 @@ def test_configured_model_is_never_replaced():
     client = OpenAICompatibleClient(base_url="http://x", default_model="pinned", http=http)
     assert client.model_for_stage("synthesis") == "pinned"
     assert http.gets == []
+
+
+# --- deadline/timeout behavior -----------------------------------------------
+
+
+def test_check_stage_uses_check_timeout():
+    http = FakeHTTP()
+    http._post_resp = _completion_body("ok")
+    client = OpenAICompatibleClient(base_url="http://x", default_model="M", http=http,
+                                    timeout=120.0, plan_timeout=5.0, check_timeout=30.0)
+    client.complete([{"role": "user", "content": "q"}], model="M", temperature=0, max_tokens=10,
+                    stage="provenance_check")
+    client.complete([{"role": "user", "content": "q"}], model="M", temperature=0, max_tokens=10,
+                    stage="conflict_check")
+    assert http.posts[0]["timeout"] == 30.0
+    assert http.posts[1]["timeout"] == 30.0
+
+
+def test_call_timeout_capped_by_remaining_deadline(monkeypatch):
+    import backend.llm_client as llm_mod
+    fake_time = [0.0]
+    monkeypatch.setattr(llm_mod.time, "monotonic", lambda: fake_time[0])
+    http = FakeHTTP()
+    http._post_resp = _completion_body("ok")
+    client = OpenAICompatibleClient(base_url="http://x", default_model="M", http=http,
+                                    timeout=120.0, clock=lambda: fake_time[0])
+    with llm_deadline_scope(10.0):
+        client.complete([{"role": "user", "content": "q"}], model="M", temperature=0, max_tokens=10)
+    assert http.posts[0]["timeout"] == 10.0
+
+
+def test_deadline_already_exceeded_raises_without_http_call(monkeypatch):
+    import backend.llm_client as llm_mod
+    fake_time = [0.0]
+    monkeypatch.setattr(llm_mod.time, "monotonic", lambda: fake_time[0])
+    http = FakeHTTP()
+    client = OpenAICompatibleClient(base_url="http://x", default_model="M", http=http,
+                                    clock=lambda: fake_time[0])
+    with llm_deadline_scope(5.0):
+        fake_time[0] += 10  # deadline is now in the past
+        with pytest.raises(LLMDeadlineExceeded):
+            client.complete([{"role": "user", "content": "q"}], model="M", temperature=0, max_tokens=10)
+    assert http.posts == []
+
+
+class _TrickleResponse:
+    """Yields one byte per iteration while the injected clock advances past the bound."""
+    def __init__(self, clock_box, advance_per_chunk=1.0):
+        self.status_code = 200
+        self.closed = False
+        self._clock_box = clock_box
+        self._advance = advance_per_chunk
+    def raise_for_status(self):
+        pass
+    def iter_content(self, chunk_size=8192):
+        while True:
+            self._clock_box[0] += self._advance
+            yield b"x"
+    def close(self):
+        self.closed = True
+
+
+def test_trickle_body_raises_within_bound_and_closes_response(monkeypatch):
+    import backend.llm_client as llm_mod
+    fake_time = [0.0]
+    monkeypatch.setattr(llm_mod.time, "monotonic", lambda: fake_time[0])
+    resp = _TrickleResponse(fake_time, advance_per_chunk=1.0)
+    http = FakeHTTP()
+    http._post_resp = lambda: resp
+    client = OpenAICompatibleClient(base_url="http://x", default_model="M", http=http,
+                                    timeout=5.0, clock=lambda: fake_time[0])
+    with pytest.raises(LLMDeadlineExceeded):
+        client.complete([{"role": "user", "content": "q"}], model="M", temperature=0, max_tokens=10)
+    assert resp.closed
+    assert fake_time[0] <= 5.0 + 1.0  # raised promptly at the bound, not after a long trickle
+
+
+class _BigResponse:
+    def __init__(self):
+        self.status_code = 200
+        self.closed = False
+    def raise_for_status(self):
+        pass
+    def iter_content(self, chunk_size=8192):
+        chunk = b"x" * chunk_size
+        while True:
+            yield chunk
+    def close(self):
+        self.closed = True
+
+
+def test_body_size_cap_raises_chat_client_error():
+    resp = _BigResponse()
+    http = FakeHTTP()
+    http._post_resp = lambda: resp
+    client = OpenAICompatibleClient(base_url="http://x", default_model="M", http=http, timeout=120.0)
+    with pytest.raises(ChatClientError):
+        client.complete([{"role": "user", "content": "q"}], model="M", temperature=0, max_tokens=10)
+    assert resp.closed
+
+
+def test_content_length_trickle_is_cut_off_at_the_deadline():
+    # Real socket, real requests transport: a Content-Length body trickled one
+    # byte at a time must hit the wall-clock bound, not block until 8192
+    # bytes accumulate (iter_content's behavior on non-chunked bodies).
+    import socket
+    import threading
+    import time
+
+    from backend.llm_client import OpenAICompatibleClient
+
+    srv = socket.socket()
+    srv.bind(("127.0.0.1", 0))
+    srv.listen(1)
+    stop = threading.Event()
+
+    def serve():
+        conn, _ = srv.accept()
+        try:
+            conn.recv(65536)
+            conn.sendall(b"HTTP/1.1 200 OK\r\nContent-Length: 100000\r\n"
+                         b"Content-Type: application/json\r\n\r\n")
+            while not stop.is_set():
+                conn.sendall(b" ")
+                time.sleep(0.05)
+        except OSError:
+            pass
+        finally:
+            conn.close()
+
+    thread = threading.Thread(target=serve, daemon=True)
+    thread.start()
+    client = OpenAICompatibleClient(f"http://127.0.0.1:{srv.getsockname()[1]}", "m", timeout=30.0)
+    started = time.monotonic()
+    try:
+        with llm_deadline_scope(0.5), pytest.raises(LLMDeadlineExceeded):
+            client.complete([{"role": "user", "content": "q"}], model="m", temperature=0, max_tokens=1)
+        assert time.monotonic() - started < 3.0
+    finally:
+        stop.set()
+        thread.join(timeout=2)
+        srv.close()

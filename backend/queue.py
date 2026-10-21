@@ -69,6 +69,13 @@ class Queue(ABC):
     def close(self) -> None:
         """Releases any backend resources."""
 
+    def extend_visibility(self, message: QueueMessage, seconds: int) -> None:  # noqa: B027
+        """Extends how long an in-flight message stays invisible to other
+        consumers, so a worker still processing it is not redelivered to a
+        second consumer (SQS: ``change_message_visibility``). Concrete, not
+        abstract, so backends with no redelivery-while-in-flight concept (the
+        in-process loopback, third-party/test queues) keep working unchanged."""
+
 
 class InProcessQueue(Queue):
     """In-memory queue for local development and hermetic tests.
@@ -184,7 +191,7 @@ class SQSQueue(Queue):
         region: str = "us-east-1",
         endpoint_url: str | None = None,
         dlq_url: str | None = None,
-        visibility_timeout: int = 30,
+        visibility_timeout: int = 60,
         wait_time_seconds: int = 0,
     ):
         if not queue_url.strip():
@@ -251,6 +258,15 @@ class SQSQueue(Queue):
             QueueUrl=self.queue_url,
             ReceiptHandle=message.receipt_handle,
             VisibilityTimeout=int(backoff_seconds),
+        )
+
+    def extend_visibility(self, message: QueueMessage, seconds: int) -> None:
+        if not message.receipt_handle:
+            return
+        self._client.change_message_visibility(
+            QueueUrl=self.queue_url,
+            ReceiptHandle=message.receipt_handle,
+            VisibilityTimeout=int(seconds),
         )
 
     def dead_letter(self, message: QueueMessage) -> None:

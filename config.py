@@ -61,6 +61,10 @@ class Settings:
     ingestion_mode: str = "sync"  # "sync" | "async" (Phase 3 async ingestion)
     vector_store: str = "sqlite"  # "sqlite" | "postgres" (Phase 1 data plane)
     postgres_dsn: str | None = None
+    postgres_connect_timeout_seconds: int = 5
+    postgres_statement_timeout_ms: int = 30000
+    postgres_pool_max_size: int = 10
+    postgres_pool_timeout_seconds: float = 10.0
     tenant_id: str = "local-development"
     object_storage_provider: str = "filesystem"
     object_storage_bucket: str | None = None
@@ -72,6 +76,7 @@ class Settings:
     sqs_dlq_url: str | None = None
     sqs_region: str = "us-east-1"
     sqs_endpoint_url: str | None = None
+    sqs_visibility_timeout_seconds: int = 60
     worker_max_retries: int = 5
     worker_backoff_base_seconds: float = 2.0
     worker_poll_interval_seconds: float = 1.0
@@ -130,6 +135,11 @@ class Settings:
     llm_api_key: str | None = None           # injected from env/secrets; never client-supplied
     llm_synthesis_timeout_seconds: int = 120
     llm_plan_timeout_seconds: int = 5
+    llm_check_timeout_seconds: int = 30
+    # Overall wall-clock budget for one non-streaming /api/chat call, shared
+    # across planning, synthesis and the provenance/conflict checks -- bounds
+    # a byte-trickling gateway to this instead of the sum of every stage timeout.
+    chat_deadline_seconds: int = 180
     model_cache_ttl_seconds: int = 10
     max_upload_bytes: int = 25 * 1024 * 1024
     max_document_chars: int = 2_000_000
@@ -206,6 +216,16 @@ class Settings:
             ingestion_mode=env.get("INGESTION_MODE", "sync").strip().lower(),
             vector_store=env.get("VECTOR_STORE", "sqlite").strip().lower(),
             postgres_dsn=env.get("POSTGRES_DSN") or None,
+            postgres_connect_timeout_seconds=_int(
+                env.get("POSTGRES_CONNECT_TIMEOUT_SECONDS"), 5, "POSTGRES_CONNECT_TIMEOUT_SECONDS"
+            ),
+            postgres_statement_timeout_ms=_int(
+                env.get("POSTGRES_STATEMENT_TIMEOUT_MS"), 30000, "POSTGRES_STATEMENT_TIMEOUT_MS"
+            ),
+            postgres_pool_max_size=_int(env.get("POSTGRES_POOL_MAX_SIZE"), 10, "POSTGRES_POOL_MAX_SIZE"),
+            postgres_pool_timeout_seconds=_float(
+                env.get("POSTGRES_POOL_TIMEOUT_SECONDS"), 10.0, "POSTGRES_POOL_TIMEOUT_SECONDS"
+            ),
             tenant_id=env.get("TENANT_ID", "local-development").strip(),
             object_storage_provider=env.get("OBJECT_STORAGE_PROVIDER", "filesystem").strip().lower(),
             object_storage_bucket=env.get("OBJECT_STORAGE_BUCKET") or None,
@@ -217,6 +237,9 @@ class Settings:
             sqs_dlq_url=env.get("SQS_DLQ_URL") or None,
             sqs_region=env.get("SQS_REGION", "us-east-1").strip(),
             sqs_endpoint_url=env.get("SQS_ENDPOINT_URL") or None,
+            sqs_visibility_timeout_seconds=_int(
+                env.get("SQS_VISIBILITY_TIMEOUT_SECONDS"), 60, "SQS_VISIBILITY_TIMEOUT_SECONDS"
+            ),
             worker_max_retries=_int(env.get("WORKER_MAX_RETRIES"), 5, "WORKER_MAX_RETRIES"),
             worker_backoff_base_seconds=_float(env.get("WORKER_BACKOFF_BASE_SECONDS"), 2.0, "WORKER_BACKOFF_BASE_SECONDS"),
             worker_poll_interval_seconds=_float(env.get("WORKER_POLL_INTERVAL_SECONDS"), 1.0, "WORKER_POLL_INTERVAL_SECONDS"),
@@ -245,6 +268,8 @@ class Settings:
             llm_api_key=env.get("LLM_API_KEY") or None,
             llm_synthesis_timeout_seconds=_int(env.get("LLM_SYNTHESIS_TIMEOUT_SECONDS"), 120, "LLM_SYNTHESIS_TIMEOUT_SECONDS"),
             llm_plan_timeout_seconds=_int(env.get("LLM_PLAN_TIMEOUT_SECONDS"), 5, "LLM_PLAN_TIMEOUT_SECONDS"),
+            llm_check_timeout_seconds=_int(env.get("LLM_CHECK_TIMEOUT_SECONDS"), 30, "LLM_CHECK_TIMEOUT_SECONDS"),
+            chat_deadline_seconds=_int(env.get("CHAT_DEADLINE_SECONDS"), 180, "CHAT_DEADLINE_SECONDS"),
             model_cache_ttl_seconds=_int(env.get("MODEL_CACHE_TTL_SECONDS"), 10, "MODEL_CACHE_TTL_SECONDS"),
             max_upload_bytes=_int(env.get("MAX_UPLOAD_BYTES"), 25 * 1024 * 1024, "MAX_UPLOAD_BYTES"),
             max_document_chars=_int(env.get("MAX_DOCUMENT_CHARS"), 2_000_000, "MAX_DOCUMENT_CHARS"),
@@ -306,6 +331,8 @@ class Settings:
             raise ValueError("ANSWER_GUARD_MODE must be withhold, flag, or off")
         if self.vector_store not in {"sqlite", "postgres"}:
             raise ValueError("VECTOR_STORE must be sqlite or postgres")
+        if self.postgres_statement_timeout_ms < 1000:
+            raise ValueError("POSTGRES_STATEMENT_TIMEOUT_MS must be at least 1000")
         if not self.tenant_id.strip():
             raise ValueError("TENANT_ID must not be empty")
         if self.object_storage_provider not in {"filesystem", "s3"}:
@@ -314,6 +341,8 @@ class Settings:
             raise ValueError("QUEUE_PROVIDER must be in-process or sqs")
         if self.queue_provider == "sqs" and not self.sqs_queue_url:
             raise ValueError("SQS_QUEUE_URL is required when QUEUE_PROVIDER is sqs")
+        if not 10 <= self.sqs_visibility_timeout_seconds <= 43200:
+            raise ValueError("SQS_VISIBILITY_TIMEOUT_SECONDS must be between 10 and 43200")
         if self.ingestion_mode not in {"sync", "async"}:
             raise ValueError("INGESTION_MODE must be sync or async")
         if not self.auth_providers:

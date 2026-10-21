@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
 import time
 from typing import List, Optional
 from urllib.parse import urlsplit, urlunsplit
@@ -42,6 +43,41 @@ from urllib.parse import urlsplit, urlunsplit
 import numpy as np
 
 logger = logging.getLogger(__name__)
+
+
+class _DiscardUncommitted(Exception):
+    """Thrown into the pool's checkout context so it rolls back, not commits."""
+
+
+class _PooledConnection:
+    """Proxies a pooled psycopg connection so every existing call site's
+    `conn = self._connect() ... finally: conn.close()` keeps working
+    unchanged. `close()` returns the physical connection to the pool instead
+    of closing the socket, and keeps plain `psycopg.Connection.close()`
+    semantics: work not explicitly committed is rolled back, never committed
+    (the pool's own context exit would commit it).
+    """
+
+    __slots__ = ("_cm", "_conn")
+
+    def __init__(self, cm, conn):
+        self._cm = cm
+        self._conn = conn
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
+
+    def close(self) -> None:
+        from psycopg.pq import TransactionStatus
+
+        if self._conn.info.transaction_status == TransactionStatus.IDLE:
+            self._cm.__exit__(None, None, None)
+            return
+        # Open, failed or broken transaction: exit with an error so the pool
+        # rolls back (logging, not raising, if the rollback itself fails) and
+        # still checks the connection back in.
+        exc = _DiscardUncommitted()
+        self._cm.__exit__(_DiscardUncommitted, exc, None)
 
 
 def _redact_dsn(dsn: str) -> str:
@@ -69,6 +105,10 @@ class PostgresVectorStore:
         storage_dir: Optional[str] = None,
         embedding_dimensions: int = 384,
         blob_store=None,
+        pool_connect_timeout_seconds: int = 5,
+        pool_statement_timeout_ms: int = 30000,
+        pool_max_size: int = 10,
+        pool_timeout_seconds: float = 10.0,
     ):
         from backend.rag_engine import STORED_DOCUMENTS_DIR
 
@@ -86,27 +126,78 @@ class PostgresVectorStore:
         # Exposed for /api/status (path) parity with SQLiteVectorStore.db_path;
         # PG credentials must never be rendered, so keep it redacted.
         self.db_path = _redact_dsn(dsn)
+        self.pool_connect_timeout_seconds = pool_connect_timeout_seconds
+        self.pool_statement_timeout_ms = pool_statement_timeout_ms
+        self.pool_max_size = pool_max_size
+        self.pool_timeout_seconds = pool_timeout_seconds
+        # Created lazily on first use (see _get_pool) so constructing a store
+        # that never touches the DB (scripts, offline tests) opens nothing.
+        self._pool = None
+        self._pool_lock = threading.Lock()
 
     # ------------------------------------------------------------------ #
     # Connection helpers
     # ------------------------------------------------------------------ #
 
-    def _connect(self):
-        """Opens a psycopg connection bound to this tenant's RLS GUC.
-
-        Every connection in this class goes through here so the row-level
-        security policy (keyed on `app.tenant_id`) is satisfied and pgvector's
-        numpy<->vector adapters are registered. `set_config(..., false)` scopes
-        the value to the whole session (not just the current transaction), so
-        RLS applies across subsequent statements.
+    def _configure_connection(self, conn) -> None:
+        """Runs once per new physical connection the pool opens: registers
+        pgvector's numpy<->vector adapters and sets this tenant's RLS GUC.
+        `set_config(..., false)` scopes the value to the whole session (not
+        just the current transaction), so RLS applies across every statement
+        run on this physical connection for as long as the pool keeps it.
+        Must leave the connection idle -- the pool checks a configured
+        connection back in immediately after this returns.
         """
-        import psycopg
         from pgvector.psycopg import register_vector
 
-        conn = psycopg.connect(self.dsn, autocommit=False)
         register_vector(conn)
         conn.execute("SELECT set_config(%s, %s, false)", ("app.tenant_id", self.tenant_id))
-        return conn
+        conn.commit()
+
+    def _get_pool(self):
+        if self._pool is None:
+            with self._pool_lock:
+                if self._pool is None:
+                    from psycopg_pool import ConnectionPool
+
+                    self._pool = ConnectionPool(
+                        self.dsn,
+                        min_size=1,
+                        max_size=self.pool_max_size,
+                        timeout=self.pool_timeout_seconds,
+                        kwargs={
+                            "connect_timeout": self.pool_connect_timeout_seconds,
+                            "options": f"-c statement_timeout={self.pool_statement_timeout_ms}",
+                            "autocommit": False,
+                        },
+                        configure=self._configure_connection,
+                        check=ConnectionPool.check_connection,
+                        open=True,
+                    )
+        return self._pool
+
+    def _connect(self):
+        """Checks out a pooled connection bound to this tenant's RLS GUC.
+
+        Every connection in this class goes through here so the pool's
+        `connect_timeout`/`statement_timeout` and the RLS GUC (set once per
+        physical connection in `_configure_connection`) apply uniformly. The
+        pool is created lazily, thread-safely, on first checkout. Returns a
+        `_PooledConnection` proxy, used exactly like the plain connection this
+        method used to return directly (`conn = self._connect() ...
+        finally: conn.close()`) -- `close()` returns it to the pool instead
+        of closing the socket. A starved pool raises `psycopg_pool.PoolTimeout`
+        instead of hanging.
+        """
+        cm = self._get_pool().connection()
+        conn = cm.__enter__()
+        return _PooledConnection(cm, conn)
+
+    def close(self) -> None:
+        """Closes the pool, if one was ever created. Idempotent."""
+        if self._pool is not None:
+            self._pool.close()
+            self._pool = None
 
     # ------------------------------------------------------------------ #
     # Interface: add / delete / list / chunk

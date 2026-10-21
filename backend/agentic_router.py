@@ -6,7 +6,7 @@ import time
 from typing import Optional, List, Dict, Any
 
 from backend import claims_tools as ct
-from backend.llm_client import ChatClientError
+from backend.llm_client import ChatClientError, LLMDeadlineExceeded
 
 logger = logging.getLogger(__name__)
 
@@ -813,6 +813,10 @@ class AgenticRAGRouter:
                 temperature=0.1,
                 max_tokens=1000,
             )
+        except LLMDeadlineExceeded:
+            # The chat budget is spent: re-running retrieval for a simulated
+            # answer would only overrun it further. /api/chat returns 504.
+            raise
         except ChatClientError as e:
             if not getattr(caps, "simulation_mode", True):
                 return {**self._unavailable(logs), **tools}

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import contextlib
+import contextvars
+import json
 import time
 from abc import ABC, abstractmethod
 from typing import Callable, Iterator
@@ -8,6 +11,51 @@ from typing import Callable, Iterator
 class ChatClientError(Exception):
     """A completion/transport failure from an LLM backend. Callers fall back
     to simulation on this; never leak raw exception text to clients."""
+
+
+class LLMDeadlineExceeded(ChatClientError):
+    """The overall chat deadline (or a stage's share of it) was exhausted
+    before or during an LLM call. Subclasses ChatClientError so every
+    existing ``except ChatClientError`` handler keeps its current fallback
+    semantics. Message text never includes prompt/claim content."""
+
+
+# Set for the lifetime of one /api/chat request via llm_deadline_scope();
+# None outside that scope (streaming, planning-only tools, tests), in which
+# case calls fall back to their plain per-stage timeout.
+llm_deadline: contextvars.ContextVar[float | None] = contextvars.ContextVar(
+    "llm_deadline", default=None
+)
+
+
+@contextlib.contextmanager
+def llm_deadline_scope(seconds: float):
+    """Bounds every LLM call made (directly or via copy_context) inside the
+    block to a shared wall-clock deadline, on top of each call's own stage
+    timeout."""
+    token = llm_deadline.set(time.monotonic() + seconds)
+    try:
+        yield
+    finally:
+        llm_deadline.reset(token)
+
+
+# Hard cap on a response body read via complete(); a gateway cannot hold a
+# chat slot open by trickling an unbounded body within the time budget.
+MAX_RESPONSE_BYTES = 8 * 1024 * 1024
+
+
+def _iter_body(resp):
+    """Yields the body as bytes arrive. urllib3's read1() returns after at
+    most one socket read; requests' iter_content(8192) blocks until 8192
+    bytes accumulate on a Content-Length body, so a byte-trickle would never
+    reach the deadline check between reads. Test stubs have no raw.read1."""
+    read1 = getattr(getattr(resp, "raw", None), "read1", None)
+    if not callable(read1):
+        yield from resp.iter_content(chunk_size=8192)
+        return
+    while chunk := read1(8192, decode_content=True):
+        yield chunk
 
 
 class ChatClient(ABC):
@@ -65,7 +113,8 @@ class OpenAICompatibleClient(ChatClient):
 
     def __init__(self, base_url, default_model, planning_model=None,
                  synthesis_model=None, eval_model=None, api_key=None,
-                 timeout=120.0, plan_timeout=5.0, models_ttl_seconds=10.0,
+                 timeout=120.0, plan_timeout=5.0, check_timeout=30.0,
+                 models_ttl_seconds=10.0,
                  http=None, clock: Callable[[], float] = time.monotonic):
         self.base_url = base_url.rstrip("/")
         self.default_model = default_model
@@ -75,11 +124,53 @@ class OpenAICompatibleClient(ChatClient):
         self.api_key = api_key
         self.timeout = timeout
         self.plan_timeout = plan_timeout
+        self.check_timeout = check_timeout
         self.models_ttl_seconds = models_ttl_seconds
         self._http = http or _DefaultHTTP()
         self._clock = clock
         self._models_cache: list[str] | None = None
         self._models_at = -float("inf")
+
+    def _stage_timeout(self, stage: str) -> float:
+        # The timeout follows the stage, not the resolved model name: under the
+        # default dev config (PLANNING_MODEL unset) the planner's resolved model
+        # equals default_model, so picking the timeout by `model == planning_model`
+        # would silently give the planner the 120s synthesis timeout.
+        if stage == "planning":
+            return self.plan_timeout
+        if stage.endswith("_check"):
+            return self.check_timeout
+        return self.timeout
+
+    def _call_budget(self, stage: str) -> float:
+        """Timeout for one call: its stage timeout, capped by whatever is left
+        of the overall chat deadline. Raises before any request is made if the
+        deadline is already gone."""
+        stage_timeout = self._stage_timeout(stage)
+        deadline = llm_deadline.get()
+        if deadline is None:
+            return stage_timeout
+        remaining = deadline - self._clock()
+        if remaining <= 0:
+            raise LLMDeadlineExceeded("LLM call deadline already exceeded")
+        return min(stage_timeout, remaining)
+
+    def _read_body(self, resp, bound: float) -> bytes:
+        """Reads the response body in chunks, enforcing a wall-clock bound
+        between reads (not just a per-read socket timeout) and a maximum
+        total size."""
+        chunks = []
+        total = 0
+        for chunk in _iter_body(resp):
+            if not chunk:
+                continue
+            total += len(chunk)
+            if total > MAX_RESPONSE_BYTES:
+                raise ChatClientError("LLM response exceeded maximum size")
+            chunks.append(chunk)
+            if self._clock() >= bound:
+                raise LLMDeadlineExceeded("LLM response exceeded the allotted time")
+        return b"".join(chunks)
 
     def model_for_stage(self, stage: str) -> str:
         name = {
@@ -100,11 +191,9 @@ class OpenAICompatibleClient(ChatClient):
         return h
 
     def complete(self, messages, *, model, temperature, max_tokens, stage="synthesis"):
-        # The timeout follows the stage, not the resolved model name: under the
-        # default dev config (PLANNING_MODEL unset) the planner's resolved model
-        # equals default_model, so picking the timeout by `model == planning_model`
-        # would silently give the planner the 120s synthesis timeout.
-        timeout = self.plan_timeout if stage == "planning" else self.timeout
+        timeout = self._call_budget(stage)
+        bound = self._clock() + timeout
+        resp = None
         try:
             resp = self._http.post(
                 f"{self.base_url}/v1/chat/completions",
@@ -116,22 +205,26 @@ class OpenAICompatibleClient(ChatClient):
                 },
                 headers=self._headers(),
                 timeout=timeout,
+                stream=True,
             )
             resp.raise_for_status()
+            body = self._read_body(resp, bound)
             try:
-                return resp.json()["choices"][0]["message"]["content"]
-            except (KeyError, IndexError, TypeError) as exc:
+                return json.loads(body)["choices"][0]["message"]["content"]
+            except (KeyError, IndexError, TypeError, ValueError) as exc:
                 raise ChatClientError("LLM response missing content") from exc
         except ChatClientError:
             raise
         except Exception as exc:
             raise ChatClientError("LLM request failed") from exc
+        finally:
+            close = getattr(resp, "close", None)
+            if callable(close):
+                close()
 
     def complete_stream(self, messages, *, model, temperature, max_tokens, stage="synthesis"):
-        # Timeout follows the stage, not the resolved model name — see the
-        # comment on complete() above for why comparing against
-        # self.planning_model is a bug when PLANNING_MODEL is unset.
-        timeout = self.plan_timeout if stage == "planning" else self.timeout
+        timeout = self._call_budget(stage)
+        bound = self._clock() + timeout
         resp = None
         try:
             resp = self._http.post(
@@ -149,13 +242,14 @@ class OpenAICompatibleClient(ChatClient):
             )
             resp.raise_for_status()
             for line in resp.iter_lines(decode_unicode=True):
+                if self._clock() >= bound:
+                    raise LLMDeadlineExceeded("LLM stream exceeded the allotted time")
                 if not line or not line.startswith("data:"):
                     continue
                 data = line[len("data:"):].strip()
                 if data == "[DONE]":
                     return
-                import json as _json
-                chunk = _json.loads(data)
+                chunk = json.loads(data)
                 delta = chunk["choices"][0]["delta"]
                 content = delta.get("content")
                 if content:

@@ -461,17 +461,21 @@ class SQLiteVectorStore(VectorStore):
         # filesystem behavior below is unchanged.
         self.blob_store = blob_store
         # In-memory, pre-normalized embedding index. Built lazily on first
-        # search and invalidated whenever documents are added/removed. This
+        # search. Staleness is tracked by the `store_meta.vector_generation`
+        # row in the DB itself, not a local counter: that row is bumped by
+        # SQLite triggers on any write to `documents`, so a cache built in
+        # one process is correctly detected as stale by every other process
+        # sharing the same db file (e.g. `uvicorn --workers N`) -- a local
+        # counter only ever sees writes made through this instance. This
         # avoids re-reading every embedding BLOB and recomputing corpus norms
         # on each query (the primary CPU bottleneck as the corpus scales).
         self._vector_cache = None
-        # Guards _vector_cache and _vector_cache_generation. A build reads
-        # rows without holding the lock (that's the whole point of the
-        # cache), so an invalidation can land mid-build; the generation
-        # counter lets the build detect that race and discard its result
-        # instead of installing a matrix that's already stale.
+        # Guards reads/writes of _vector_cache.
         self._vector_cache_lock = threading.Lock()
-        self._vector_cache_generation = 0
+        # Single-flights cache rebuilds: multiple searches that all find the
+        # cache stale at once wait on one fetchall()+build instead of each
+        # running their own.
+        self._vector_cache_build_lock = threading.Lock()
         self._init_db()
 
     def _connect(self):
@@ -489,45 +493,95 @@ class SQLiteVectorStore(VectorStore):
         return conn
 
     def _invalidate_vector_cache(self):
+        """Drops the local cache so this process stops holding a matrix it
+        knows is stale, without waiting for the next search's generation
+        check to notice. Purely an optimization: correctness does not depend
+        on this being called, since every search re-checks
+        store_meta.vector_generation (see _get_vector_cache)."""
         with self._vector_cache_lock:
-            self._vector_cache_generation += 1
             self._vector_cache = None
+
+    def _get_vector_cache(self, conn):
+        """Returns the cached vector matrix, rebuilding it if the on-disk
+        generation has moved past what's cached. `conn` is the connection the
+        caller (search_similarity) already opened, reused here for the cheap
+        generation check so a fresh cache costs no extra round trip.
+        """
+        generation = conn.execute(
+            "SELECT value FROM store_meta WHERE key = 'vector_generation'"
+        ).fetchone()[0]
+
+        with self._vector_cache_lock:
+            cache = self._vector_cache
+        if cache is not None and cache["generation"] == generation:
+            return cache
+
+        with self._vector_cache_build_lock:
+            # Re-check: another thread may have just finished a rebuild for
+            # (at least) this generation while we were waiting on the lock.
+            with self._vector_cache_lock:
+                cache = self._vector_cache
+            if cache is not None and cache["generation"] >= generation:
+                return cache
+            return self._build_vector_cache()
 
     def _build_vector_cache(self):
         """Loads all child embeddings once, L2-normalizes them, and caches the
         matrix plus parallel metadata arrays for fast masked cosine search.
+        Each parent's content is stored once in `parent_contents`; child rows
+        only carry an index into it (previously every child row of a parent
+        carried its own copy of the parent's content -- 5-7x duplication at
+        the typical children-per-parent ratio).
 
-        Reads the database without holding the lock, so an add/delete can
-        invalidate the cache while this build is in flight. The generation
-        check below detects that and discards the now-stale result instead
-        of installing it -- otherwise a build racing an invalidation could
-        overwrite the None with a matrix missing the new document or still
-        containing a deleted one, and that staleness would persist until the
-        next write. The built result is still returned to the caller either
-        way: this one search is entitled to use it even if it won't be cached.
+        The generation is read in the same read transaction as the row
+        SELECT (BEGIN, then both SELECTs, then COMMIT) so it can never be
+        newer than the rows it describes: with SQLite's rollback-journal
+        mode, the transaction's first statement takes a SHARED lock that
+        holds until COMMIT, so no writer can commit between the two SELECTs.
+        Callers serialize through `_vector_cache_build_lock`, so only one
+        rebuild (one fetchall() of every child row) runs at a time no matter
+        how many concurrent searches find the cache stale.
         """
-        with self._vector_cache_lock:
-            generation = self._vector_cache_generation
-
         conn = self._connect()
         cursor = conn.cursor()
-        cursor.execute("""
-            SELECT c.embedding, p.content, d.filename, d.file_type, p.id, d.claim_id, d.id, d.document_version
-            FROM child_chunks c
-            JOIN parent_chunks p ON c.parent_id = p.id
-            JOIN documents d ON p.document_id = d.id
-        """)
-        rows = cursor.fetchall()
-        conn.close()
+        cursor.execute("BEGIN")
+        try:
+            generation = cursor.execute(
+                "SELECT value FROM store_meta WHERE key = 'vector_generation'"
+            ).fetchone()[0]
+            cursor.execute("""
+                SELECT c.embedding, p.id, d.filename, d.file_type, d.claim_id, d.id, d.document_version
+                FROM child_chunks c
+                JOIN parent_chunks p ON c.parent_id = p.id
+                JOIN documents d ON p.document_id = d.id
+            """)
+            rows = cursor.fetchall()
+            # Parent text is fetched once per parent, not once per child row,
+            # so the fetchall() peak doesn't carry the 5-7x duplication either.
+            cursor.execute("""
+                SELECT p.id, p.content FROM parent_chunks p
+                JOIN documents d ON p.document_id = d.id
+            """)
+            content_by_parent = dict(cursor.fetchall())
+            conn.commit()
+        finally:
+            conn.close()
 
-        vectors, contents, filenames, file_types, parent_ids, claim_ids = [], [], [], [], [], []
+        vectors, parent_content_idx, filenames, file_types, parent_ids, claim_ids = [], [], [], [], [], []
         doc_ids, versions = [], []
-        for emb_bytes, content, filename, file_type, p_id, claim_id, doc_id, version in rows:
+        parent_contents = []
+        parent_content_index_by_id = {}
+        for emb_bytes, p_id, filename, file_type, claim_id, doc_id, version in rows:
             vec = np.frombuffer(emb_bytes, dtype=np.float32)
             if vec.shape[0] != 384:
                 continue
+            content_idx = parent_content_index_by_id.get(p_id)
+            if content_idx is None:
+                content_idx = len(parent_contents)
+                parent_content_index_by_id[p_id] = content_idx
+                parent_contents.append(content_by_parent[p_id])
             vectors.append(vec)
-            contents.append(content)
+            parent_content_idx.append(content_idx)
             filenames.append(filename)
             file_types.append(file_type)
             parent_ids.append(p_id)
@@ -544,8 +598,10 @@ class SQLiteVectorStore(VectorStore):
             matrix = np.zeros((0, 384), dtype=np.float32)
 
         built = {
+            "generation": generation,
             "matrix": matrix,
-            "contents": contents,
+            "parent_contents": parent_contents,
+            "parent_content_idx": parent_content_idx,
             "filenames": filenames,
             "file_types": file_types,
             "parent_ids": parent_ids,
@@ -555,8 +611,7 @@ class SQLiteVectorStore(VectorStore):
         }
 
         with self._vector_cache_lock:
-            if self._vector_cache_generation == generation:
-                self._vector_cache = built
+            self._vector_cache = built
         return built
 
     @staticmethod
@@ -689,6 +744,31 @@ class SQLiteVectorStore(VectorStore):
             CREATE UNIQUE INDEX IF NOT EXISTS ix_documents_scope
             ON documents (filename, COALESCE(claim_id, ''))
         """)
+
+        # Cross-process vector-cache invalidation: the generation is a row in
+        # the DB itself (not a local counter) so every process sharing this
+        # db file can detect a write made by any other. Bumped by triggers on
+        # `documents` below rather than by application code, so it can't be
+        # missed by a write path that forgets to call it -- and it must be
+        # re-created after the documents_new rebuild above, since dropping a
+        # table drops its triggers.
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS store_meta (
+                key TEXT PRIMARY KEY,
+                value INTEGER NOT NULL
+            )
+        """)
+        cursor.execute(
+            "INSERT OR IGNORE INTO store_meta (key, value) VALUES ('vector_generation', 0)"
+        )
+        for event in ("INSERT", "UPDATE", "DELETE"):
+            cursor.execute(f"""
+                CREATE TRIGGER IF NOT EXISTS documents_bump_vector_generation_{event.lower()}
+                AFTER {event} ON documents
+                BEGIN
+                    UPDATE store_meta SET value = value + 1 WHERE key = 'vector_generation';
+                END
+            """)
 
         # Parent chunks table (larger text blocks for context)
         cursor.execute("""
@@ -1001,9 +1081,7 @@ class SQLiteVectorStore(VectorStore):
         cursor = conn.cursor()
 
         # --- 1. Vector Search (Child Chunks) Scoped by claim_id ---
-        with self._vector_cache_lock:
-            cache = self._vector_cache
-        cache = cache or self._build_vector_cache()
+        cache = self._get_vector_cache(conn)
         matrix = cache["matrix"]
 
         vector_ranked = []
@@ -1022,7 +1100,8 @@ class SQLiteVectorStore(VectorStore):
                 # Both matrix rows and query are unit vectors → dot == cosine.
                 similarities = matrix[selected] @ query
 
-                contents = cache["contents"]
+                parent_contents = cache["parent_contents"]
+                parent_content_idx = cache["parent_content_idx"]
                 filenames = cache["filenames"]
                 file_types = cache["file_types"]
                 parent_ids = cache["parent_ids"]
@@ -1036,7 +1115,7 @@ class SQLiteVectorStore(VectorStore):
                     if p_id not in parent_best_scores or score > parent_best_scores[p_id]:
                         parent_best_scores[p_id] = score
                         parent_metadata[p_id] = {
-                            "content": contents[global_idx],
+                            "content": parent_contents[parent_content_idx[global_idx]],
                             "filename": filenames[global_idx],
                             "file_type": file_types[global_idx],
                             "document_id": cache["document_ids"][global_idx],
