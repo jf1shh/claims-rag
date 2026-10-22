@@ -81,9 +81,16 @@ and `hold-inj-fwtag-blend`. Both are documented residuals in
 the form-reference boundary of the provenance check). The provenance runs were accepted with `--force`
 and a note naming the two cases. An aggregate-only comparison would have hidden both.
 
-## Not scheduled yet
+## Scheduled run
 
-The monitor runs by hand. A scheduled job (a weekly CI workflow or a local systemd user timer) is the
-remaining part of Phase 6.2. Two open questions come first. CI needs model downloads for the probe.
-And the probe baseline was recorded on the desktop's CPU, so float differences on a CI runner could
-change close ranks. The first scheduled run should be checked against the baseline before it is trusted.
+`.github/workflows/drift-monitor.yml` runs weekly (Monday 09:00 UTC, plus `workflow_dispatch` for an
+on-demand run): seed the corpus (`generate_auto_pdfs.py`, `create_sample_files.py`, `ingest_all.py`,
+`scripts/rebuild_golden_source_docs.py`), run the probe, then `eval/drift_monitor.py`. It stays on the
+`[self-hosted, linux, claimsrag]` runner even once the repo is public, unlike `tests.yml` — the probe
+needs the embedding model downloaded, so the job does not set `HF_HUB_OFFLINE`. The drift report
+(`probe-result.json`, `drift-report.md`, `drift-report.json`) uploads as a build artifact; a regression
+(exit 1) or a `not_comparable` result (exit 2) fails the job.
+
+This was verified once by hand before scheduling: a fresh venv on the runner's own machine reproduced
+`eval/probe-2026-10-21.json` exactly (0 regressions, 0 warnings), so the CPU-float-difference concern
+noted above did not materialize.

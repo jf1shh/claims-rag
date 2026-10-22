@@ -185,7 +185,9 @@ As of September 6, the authoritative state is [portfolio-hardening.md](docs/port
 >
 > **Phase 6.2 drift monitor built 2026-10-21 (merged to main as PR #45, d3de91d; P6 map merged as PR #44, 159a620)**: `eval/drift_monitor.py` (stdlib comparator, 29 tests) checks golden, adversarial, held-out and retrieval-probe runs against `eval/drift_baselines.json`; a model or judge change reports `not_comparable` (exit 2), a regression exits 1. New probe baseline `eval/probe-2026-10-21.json` (48 docs, CPU, deterministic across two runs): top-4 30/33, served 33/33, MRR 0.8131, fact recall 0.8837. Adversarial baselines moved to the `_provenance` runs (all defaults on), accepted over two documented pass→fail cases the monitor caught. Runbook: `docs/operations/drift-monitoring.md`.
 >
-> **Next:** schedule the drift monitor (weekly CI workflow or a local user timer; check the probe baseline reproduces on the runner first). Then the next governance gap: real-claim expert validation. Later: claim-scoped golden questions for the supplement and total-loss buttons (needs a GPU judge re-score).
+> **Drift monitor scheduled 2026-10-21** (owner decision: weekly GitHub Actions over a local systemd timer): `.github/workflows/drift-monitor.yml` seeds the 48-doc golden corpus, runs `scripts/probe_retrieval.py`, and checks it with `eval/drift_monitor.py` on the self-hosted runner every Monday 09:00 UTC (`workflow_dispatch` also works). Not gated to `private` like `tests.yml` — it needs model downloads, so it stays on the self-hosted runner even once public. Verified locally first: a fresh venv reproduced `eval/probe-2026-10-21.json` exactly (0 regressions, 0 warnings), so the CPU-float-difference concern from the open decision is resolved.
+>
+> **Next:** the next governance gap: real-claim expert validation. Later: claim-scoped golden questions for the supplement and total-loss buttons (needs a GPU judge re-score).
 
 > **License changed 2026-10-17**: MIT → AGPL-3.0 (owner decision; `LICENSE`, README badge and a new License section). Code copied before the change stays under MIT.
 

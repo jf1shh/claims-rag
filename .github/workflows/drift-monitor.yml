@@ -1,0 +1,53 @@
+name: drift-monitor
+
+on:
+  schedule:
+    # 09:00 UTC every Monday.
+    - cron: '0 9 * * 1'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    # Needs the embedding model downloaded (no HF_HUB_OFFLINE here, unlike tests.yml),
+    # so it stays on the self-hosted runner even once the repo goes public.
+    runs-on: [self-hosted, linux, claimsrag]
+    steps:
+      - uses: actions/checkout@v4
+
+      # See tests.yml: actions/setup-python has no release for this host's
+      # distro, so this runner's system Python 3.12 is used directly.
+      - name: Set up venv
+        run: python3.12 -m venv .venv && .venv/bin/pip install --upgrade pip
+
+      - name: Install dependencies
+        run: .venv/bin/pip install -r requirements.txt
+
+      # Seeds a throwaway rag_store.db with the full 48-document golden
+      # corpus (docs/operations/drift-monitoring.md), matching how the
+      # accepted probe baseline (eval/probe-2026-10-21.json) was produced.
+      - name: Seed corpus
+        run: |
+          .venv/bin/python generate_auto_pdfs.py
+          .venv/bin/python create_sample_files.py
+          .venv/bin/python ingest_all.py
+          .venv/bin/python scripts/rebuild_golden_source_docs.py
+
+      - name: Run retrieval probe
+        run: .venv/bin/python scripts/probe_retrieval.py --out probe-result.json
+
+      - name: Compare against baseline
+        run: .venv/bin/python eval/drift_monitor.py probe-result.json --md drift-report.md --json drift-report.json
+
+      - name: Upload drift report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: drift-report
+          path: |
+            probe-result.json
+            drift-report.md
+            drift-report.json
+          retention-days: 90
