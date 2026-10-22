@@ -1,0 +1,364 @@
+{
+ "summary": {
+  "queries": 33,
+  "all_sources_in_top4": 30,
+  "all_sources_served_at_top_k4": 33,
+  "sources": 37,
+  "mrr": 0.8131,
+  "missing": 0,
+  "fact_recall": 0.8837,
+  "documents": 48,
+  "ingest_s": 0.8,
+  "embedding_model": "all-MiniLM-L6-v2"
+ },
+ "rows": [
+  {
+   "id": "labor-mechanical-cap",
+   "ranks": {
+    "SOP_Auto_Repair_Labor_Rates.pdf": 1
+   },
+   "served": true,
+   "facts": 3,
+   "facts_found": 3,
+   "facts_missing": []
+  },
+  {
+   "id": "labor-body-paint-caps",
+   "ranks": {
+    "SOP_Auto_Repair_Labor_Rates.pdf": 1
+   },
+   "served": true,
+   "facts": 3,
+   "facts_found": 3,
+   "facts_missing": []
+  },
+  {
+   "id": "dui-exclusion-trigger",
+   "ranks": {
+    "DUI_Exclusion_Directive.txt": 1
+   },
+   "served": true,
+   "facts": 1,
+   "facts_found": 1,
+   "facts_missing": []
+  },
+  {
+   "id": "oem-parts-eligibility",
+   "ranks": {
+    "Rider_OEM_Parts_Guarantee.pdf": 1
+   },
+   "served": true,
+   "facts": 1,
+   "facts_found": 1,
+   "facts_missing": []
+  },
+  {
+   "id": "custom-av-cap",
+   "ranks": {
+    "Endorsement_Custom_Equipment_Form402.pdf": 1
+   },
+   "served": true,
+   "facts": 3,
+   "facts_found": 3,
+   "facts_missing": []
+  },
+  {
+   "id": "windshield-zero-deductible",
+   "ranks": {
+    "Endorsement_Windshield_Zero_Deductible.docx": 1
+   },
+   "served": true,
+   "facts": 1,
+   "facts_found": 1,
+   "facts_missing": []
+  },
+  {
+   "id": "rental-upgrade-rider",
+   "ranks": {
+    "Endorsement_Rental_Car_Upgrade.docx": 1
+   },
+   "served": true,
+   "facts": 2,
+   "facts_found": 2,
+   "facts_missing": []
+  },
+  {
+   "id": "rollover-total-loss-threshold",
+   "ranks": {
+    "Adjuster_Guide_Rollover_Claims.docx": 1
+   },
+   "served": true,
+   "facts": 1,
+   "facts_found": 1,
+   "facts_missing": []
+  },
+  {
+   "id": "fraud-chronology-red-flag",
+   "ranks": {
+    "SOP_Claims_Fraud_Red_Flags.pdf": 1
+   },
+   "served": true,
+   "facts": 2,
+   "facts_found": 2,
+   "facts_missing": []
+  },
+  {
+   "id": "ca-claim-ack-timeline",
+   "ranks": {
+    "California_Auto_Claims_Regulations.pdf": 1
+   },
+   "served": true,
+   "facts": 2,
+   "facts_found": 2,
+   "facts_missing": []
+  },
+  {
+   "id": "rear-impact-adas-fee",
+   "ranks": {
+    "Adjuster_Guide_Rear_Impact.docx": 1
+   },
+   "served": true,
+   "facts": 2,
+   "facts_found": 2,
+   "facts_missing": []
+  },
+  {
+   "id": "plan-a-comprehensive-deductible",
+   "ranks": {
+    "Auto_Deductibles_And_Limits.xlsx": 2
+   },
+   "served": true,
+   "facts": 1,
+   "facts_found": 1,
+   "facts_missing": []
+  },
+  {
+   "id": "sterling-oem-eligibility",
+   "ranks": {
+    "Rider_OEM_Parts_Guarantee.pdf": 4
+   },
+   "served": true,
+   "facts": 4,
+   "facts_found": 4,
+   "facts_missing": []
+  },
+  {
+   "id": "sterling-shop-estimate-detail",
+   "ranks": {
+    "shop_email_thread_Sterling.pdf": 1
+   },
+   "served": true,
+   "facts": 1,
+   "facts_found": 1,
+   "facts_missing": []
+  },
+  {
+   "id": "jenkins-repaint-vs-pdr",
+   "ranks": {
+    "Case_Study_Hail_Damage_PlanA.pdf": 2
+   },
+   "served": true,
+   "facts": 4,
+   "facts_found": 4,
+   "facts_missing": []
+  },
+  {
+   "id": "chen-custom-equipment-cap",
+   "ranks": {
+    "Endorsement_Custom_Equipment_Form402.pdf": 1
+   },
+   "served": true,
+   "facts": 6,
+   "facts_found": 4,
+   "facts_missing": [
+    "5900",
+    "900"
+   ]
+  },
+  {
+   "id": "chen-theft-report-detail",
+   "ranks": {
+    "police_theft_report_Chen.pdf": 1
+   },
+   "served": true,
+   "facts": 0,
+   "facts_found": 0,
+   "facts_missing": []
+  },
+  {
+   "id": "rostova-hydrolock-coverage",
+   "ranks": {
+    "Case_Study_Engine_Hydro_Lock.pdf": 1
+   },
+   "served": true,
+   "facts": 1,
+   "facts_found": 1,
+   "facts_missing": []
+  },
+  {
+   "id": "subrogation-referral-trigger",
+   "ranks": {
+    "SOP_Subrogation_Recovery.pdf": 1
+   },
+   "served": true,
+   "facts": 2,
+   "facts_found": 2,
+   "facts_missing": []
+  },
+  {
+   "id": "subrogation-partial-deductible",
+   "ranks": {
+    "SOP_Subrogation_Recovery.pdf": 1
+   },
+   "served": true,
+   "facts": 1,
+   "facts_found": 1,
+   "facts_missing": []
+  },
+  {
+   "id": "supplement-reinspection-threshold",
+   "ranks": {
+    "SOP_Supplement_Review.pdf": 1
+   },
+   "served": true,
+   "facts": 2,
+   "facts_found": 2,
+   "facts_missing": []
+  },
+  {
+   "id": "salvage-owner-retention",
+   "ranks": {
+    "SOP_Total_Loss_Valuation.pdf": 1
+   },
+   "served": true,
+   "facts": 0,
+   "facts_found": 0,
+   "facts_missing": []
+  },
+  {
+   "id": "diminished-value-third-party",
+   "ranks": {
+    "Guideline_Diminished_Value.docx": 1
+   },
+   "served": true,
+   "facts": 5,
+   "facts_found": 5,
+   "facts_missing": []
+  },
+  {
+   "id": "betterment-tires",
+   "ranks": {
+    "Guideline_Betterment_Adjustments.docx": 1
+   },
+   "served": true,
+   "facts": 4,
+   "facts_found": 4,
+   "facts_missing": []
+  },
+  {
+   "id": "liability-comparative-fault-texas",
+   "ranks": {
+    "SOP_Liability_Determination.pdf": 1
+   },
+   "served": true,
+   "facts": 3,
+   "facts_found": 3,
+   "facts_missing": []
+  },
+  {
+   "id": "towing-after-accident",
+   "ranks": {
+    "Rider_Roadside_Assistance_Plus.pdf": 1
+   },
+   "served": true,
+   "facts": 0,
+   "facts_found": 0,
+   "facts_missing": []
+  },
+  {
+   "id": "storage-fee-cutoff",
+   "ranks": {
+    "SOP_Vehicle_Storage_Fees.txt": 1
+   },
+   "served": true,
+   "facts": 2,
+   "facts_found": 2,
+   "facts_missing": []
+  },
+  {
+   "id": "sterling-coverage-verification",
+   "ranks": {
+    "SOP_Coverage_Verification.pdf": 6
+   },
+   "served": true,
+   "facts": 6,
+   "facts_found": 3,
+   "facts_missing": [
+    "01",
+    "2025",
+    "2027"
+   ]
+  },
+  {
+   "id": "chen-siu-checklist",
+   "ranks": {
+    "SOP_Claims_Fraud_Red_Flags.pdf": 4,
+    "inspection_photos_Chen.pdf": 1
+   },
+   "served": true,
+   "facts": 4,
+   "facts_found": 3,
+   "facts_missing": [
+    "443"
+   ]
+  },
+  {
+   "id": "brooks-siu-checklist",
+   "ranks": {
+    "SOP_Claims_Fraud_Red_Flags.pdf": 2,
+    "loss_statement_Brooks.pdf": 3,
+    "inspection_photos_Brooks.pdf": 1
+   },
+   "served": true,
+   "facts": 7,
+   "facts_found": 7,
+   "facts_missing": []
+  },
+  {
+   "id": "rostova-siu-flag-unexplained",
+   "ranks": {
+    "SOP_Claims_Fraud_Red_Flags.pdf": 3
+   },
+   "served": true,
+   "facts": 0,
+   "facts_found": 0,
+   "facts_missing": []
+  },
+  {
+   "id": "webb-subrogation-triage",
+   "ranks": {
+    "SOP_Subrogation_Recovery.pdf": 8,
+    "police_report_Webb.pdf": 1
+   },
+   "served": true,
+   "facts": 11,
+   "facts_found": 7,
+   "facts_missing": [
+    "03",
+    "12",
+    "605.50",
+    "865.00"
+   ]
+  },
+  {
+   "id": "jenkins-subrogation-no-indicator",
+   "ranks": {
+    "SOP_Subrogation_Recovery.pdf": 8
+   },
+   "served": true,
+   "facts": 1,
+   "facts_found": 1,
+   "facts_missing": []
+  }
+ ]
+}
