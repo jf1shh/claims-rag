@@ -18,6 +18,7 @@
 | Change auth, RBAC, or rate limits | `backend/authn.py`, `backend/rbac.py`, `backend/rate_limit.py` | `SECURITY.md`, `tests/test_authn.py`, `tests/test_api_auth.py`, `tests/test_rbac.py`, `tests/test_api_rbac.py`, `tests/test_rate_limit.py`, `tests/test_api_limits.py` |
 | Run unit tests | `tests/` | `README.md` |
 | Run retrieval parity | `eval/parity_runner.py` | `docs/enterprise-migration.md` |
+| Check an eval run for drift, or accept a new baseline | `eval/drift_monitor.py`, `eval/drift_baselines.json` | `docs/operations/drift-monitoring.md` |
 | Run foundation gates | `scripts/run_foundation_gates.py` | `stages/verify/CONTEXT.md` |
 | Check tests + gate, eval numbers, domain coverage, status (one screen each) | `.venv/bin/python scripts/crag.py check\|evals\|coverage\|status` | `docs/roadmap-focus.md` |
 | Pick the next feature | `docs/roadmap-focus.md` (P1 → P6) | `scripts/crag.py coverage` |

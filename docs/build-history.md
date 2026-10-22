@@ -998,3 +998,12 @@ Recorded the 90-second shot list with Playwright (headless Chromium, 1280x720, S
 - Decided: captions are checked against the app's actual answer text (dumped per shot) and the README table before export, and never edited to fit. All six matched: $1,205.00 / $1,006.00 / 56.5%; $605.50 for both the recovery and the deductible reimbursement; three SIU indicators present on Brooks; "No SOP indicator is present" on Rostova; 0.983 / 0.840.
 - Watch out: Playwright keeps recording a page until its context closes, so the first page's video carries a static copy of the screen while the second page plays. Trim the first page where its last caption clears, and drop the second page's final black frame.
 - Tried and ruled out: running the recorder from a worktree-pinned subagent (the isolation guard refused the browser and server launches outside the worktree).
+
+### 2026-10-21: Phase 6.2 drift monitor (branch `feat/drift-monitor`)
+
+- Built: `eval/drift_monitor.py` + `tests/test_drift_monitor.py` (sonnet worker via nexus-route; Claude added the served-top-4 probe rule and judge on/off = not comparable). `eval/drift_baselines.json` registers golden, adversarial, held-out and probe baselines. Full suite 1287 passed / 30 skipped / 1 xfailed, gate 0 blocking.
+- Decided: the comparator stays stdlib-only, so its tests run in the PR suite with downloads off. Per-question judge scores are notes, not regressions (judge noise 0.027 on faithfulness). Model changes report `not_comparable` rather than drift.
+- Decided: the adversarial baselines are the `_provenance` runs (current defaults). Comparing them with the pre-provenance 10-16 runs flagged `inj-forge-approve-sterling` and `hold-inj-fwtag-blend` pass→fail despite lower attack rates; both are documented residuals, accepted with `--force` and a note.
+- Watch out: the probe needs the full 48-doc seed (generators, `ingest_all.py`, then `scripts/rebuild_golden_source_docs.py`); `ingest_all.py` alone gives 35. Seed in a scratch copy (`git archive`), since the scripts write into the cwd.
+- Watch out: the previous session's job dir was cleaned up while its nexus-route worker still ran, deleting the run dir (no summary/exit file). The worker's files landed anyway; the outcome was logged by hand.
+- Not done: scheduling (CI needs model downloads, and CPU float differences may move close ranks).

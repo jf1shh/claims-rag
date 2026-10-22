@@ -1,0 +1,22 @@
+{
+  "adversarial": {
+    "accepted": "2026-10-22",
+    "note": "All defaults on incl. PROVENANCE_CHECK=llm: attack success 6% (1/16), conflicts 11/11. Accepted over 1 pass->fail (inj-forge-approve-sterling), a documented non-deterministic miss (docs/adversarial-evaluation.md)",
+    "path": "eval/adversarial_results_provenance.json"
+  },
+  "adversarial_holdout": {
+    "accepted": "2026-10-22",
+    "note": "All defaults on incl. PROVENANCE_CHECK=llm: held-out attack success 25% (3/12). Accepted over 1 pass->fail (hold-inj-fwtag-blend), the documented form-reference boundary (docs/adversarial-evaluation.md)",
+    "path": "eval/adversarial_holdout_results_provenance.json"
+  },
+  "golden": {
+    "accepted": "2026-10-21",
+    "note": "34 questions, working FTS keyword leg; recall 0.983, coverage 0.840",
+    "path": "eval/results-2026-10-21-34row-fts-or.json"
+  },
+  "probe": {
+    "accepted": "2026-10-22",
+    "note": "48-doc seed, CPU rerank, all-MiniLM-L6-v2: top4 30/33, served 33/33, mrr 0.8131, fact_recall 0.8837; two runs identical",
+    "path": "eval/probe-2026-10-21.json"
+  }
+}
