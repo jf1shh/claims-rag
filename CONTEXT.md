@@ -14,6 +14,7 @@
 | Change the conflict check (`conflicting_evidence`) | `backend/conflict_check.py`, `backend/contracts.py`, `backend/api.py` (`conflict_result`) | `docs/adversarial-evaluation.md` fix 2, `tests/test_conflict_check.py`, `tests/test_api_conflict_check.py` |
 | Change prompt-injection defenses | `backend/prompt_defense.py`, `backend/agentic_router.py` (`_assemble_context`) | `docs/adversarial-evaluation.md` fix 3, `eval/prompt_defense_ab.json`; re-run the held-out set, not only the known one |
 | Run or extend the adversarial suite | `eval/adversarial/`, `eval/run_adversarial_eval.py` | `docs/agent-work/adversarial-eval/SPEC.md` (case contract), `docs/adversarial-evaluation.md` |
+| Change a control the governance map cites (guards, RBAC, audit, retention, model defaults) | the cited file | `docs/governance/naic-ai-bulletin-map.md` and `tests/test_governance_map.py` (update the map in the same change) |
 | Change auth, RBAC, or rate limits | `backend/authn.py`, `backend/rbac.py`, `backend/rate_limit.py` | `SECURITY.md`, `tests/test_authn.py`, `tests/test_api_auth.py`, `tests/test_rbac.py`, `tests/test_api_rbac.py`, `tests/test_rate_limit.py`, `tests/test_api_limits.py` |
 | Run unit tests | `tests/` | `README.md` |
 | Run retrieval parity | `eval/parity_runner.py` | `docs/enterprise-migration.md` |

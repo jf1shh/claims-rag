@@ -82,13 +82,15 @@ wording:
 
 ### P5. Show it
 
-> **Done 2026-10-21** (branch `feat/p5-show-it`): README "Claims workflows" table, one write-up per mode in [`docs/workflows/`](workflows/README.md), and a 90-second [shot list](workflows/demo-shot-list.md). The owner records the video. The refusal shot uses the SIU hallucination probe (#2026-55912), because the live zero-context refusal can't be triggered reliably on the seeded corpus.
+> **Done 2026-10-21** (branch `feat/p5-show-it`): README "Claims workflows" table, one write-up per mode in [`docs/workflows/`](workflows/README.md), and a 90-second [shot list](workflows/demo-shot-list.md). The video was recorded 2026-10-21 (98 s, Simulation Mode, every caption checked against the app's output and the README table); the MP4 lives in the owner's notes hub, not this repo. The refusal shot uses the SIU hallucination probe (#2026-55912), because the live zero-context refusal can't be triggered reliably on the seeded corpus.
 
 - 90-second demo video: one supplement review end to end, a refusal, and the eval table.
 - README: a "Claims workflows" table near the top linking each mode to its eval cases.
 - One short write-up per mode, used as the outreach hook for that segment.
 
 ### P6. Governance evidence (lane B carriers)
+
+> **Done 2026-10-21** (branch `feat/p6-governance-evidence`): [`docs/governance/naic-ai-bulletin-map.md`](governance/naic-ai-bulletin-map.md) maps every Section 3 item (1.0–4.0) and the Section 4 examination list of the adopted (2023-12-04) bulletin to Built / Partial / Insurer / Gap, with a risk profile, a model inventory and seven ranked gaps (drift monitoring first). 36 evidence links pin a string in the cited file, and `tests/test_governance_map.py` fails if a control or quoted default changes without the map.
 
 Map the project to the NAIC AI Model Bulletin themes (governance, risk management, testing, data
 and third-party controls) using what already exists: audit log, RBAC, answer guard, adversarial

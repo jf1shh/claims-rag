@@ -253,6 +253,8 @@ Claims answers follow the same separation:
 - **Interpretation:** the explanation, calculations, assumptions, conflicts and uncertainty.
 - **Decision boundary:** coverage, fraud, payment, denial and referral decisions stay with a human.
 
+[docs/governance/naic-ai-bulletin-map.md](docs/governance/naic-ai-bulletin-map.md) maps these controls to the NAIC AI Model Bulletin item by item: what the code carries, what stays with the insurer, and the open gaps.
+
 ## Security posture
 
 Synthetic data only. Read [`SECURITY.md`](SECURITY.md) before handling uploaded content or changing routes, storage, providers or authentication. Every `/api/*` route requires authentication: a Bearer JWT checked against your OIDC issuer, an `X-API-Key` for service accounts, or a clearly labelled development identity for local use. Permissions are enforced per role and per claim. Uploads and queries are size-capped and rate-limited per user, paths and URLs are sanitised, synthesis requires evidence, the audit log takes concurrent writes and never stores chat text, and errors don't leak internals.

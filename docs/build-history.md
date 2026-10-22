@@ -981,3 +981,20 @@ README `## Claims workflows` table, `docs/workflows/` (one write-up per mode, an
 - Tried and ruled out: trusting Haiku for factual docs that quote numbers. The drafts passed the structural check but had wrong facts in 3 of 4 write-ups and in the shot list: a wrong deductible, an invented forum threshold, wrong golden-case descriptions, "Shift Technology uses this tool", the "do not inform the policyholder" rule reversed, a sign-in step that does not exist locally, and a refusal shot that can't be triggered. Use Sonnet or Claude for docs that quote figures.
 - Decided: vendors are named only as "fits teams/platforms such as ...", never as users or partners. The demo's refusal shot is the SIU probe on #2026-55912 (the record says "SIU Flagged" with no supporting indicator), because the live zero-context refusal needs both a loaded model and a query that retrieves nothing.
 - Watch out: the total-loss write-up's example is a typed prompt with its own ACV and salvage figures, so the **Explain Total Loss** button gives different numbers. The README's golden "coverage" column is reference-fact coverage (`correctness` in `eval/results-*.json`).
+
+### 2026-10-21 — Governance evidence (roadmap P6)
+
+`docs/governance/naic-ai-bulletin-map.md` maps the NAIC Model Bulletin *Use of AI Systems by Insurers* (text read from the adopted NAIC PDF, not from memory) to repo evidence, item by item, with labels Built / Partial / Insurer / Gap. `tests/test_governance_map.py` checks every relative link resolves and every pinned `` `path` `text` `` string is still in its file; a mutation check (changing the `ANSWER_GUARD_MODE` default) made it fail as intended. Written in-session: `nexus-route pick --kind read` refused (the only local model was held by Nexus and the weekly quota was ahead of pace, so medium work stayed off the cloud tiers), and the compliance wording needed acceptance-level care anyway.
+
+- Decided: the map never says "compliant". The bulletin binds insurers, so organisational items (board, committees, contracts, consumer notice, training) are labelled Insurer rather than claimed.
+- Decided: evidence is pinned by text, not line number, so unrelated edits don't break the test but a renamed control or a changed default does.
+- Watch out: a first draft said every authenticated action is audited. The list endpoints (documents, claims, job status) are not; the map now says so.
+
+
+### 2026-10-21 — Demo video recorded (roadmap P5 follow-up)
+
+Recorded the 90-second shot list with Playwright (headless Chromium, 1280x720, Simulation Mode) against a detached checkout of 597d8c3 on port 8010, seeded and ingested. Six captioned shots: intro, Sterling supplement, Webb subrogation, Brooks SIU, the Rostova SIU probe, and the README results table. Final cut 98.5 s, H.264, kept in the owner's notes hub (not this repo).
+
+- Decided: captions are checked against the app's actual answer text (dumped per shot) and the README table before export, and never edited to fit. All six matched: $1,205.00 / $1,006.00 / 56.5%; $605.50 for both the recovery and the deductible reimbursement; three SIU indicators present on Brooks; "No SOP indicator is present" on Rostova; 0.983 / 0.840.
+- Watch out: Playwright keeps recording a page until its context closes, so the first page's video carries a static copy of the screen while the second page plays. Trim the first page where its last caption clears, and drop the second page's final black frame.
+- Tried and ruled out: running the recorder from a worktree-pinned subagent (the isolation guard refused the browser and server launches outside the worktree).
