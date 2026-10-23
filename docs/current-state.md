@@ -187,7 +187,18 @@ As of September 6, the authoritative state is [portfolio-hardening.md](docs/port
 >
 > **Drift monitor scheduled 2026-10-21** (owner decision: weekly GitHub Actions over a local systemd timer): `.github/workflows/drift-monitor.yml` seeds the 48-doc golden corpus, runs `scripts/probe_retrieval.py`, and checks it with `eval/drift_monitor.py` on the self-hosted runner every Monday 09:00 UTC (`workflow_dispatch` also works). Not gated to `private` like `tests.yml` — it needs model downloads, so it stays on the self-hosted runner even once public. Verified locally first: a fresh venv reproduced `eval/probe-2026-10-21.json` exactly (0 regressions, 0 warnings), so the CPU-float-difference concern from the open decision is resolved.
 >
-> **Next:** the next governance gap: real-claim expert validation. Later: claim-scoped golden questions for the supplement and total-loss buttons (needs a GPU judge re-score).
+> **Expert-review protocol built 2026-10-22**: `docs/governance/expert-review-protocol.md` and
+> `eval/build_expert_review_packet.py` close the "expert review of answers" half of the next governance
+> gap. The other half, validation on real (not synthetic) claims, needs an insurer pilot and stays a
+> documented Gap — it's out of reach in this repo. The packet samples one query per claim dossier plus
+> a deterministic slice of global queries, calls the live `/api/chat` endpoint, and writes a Markdown
+> packet with blank fields for a human claims expert to score independently of the LLM judge. No review
+> has been run yet — doing so needs the server up with a model loaded in Lemonade (GPU; run
+> `gpu-preflight` first, one workload at a time).
+>
+> **Next:** run the first expert-review packet (owner, needs Lemonade + GPU) and record findings here.
+> Then the next governance gap: bias and unfair-discrimination analysis. Later: claim-scoped golden
+> questions for the supplement and total-loss buttons (needs a GPU judge re-score).
 
 > **License changed 2026-10-17**: MIT → AGPL-3.0 (owner decision; `LICENSE`, README badge and a new License section). Code copied before the change stays under MIT.
 
