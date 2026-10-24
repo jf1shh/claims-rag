@@ -183,14 +183,7 @@ def copy_seeded_images():
         else:
             print(f"   ⚠️ Could not find generated seed photo for {prefix} in {artifacts_dir}")
 
-def seed_claim_documents(vector_store, embedding_engine):
-    print("\nSeeding claim-specific dossier files...")
-
-    # 1. Copy generated PNG images to stored_documents
-    copy_seeded_images()
-
-    # 2. Compile and index PDFs, Excels, and Images
-    seeds = [
+SEED_CLAIM_DOCUMENTS = [
         # Matthew Sterling
         {
             "claim_id": "#2026-99382",
@@ -321,7 +314,17 @@ def seed_claim_documents(vector_store, embedding_engine):
             "title": "INSPECTION PHOTO LOG",
             "content": "Claim ID: #2026-84410\nInsured: Tyler Brooks\nVehicle: 2019 Dodge Charger R/T\nInspector: A. Ramirez, Claims Specialist\n\nPhotos Reviewed:\n- Photos 1-3: Front-end impact damage consistent with a pole strike -- crushed front bumper, hood deformation, and a bent radiator support.\n- Photo 4: The left rear quarter panel shows rust-through with flaking paint. This damage is not in the line of the front impact and shows no fresh deformation."
         }
-    ]
+]
+
+
+def seed_claim_documents(vector_store, embedding_engine, seeds=None):
+    print("\nSeeding claim-specific dossier files...")
+
+    # 1. Copy generated PNG images to stored_documents
+    copy_seeded_images()
+
+    # 2. Compile and index PDFs, Excels, and Images
+    seeds = SEED_CLAIM_DOCUMENTS if seeds is None else seeds
 
     for s in seeds:
         file_path = None

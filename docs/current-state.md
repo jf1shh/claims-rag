@@ -196,7 +196,20 @@ As of September 6, the authoritative state is [portfolio-hardening.md](docs/port
 > has been run yet — doing so needs the server up with a model loaded in Lemonade (GPU; run
 > `gpu-preflight` first, one workload at a time).
 >
-> **Next:** run the first expert-review packet (owner, needs Lemonade + GPU) and record findings here.
+> **Fairness probe built 2026-10-23**: `docs/governance/fairness-probe-protocol.md` and
+> `eval/build_fairness_probe.py` close the "check output doesn't vary with claimant name" half of the
+> next governance gap. `backend/claims_tools.py`'s deterministic rule tools take no name/address input
+> and aren't a bias surface; the tool instead swaps the claimant's name across a fixed 5-name roster in
+> one seeded claim's documents, ingests each variant under a throwaway claim_id, asks the live
+> `/api/chat` endpoint the same question against every variant, diffs the answers after stripping names
+> back out, and deletes the variants afterward. `ingest_all.py`'s per-claim seed documents were hoisted
+> from an inline list into an importable `SEED_CLAIM_DOCUMENTS` constant to make this possible (pure
+> refactor, no behavior change — full suite still green). Address was ruled out of scope (no claimant
+> address exists separate from the loss location in the seeded data). No probe has been run yet — same
+> prerequisite as the expert-review packet (server up, model loaded in Lemonade, GPU).
+>
+> **Next:** run the first expert-review packet AND the first fairness probe (owner, needs Lemonade +
+> GPU) and record findings here.
 > Then the next governance gap: bias and unfair-discrimination analysis. Later: claim-scoped golden
 > questions for the supplement and total-loss buttons (needs a GPU judge re-score).
 
