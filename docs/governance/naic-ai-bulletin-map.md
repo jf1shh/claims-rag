@@ -127,8 +127,14 @@ In rough order of value for a deployment:
    ([docs/governance/expert-review-protocol.md](expert-review-protocol.md)), but no review has been run
    yet. The real-claims half still needs a pilot with handler-reviewed answers on real files, under the
    insurer's data controls — out of reach in this repo.
-3. **Bias and unfair-discrimination analysis** (2.4, 3.2). For example, check that SIU checklist output
-   doesn't vary with claimant name or address when the claim facts are held constant.
+3. **Bias and unfair-discrimination analysis** (2.4, 3.2). Check that output doesn't vary with
+   claimant name when the claim facts are held constant. The deterministic rule tools in
+   `backend/claims_tools.py` take no name/address input and aren't a bias surface; the free-text
+   agentic path is, since it reads claim documents that name the claimant. A protocol and tooling now
+   exist ([docs/governance/fairness-probe-protocol.md](fairness-probe-protocol.md),
+   `eval/build_fairness_probe.py`), but no probe has been run yet. Address was ruled out of scope —
+   the seeded claims have no claimant address separate from the loss location, and varying the loss
+   location would change the facts under test.
 4. **Document currency** (3.2). Track effective dates and superseded SOP and endorsement versions so an
    answer can't cite a retired rule.
 5. **Retention schedule** for the audit log and stored documents (3.6), set by the insurer's records policy.
