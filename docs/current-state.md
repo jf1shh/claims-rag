@@ -260,7 +260,7 @@ As of September 6, the authoritative state is [portfolio-hardening.md](portfolio
 > `backend/answerability.py` asks the local model once whether the served passages, read together,
 > answer the question, and reads P(yes) off the first token's logprobs
 > (`OpenAICompatibleClient.yes_probability`, contract in `docs/architecture.md`). New config
-> `ANSWERABILITY_GATE=llm|off` (default **off**) + `ANSWERABILITY_THRESHOLD` (default 0.5);
+> `ANSWERABILITY_GATE=llm|off` (default **llm** since 2026-10-25, PR #60; was off) + `ANSWERABILITY_THRESHOLD` (default 0.5);
 > `AgenticRAGRouter._answerability_gate` runs after context assembly, skips any query with a computed
 > `tool_section` (claims-tools audits), and fails open (never refuses) when the judge call errors or
 > returns `None`. **Probe** (`scripts/probe_answerability.py` -> `eval/answerability-probe-2026-10-25.json`,
@@ -277,6 +277,11 @@ As of September 6, the authoritative state is [portfolio-hardening.md](portfolio
 > comments say "off until the eval runs land") or to get one more confirming golden run first, given
 > the faithfulness dip. Nothing else blocks landing the code with the default left `off`. **Next:**
 > owner decision on the default, then commit/PR/merge per the standing per-milestone instruction.
+> **Resolved 2026-10-25**: owner approved the flip ("yes, flip the gate default"); shipped as PR #60
+> (`ANSWERABILITY_GATE` default `off` → `llm` in `config.py`/`.env.example`, with
+> `tests/test_config.py` flipped to assert the new default). Live-verified against the populated DB
+> with no `ANSWERABILITY_GATE` env var set: the gate engaged purely from the default and refused the
+> DUI probe query (`p_yes=0.0`) instead of hallucinating. Full suite and ruff clean before merge.
 
 > **JAG refusal grounded in retrieved content, 2026-10-25** (PR #55 merged as `23aba19`, this fix
 > on a follow-on branch): a second confirming gate-on 34-row run (`eval/results-2026-10-25-34row-jag.json`
