@@ -239,6 +239,21 @@ As of September 6, the authoritative state is [portfolio-hardening.md](docs/port
 > plan (`docs/go-to-market/plan.md`). Later: claim-scoped golden
 > questions for the supplement and total-loss buttons (needs a GPU judge re-score).
 
+> **Go-to-market Week 1 Build done 2026-10-25** (branch `feat/go-to-market-week1`): the three remaining
+> Build-row items from `docs/go-to-market/plan.md` landed. (a) `eval/agreement.py` scores expert-review
+> packets for inter-rater agreement — `weighted_cohen_kappa` (2 raters), `fleiss_kappa` (3+), pairwise
+> exact/within-one percentages, a markdown report; deliberately placed at `eval/agreement.py` rather than
+> `eval/expert-review/agreement.py` (the plan doc's literal path), since `eval/expert-review/` is a data
+> directory, not a package, and every other `eval/` tool lives directly in `eval/`. (b)
+> `eval/timed_study/` (`question_sets.py`, `runner.py`) is a manual-vs-ClaimsRAG timed-study runner: 20 of
+> the 34 golden queries split into matched 10-question `SET_A`/`SET_B` by a `(scope, num_sources)`
+> difficulty proxy, and a pure, injection-testable `run_question`/`write_csv_row` pair behind a CLI. (c)
+> README gained a provenance note stating every document/claim/figure is synthetic, built on the
+> maintainer's own time. Both code tools are stdlib-only, test-first (30 new tests), workstream c
+> (governance story) was already done before this scope in PR #52. Verified: `pytest tests/ -q` 1358
+> passed / 30 skipped / 1 xfailed, ruff clean. **Next:** open the PR for this branch; then the Week 1
+> Owner items (score packet, recruit reviewers) are the maintainer's own work, not Claude's.
+
 > **License changed 2026-10-17**: MIT → AGPL-3.0 (owner decision; `LICENSE`, README badge and a new License section). Code copied before the change stays under MIT.
 
 Priority after hardening: the answer/evidence leg of this is **done** (2026-09-22 full-suite rerun, numbers under Known Issues); what remains is a confirming run to separate judge variance from drift. The **adversarial baseline was measured 2026-09-26** ([adversarial-evaluation.md](docs/adversarial-evaluation.md)): injection through retrieved documents succeeded 14/16 with `decision_status` still `not_a_decision`, and `conflicting_evidence` is never emitted. **Fix 1 landed 2026-09-26**: `backend/answer_guard.py` (`ANSWER_GUARD_MODE=withhold` default) withholds answers asserting unsupported claim outcomes or off-allowlist contacts — decision forgery 0/4→4/4 blocked, attack success 87.5%→56.3%, 0/19 golden false positives. **Fix 2 landed 2026-09-26**: `backend/conflict_check.py` (`CONFLICT_CHECK=llm` default) — the model extracts each source's value (labelled policy_value/claim_amount), code decides numeric disagreement → `conflicting_evidence` on 9/9 real conflicts, 0/2 controls and 0/19 golden answers mislabelled, ≈ +3–4.5 s per answer. **Fix 3 landed 2026-09-26**: `backend/prompt_defense.py`, default `PROMPT_DEFENSE=sanitize` (owner decision) — removes 0 honest sentences, cuts known attacks 56%→25%, but 0/12 of a white-box held-out set (`eval/adversarial/cases_holdout.py`); `sandwich` generalises (held-out 42%→17%) but cost ~0.12 golden correctness, `datamark` hurt. A reworded sandwich (no "answer only") recovered quality (0.882/0.789) but lost all held-out protection (50%) — the narrowing *is* the protection, so the strict wording stays, opt-in (`eval/prompt_defense_ab.json`). Adversarial work on this branch is complete; remaining evidence items are human-reviewed cases and the Postgres performance rerun — rerunning `eval/run_adversarial_eval.py` against the baseline after each. Also: repeat real Postgres performance measurements with the corrected factory; validate deployment-specific IdP, retention, and infrastructure controls before any real claims data. The earlier roadmap below is historical context.
