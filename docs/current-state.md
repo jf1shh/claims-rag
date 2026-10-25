@@ -4,9 +4,9 @@
 
 ## Build Plan — Current Phase
 
-September 6: portfolio hardening implemented and verified; see [validation and remaining work](docs/portfolio-hardening.md). Earlier phase notes below are historical.
+September 6: portfolio hardening implemented and verified; see [validation and remaining work](portfolio-hardening.md). Earlier phase notes below are historical.
 
-> Phases 1-18 are complete. Their full build records live in [docs/build-history.md](docs/build-history.md).
+> Phases 1-18 are complete. Their full build records live in [docs/build-history.md](build-history.md).
 
 ### Phase 17 — Enterprise Data Plane: Postgres + pgvector (PG leg executed & verified)
 * **Goal**: Start Phase 1 of `docs/enterprise-migration.md` — replace/augment the SQLite data plane with Postgres + pgvector for multi-tenant correctness, without disturbing anything above the `VectorStore` seam.
@@ -29,7 +29,7 @@ September 6: portfolio hardening implemented and verified; see [validation and r
 * Hybrid retrieval (dense vector + FTS5 keyword) with RRF fusion and cross-encoder reranking.
 * Per-claim document scoping/folders and physical document viewing/download.
 * Agentic query routing (planning, self-correction, synthesis) with a simulation fallback.
-* API status check for LM Studio.
+* API status check for Lemonade.
 * Interactive Chat UI with clickable document citations and a visual pipeline-log visualizer.
 * Batch ingestion CLI tool.
 
@@ -44,7 +44,7 @@ September 6: portfolio hardening implemented and verified; see [validation and r
 
 Local environment maintenance (2026-09-23): removed 18 orphan NVIDIA/CUDA distributions left after the earlier ROCm migration. PyTorch remains `2.13.0+rocm7.2`; all 180 remaining distributions pass `uv pip check`, and an RX 9070 XT tensor operation plus `sentence_transformers` import pass. Both Triton distributions were retained because their file namespaces can overlap. This is environment cleanup, not a new retrieval benchmark or phase change.
 
-As of September 6, the authoritative state is [portfolio-hardening.md](docs/portfolio-hardening.md): factory-owned dependencies, tenant/claim authorization, bounded parsing, concurrent audit appends, immutable versioned sources, privacy defaults, and isolated PR CI are implemented. Live answer-quality evaluation **was rerun on 2026-09-22** with the generator/judge loaded and `SIMULATION_MODE=false` — see the baseline entry under Known Issues and `docs/portfolio-hardening.md`. The adversarial evaluation ran on 2026-09-26, and three measured fixes followed (answer guard, conflict check, retrieved-text sanitizer): see [adversarial-evaluation.md](docs/adversarial-evaluation.md). Human-reviewed cases remain unrun. Earlier accomplishments below describe their original sessions, not current deployment or certification.
+As of September 6, the authoritative state is [portfolio-hardening.md](portfolio-hardening.md): factory-owned dependencies, tenant/claim authorization, bounded parsing, concurrent audit appends, immutable versioned sources, privacy defaults, and isolated PR CI are implemented. Live answer-quality evaluation **was rerun on 2026-09-22** with the generator/judge loaded and `SIMULATION_MODE=false` — see the baseline entry under Known Issues and `docs/portfolio-hardening.md`. The adversarial evaluation ran on 2026-09-26, and three measured fixes followed (answer guard, conflict check, retrieved-text sanitizer): see [adversarial-evaluation.md](adversarial-evaluation.md). Human-reviewed cases remain unrun. Earlier accomplishments below describe their original sessions, not current deployment or certification.
 
 ### Confirmed Working
 * Ingestion of PDF, DOCX, XLSX, and TXT files (parent/child chunking + FTS5 index), producing real binaries in `stored_documents/` and clean, non-duplicated chunks.
@@ -52,8 +52,8 @@ As of September 6, the authoritative state is [portfolio-hardening.md](docs/port
 * Hybrid retrieval (vector + FTS5 + RRF) with cross-encoder reranking, with the FTS leg properly bm25-ordered (`ORDER BY rank`) as of Phase 14.
 * In-memory pre-normalized embedding cache (invalidated on add/delete); verified against `rag_store.db`.
 * Per-claim document scoping and physical document serving, with all filenames sanitized against path traversal before touching the filesystem.
-* Agentic router (online LM Studio + simulated) with structured pipeline logs, a strict `engine` allowlist, and a hard stop against zero-context synthesis.
-* LM Studio API request forwarding and active status monitoring, with the loaded-model lookup cached (10s TTL) instead of hit on every query.
+* Agentic router (online Lemonade + simulated) with structured pipeline logs, a strict `engine` allowlist, and a hard stop against zero-context synthesis.
+* Lemonade (OpenAI-compatible) API request forwarding and active status monitoring, with the loaded-model lookup cached (10s TTL) instead of hit on every query.
 * Simulation mode fallback when LLM servers are offline.
 * Domain-grounded eval harness (`eval/`) producing repeatable Context Precision/Recall/Faithfulness/Factual-Correctness scores against a fully local judge.
 * Frontend document rendering via `addEventListener`/DOM properties (no string-built inline event handlers), closing a stored-XSS class of bug.
@@ -256,7 +256,7 @@ As of September 6, the authoritative state is [portfolio-hardening.md](docs/port
 
 > **License changed 2026-10-17**: MIT → AGPL-3.0 (owner decision; `LICENSE`, README badge and a new License section). Code copied before the change stays under MIT.
 
-Priority after hardening: the answer/evidence leg of this is **done** (2026-09-22 full-suite rerun, numbers under Known Issues); what remains is a confirming run to separate judge variance from drift. The **adversarial baseline was measured 2026-09-26** ([adversarial-evaluation.md](docs/adversarial-evaluation.md)): injection through retrieved documents succeeded 14/16 with `decision_status` still `not_a_decision`, and `conflicting_evidence` is never emitted. **Fix 1 landed 2026-09-26**: `backend/answer_guard.py` (`ANSWER_GUARD_MODE=withhold` default) withholds answers asserting unsupported claim outcomes or off-allowlist contacts — decision forgery 0/4→4/4 blocked, attack success 87.5%→56.3%, 0/19 golden false positives. **Fix 2 landed 2026-09-26**: `backend/conflict_check.py` (`CONFLICT_CHECK=llm` default) — the model extracts each source's value (labelled policy_value/claim_amount), code decides numeric disagreement → `conflicting_evidence` on 9/9 real conflicts, 0/2 controls and 0/19 golden answers mislabelled, ≈ +3–4.5 s per answer. **Fix 3 landed 2026-09-26**: `backend/prompt_defense.py`, default `PROMPT_DEFENSE=sanitize` (owner decision) — removes 0 honest sentences, cuts known attacks 56%→25%, but 0/12 of a white-box held-out set (`eval/adversarial/cases_holdout.py`); `sandwich` generalises (held-out 42%→17%) but cost ~0.12 golden correctness, `datamark` hurt. A reworded sandwich (no "answer only") recovered quality (0.882/0.789) but lost all held-out protection (50%) — the narrowing *is* the protection, so the strict wording stays, opt-in (`eval/prompt_defense_ab.json`). Adversarial work on this branch is complete; remaining evidence items are human-reviewed cases and the Postgres performance rerun — rerunning `eval/run_adversarial_eval.py` against the baseline after each. Also: repeat real Postgres performance measurements with the corrected factory; validate deployment-specific IdP, retention, and infrastructure controls before any real claims data. The earlier roadmap below is historical context.
+Priority after hardening: the answer/evidence leg of this is **done** (2026-09-22 full-suite rerun, numbers under Known Issues); what remains is a confirming run to separate judge variance from drift. The **adversarial baseline was measured 2026-09-26** ([adversarial-evaluation.md](adversarial-evaluation.md)): injection through retrieved documents succeeded 14/16 with `decision_status` still `not_a_decision`, and `conflicting_evidence` is never emitted. **Fix 1 landed 2026-09-26**: `backend/answer_guard.py` (`ANSWER_GUARD_MODE=withhold` default) withholds answers asserting unsupported claim outcomes or off-allowlist contacts — decision forgery 0/4→4/4 blocked, attack success 87.5%→56.3%, 0/19 golden false positives. **Fix 2 landed 2026-09-26**: `backend/conflict_check.py` (`CONFLICT_CHECK=llm` default) — the model extracts each source's value (labelled policy_value/claim_amount), code decides numeric disagreement → `conflicting_evidence` on 9/9 real conflicts, 0/2 controls and 0/19 golden answers mislabelled, ≈ +3–4.5 s per answer. **Fix 3 landed 2026-09-26**: `backend/prompt_defense.py`, default `PROMPT_DEFENSE=sanitize` (owner decision) — removes 0 honest sentences, cuts known attacks 56%→25%, but 0/12 of a white-box held-out set (`eval/adversarial/cases_holdout.py`); `sandwich` generalises (held-out 42%→17%) but cost ~0.12 golden correctness, `datamark` hurt. A reworded sandwich (no "answer only") recovered quality (0.882/0.789) but lost all held-out protection (50%) — the narrowing *is* the protection, so the strict wording stays, opt-in (`eval/prompt_defense_ab.json`). Adversarial work on this branch is complete; remaining evidence items are human-reviewed cases and the Postgres performance rerun — rerunning `eval/run_adversarial_eval.py` against the baseline after each. Also: repeat real Postgres performance measurements with the corrected factory; validate deployment-specific IdP, retention, and infrastructure controls before any real claims data. The earlier roadmap below is historical context.
 
 **Start here in a fresh session**: read this section, then the Phase 6.1 status paragraphs in `docs/enterprise-migration.md`, the session 38 entry in `docs/build-history.md`, and the batching spec/plan if continuing reranker performance work.
 
