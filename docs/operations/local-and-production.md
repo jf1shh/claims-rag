@@ -15,7 +15,7 @@ uv pip install --python .venv/bin/python -r requirements.txt
 .venv/bin/python -m uvicorn backend.app:app --reload --port 8000
 ```
 
-Local mode uses SQLite, the configured filesystem directory, local embeddings/reranking, and optional LM Studio. The repository’s sample data is synthetic.
+Local mode uses SQLite, the configured filesystem directory, local embeddings/reranking, and an optional local model server (Lemonade). The repository’s sample data is synthetic.
 
 ### Optional: GPU reranking (AMD/ROCm or NVIDIA/CUDA)
 
@@ -90,7 +90,7 @@ docker compose up --build
 `Dockerfile` is a single-stage `python:3.12-slim` image. Two things worth knowing:
 
 - The app forces Hugging Face offline mode at import time (`HF_HUB_OFFLINE=1` in `backend/app.py`), so the embedding + reranker models must already be cached before the server can start. The build runs `scripts/precache_models.py` (network required at **build** time only) so the resulting image needs zero network access to boot.
-- LM Studio is a native desktop app and can't live in the container. `docker-compose.yml` sets `LLM_BASE_URL=http://host.docker.internal:1234` and adds the `host.docker.internal:host-gateway` mapping Linux needs (Docker Desktop on Mac/Windows already resolves it). With no LM Studio running, the app still serves — `SIMULATION_MODE=true` stands in for a live model.
+- Lemonade (or LM Studio) is a native host app and can't live in the container. `docker-compose.yml` sets `LLM_BASE_URL=http://host.docker.internal:13305` and adds the `host.docker.internal:host-gateway` mapping Linux needs (Docker Desktop on Mac/Windows already resolves it). With no local model server running, the app still serves — `SIMULATION_MODE=true` stands in for a live model.
 
 Runtime state (`rag_store.db`, `stored_documents/`, `jobs.db`, `audit.log.jsonl`) is routed via `RAG_DB_PATH`/`STORED_DOCUMENTS_DIR`/`JOBS_DB_PATH`/`AUDIT_LOG_PATH` into `/app/data`, backed by one named volume — deliberately not a bind mount per file, since Docker creates a directory (not a file) when a bind-mounted host path doesn't already exist.
 

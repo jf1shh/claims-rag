@@ -267,7 +267,7 @@ Synthetic data only. Read [`SECURITY.md`](SECURITY.md) before handling uploaded 
 - **Faithfulness measures groundedness, not correctness:** an answer can stick to partial context and still be wrong. Reference-fact coverage is the check against the verified answer.
 - **Context precision and recall score single-shot search,** not the full pipeline's guaranteed inclusion of the claim's own documents. Coverage *is* scored through the full pipeline.
 - **Prompt injection is reduced, not solved.** 3 of 12 held-out attacks still succeed: an instruction worded like an honest SOP ("record X as the form reference") or a code stated as a fact in a footnote reads as legitimate to the provenance check. The held-out set has now been inspected, so the next round needs a fresh one.
-- **The golden set is still small.** 28 questions, mostly one or two per topic, all on synthetic documents. The newer topics have one short source document each, which makes them easier than real claim files.
+- **The golden set is still small.** 34 questions, mostly one or two per topic, all on synthetic documents. The newer topics have one short source document each, which makes them easier than real claim files.
 
 ## Tech stack
 
