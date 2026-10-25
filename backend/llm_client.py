@@ -3,6 +3,7 @@ from __future__ import annotations
 import contextlib
 import contextvars
 import json
+import math
 import time
 from abc import ABC, abstractmethod
 from typing import Callable, Iterator
@@ -118,6 +119,23 @@ class _DefaultHTTP:
 # Placeholder model name used when LLM_MODEL is unset and no server model is known.
 UNRESOLVED_MODEL = "local-model"
 
+
+def yes_share(top_logprobs) -> float | None:
+    """P(yes) / (P(yes) + P(no)) from one token's top logprobs, folding case and
+    leading spaces ("Yes", " yes"). None when neither word is among them."""
+    yes = no = 0.0
+    for entry in top_logprobs or ():
+        try:
+            word = str(entry["token"]).strip().lower()
+            p = math.exp(float(entry["logprob"]))
+        except (KeyError, TypeError, ValueError):
+            continue
+        if word == "yes":
+            yes += p
+        elif word == "no":
+            no += p
+    return yes / (yes + no) if yes + no > 0 else None
+
 # How long a failed models() probe is cached, so repeated calls during an
 # outage don't each pay the health/models-endpoint timeouts.
 MODELS_FAILURE_TTL_SECONDS = 30.0
@@ -206,19 +224,14 @@ class OpenAICompatibleClient(ChatClient):
             h["Authorization"] = f"Bearer {self.api_key}"
         return h
 
-    def complete(self, messages, *, model, temperature, max_tokens, stage="synthesis"):
+    def _first_choice(self, payload: dict, stage: str) -> dict:
         timeout = self._call_budget(stage)
         bound = self._clock() + timeout
         resp = None
         try:
             resp = self._http.post(
                 f"{self.base_url}/v1/chat/completions",
-                json={
-                    "model": model,
-                    "messages": messages,
-                    "temperature": temperature,
-                    "max_tokens": max_tokens,
-                },
+                json=payload,
                 headers=self._headers(),
                 timeout=timeout,
                 stream=True,
@@ -226,7 +239,7 @@ class OpenAICompatibleClient(ChatClient):
             resp.raise_for_status()
             body = self._read_body(resp, bound)
             try:
-                return json.loads(body)["choices"][0]["message"]["content"]
+                return json.loads(body)["choices"][0]
             except (KeyError, IndexError, TypeError, ValueError) as exc:
                 raise ChatClientError("LLM response missing content") from exc
         except ChatClientError:
@@ -237,6 +250,28 @@ class OpenAICompatibleClient(ChatClient):
             close = getattr(resp, "close", None)
             if callable(close):
                 close()
+
+    def complete(self, messages, *, model, temperature, max_tokens, stage="synthesis"):
+        choice = self._first_choice(
+            {"model": model, "messages": messages, "temperature": temperature, "max_tokens": max_tokens},
+            stage,
+        )
+        try:
+            return choice["message"]["content"]
+        except (KeyError, TypeError) as exc:
+            raise ChatClientError("LLM response missing content") from exc
+
+    def yes_probability(self, messages, *, model, stage="answerability_check"):
+        choice = self._first_choice(
+            {"model": model, "messages": messages, "temperature": 0, "max_tokens": 1,
+             "logprobs": True, "top_logprobs": 10},
+            stage,
+        )
+        try:
+            top = choice["logprobs"]["content"][0]["top_logprobs"]
+        except (KeyError, IndexError, TypeError):
+            return None
+        return yes_share(top)
 
     def complete_stream(self, messages, *, model, temperature, max_tokens, stage="synthesis"):
         timeout = self._call_budget(stage)

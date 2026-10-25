@@ -191,6 +191,12 @@ class Settings:
     # sanitize, or "none". Default "sanitize": removed 0 honest sentences (no measured answer-quality
     # cost) -- sandwich/datamark cost ~0.12 correctness; see docs/adversarial-evaluation.md fix 3.
     prompt_defense: str = "sanitize"
+    # Answerability gate (backend/answerability.py, JAG): "llm" asks the model once whether the
+    # served passages answer the question and refuses below answerability_threshold (P(yes))
+    # instead of synthesizing from lookalike passages; computed-tool audits are exempt; "off" skips
+    # it. Probe 2026-10-25: 15/16 absent questions caught, 26/26 answerable kept at 0.5.
+    answerability_gate: str = "off"
+    answerability_threshold: float = 0.5
 
     @classmethod
     def from_env(cls, environ: Mapping[str, str] | None = None) -> "Settings":
@@ -309,6 +315,8 @@ class Settings:
             conflict_check=env.get("CONFLICT_CHECK", "llm").strip().lower(),
             provenance_check=env.get("PROVENANCE_CHECK", "llm").strip().lower(),
             prompt_defense=env.get("PROMPT_DEFENSE", "sanitize").strip().lower(),
+            answerability_gate=env.get("ANSWERABILITY_GATE", "off").strip().lower(),
+            answerability_threshold=_float(env.get("ANSWERABILITY_THRESHOLD"), 0.5, "ANSWERABILITY_THRESHOLD"),
             answer_guard_allowed_domains=frozenset(
                 domain.strip().lower()
                 for domain in env.get("ANSWER_GUARD_ALLOWED_DOMAINS", "").split(",")
@@ -331,6 +339,10 @@ class Settings:
         parse_defenses(self.prompt_defense)  # raises ValueError on an unknown defense name
         if self.conflict_check not in {"llm", "off"}:
             raise ValueError("CONFLICT_CHECK must be llm or off")
+        if self.answerability_gate not in {"llm", "off"}:
+            raise ValueError("ANSWERABILITY_GATE must be llm or off")
+        if not 0 < self.answerability_threshold < 1:
+            raise ValueError("ANSWERABILITY_THRESHOLD must be between 0 and 1")
         if self.provenance_check not in {"llm", "static", "off"}:
             raise ValueError("PROVENANCE_CHECK must be llm, static, or off")
         if self.answer_guard_mode not in {"withhold", "flag", "off"}:

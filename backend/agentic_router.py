@@ -795,6 +795,11 @@ class AgenticRAGRouter:
         if not top_matches:
             return {**self._no_context(logs), **tools}
 
+        refusal = self._answerability_gate(query_text, claim_id, top_matches, tool_section,
+                                           llm_client, caps, logs, start_time)
+        if refusal is not None:
+            return {**refusal, **tools}
+
         # claim_dossier is a load-bearing response field (eval/run_eval.py
         # scores Faithfulness against it; see this project's CLAUDE.md Phase
         # 9) independent of the prompt text built above -- computed here too
@@ -1095,6 +1100,41 @@ class AgenticRAGRouter:
             pass
 
         return fallback_plan
+
+    @staticmethod
+    def _answerability_gate(query_text: str, claim_id: Optional[str], top_matches: List[Dict[str, Any]],
+                            tool_section: Optional[str], llm_client: Any, caps: Any,
+                            logs: List[str], start_time: float) -> Optional[Dict[str, Any]]:
+        """ANSWERABILITY_GATE=llm: one judge call over the served passages; below the threshold
+        the question is refused before synthesis (`sources: []` -> insufficient_evidence).
+        Computed-tool audits are exempt, and a failed judge call never refuses (fail open).
+        Probe evidence: eval/answerability-probe-2026-10-25.json."""
+        if getattr(caps, "answerability_gate", "off") != "llm" or tool_section is not None:
+            return None
+        from backend.answerability import judge_joint
+        p_yes = judge_joint(llm_client, query_text, top_matches)
+        threshold = getattr(caps, "answerability_threshold", 0.5)
+        if p_yes is None:
+            logs.append("⚠️ [Answerability] Judge unavailable; answering without the gate.")
+            return None
+        if p_yes >= threshold:
+            logs.append(f"✅ [Answerability] Served passages answer the question (p={p_yes:.3f}).")
+            return None
+        logs.append(f"❌ [Synthesis Skipped] Answerability judge: the served passages do not answer "
+                    f"this question (p={p_yes:.3f} < {threshold}); refusing instead of answering from lookalikes.")
+        elapsed = (time.time() - start_time) * 1000
+        logs.append(f"✅ [Agentic Coordinator] Completed reasoning cycle in {elapsed:.1f}ms")
+        return {
+            "answer": "The retrieved documents discuss related material but do not state the answer to this "
+                      "question" + (f" in the guidelines or the claim {claim_id} dossier" if claim_id else "") + ". "
+                      "Please rephrase the question or confirm the relevant policy/claim documents have been uploaded.",
+            "sources": [],
+            "claim_dossier": None,
+            "engine": "lm-studio (agentic)",
+            "answerability": {"p_yes": p_yes, "threshold": threshold,
+                              "judged": [m.get("filename") for m in top_matches]},
+            "pipeline_logs": logs,
+        }
 
     def _live_tool_section(self, claim_id: Optional[str], query_text: str, logs: List[str]) -> Optional[str]:
         """The simulated path's computed claim answer, for the live path to ground on and append.

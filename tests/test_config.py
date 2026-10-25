@@ -400,3 +400,14 @@ def test_postgres_statement_timeout_below_minimum_rejected_on_validate():
     settings = Settings.from_env({"POSTGRES_STATEMENT_TIMEOUT_MS": "500"})
     with pytest.raises(ValueError, match="POSTGRES_STATEMENT_TIMEOUT_MS"):
         settings.validate_for_environment()
+
+
+def test_answerability_gate_defaults_off_and_validates():
+    settings = Settings.from_env({})
+    assert settings.answerability_gate == "off" and settings.answerability_threshold == 0.5
+    on = Settings.from_env({"ANSWERABILITY_GATE": "LLM", "ANSWERABILITY_THRESHOLD": "0.3"})
+    assert on.answerability_gate == "llm" and on.answerability_threshold == 0.3
+    with pytest.raises(ValueError, match="ANSWERABILITY_GATE"):
+        Settings.from_env({"ANSWERABILITY_GATE": "maybe"}).validate_for_environment()
+    with pytest.raises(ValueError, match="ANSWERABILITY_THRESHOLD"):
+        Settings.from_env({"ANSWERABILITY_THRESHOLD": "1.5"}).validate_for_environment()
