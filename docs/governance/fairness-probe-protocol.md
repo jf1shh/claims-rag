@@ -30,13 +30,31 @@ that is a finding.
    documents with the claimant's name replaced and nothing else, and ingests the copy under a
    throwaway `claim_id` (`<original>-fairness-probe-<name>`) and throwaway filenames
    (`<original>_fairness-probe_<name>.<ext>`) that can never collide with real data.
-4. Asks the *same* claim-scoped question against the base claim and every variant, via the live
-   `/api/chat` path (`eval/run_eval.py`'s `chat()`, same call used by
+4. Builds an **identity control** the same way: a copy with the base name "replaced" by itself,
+   ingested under `<original>-fairness-probe-identity`. The control differs from every variant only in
+   the name, so it is the baseline, not the original seeded claim (see "Why an identity control" below).
+5. Asks the *same* claim-scoped question against the control and every variant, `--repeats` times each
+   (default 3), via the live `/api/chat` path (`eval/run_eval.py`'s `chat()`, same call used by
    [the expert-review packet](expert-review-protocol.md)).
-5. Strips every candidate name out of every answer and diffs what's left. A variant whose
-   name-stripped answer differs from the base's is a finding.
-6. Deletes every variant document it ingested, in a `finally` block, so the run leaves the store as it
+6. Strips every candidate name out of every answer. A variant run whose name-stripped text matches no
+   control run is flagged; the verdict also says whether the control runs agreed with each other.
+7. Deletes every variant document it ingested, in a `finally` block, so the run leaves the store as it
    found it even if a `/api/chat` call fails partway through.
+
+### Why an identity control
+
+The first run (2026-10-24, `eval/fairness-probe/2026-10-24-report-v1-base-diff.md`) diffed each variant
+against the original claim and reported 5 of 5 variants diverging. The original claim is ingested by
+`ingest_all.py` from parsed PDF/XLSX files under its own filenames; the variants were ingested as raw
+text under new claim IDs and `_fairness-probe_` filenames. A control with the name unchanged, sent
+through the variant path, answered in the variants' layout, not the original's, so most of that
+divergence came from the probe's setup, not from the name. Comparing against the identity control
+removes that confound.
+
+A second run found another: variant filenames kept the base surname
+(`police_theft_report_Chen_fairness-probe_wei_zhang.pdf`) while the text said "Wei Zhang", so only
+the identity control's cited filenames agreed with its text. `build_variant_documents` now swaps the
+surname in the filename too.
 
 ## Which claims this works on
 
@@ -54,16 +72,21 @@ Requires the backend server running and a model loaded in Lemonade (same prerequ
 
 ```bash
 .venv/bin/uvicorn backend.app:app --port 8000      # separate shell
-.venv/bin/python eval/build_fairness_probe.py --out eval/fairness_probe_report.md
+.venv/bin/python eval/build_fairness_probe.py --repeats 3 --out eval/fairness-probe/YYYY-MM-DD-report.md
 ```
 
 ## Reading the result
 
 No divergence after name-stripping across all five variants is evidence of absence, not proof — five
 names and one claim is a narrow probe, run against a synthetic corpus the model may answer
-differently from a real one. A divergence is worth investigating even if it looks minor: check whether
-the difference tracks the name specifically (rerun with a sixth name to rule out model
-non-determinism) before treating it as a real finding.
+differently from a real one.
+
+Generation runs at temperature 0.1, so repeated runs rarely match word for word. When the verdict says
+the control runs disagree with each other, the exact-text diff cannot tell a name effect from sampling
+variation, and a person has to compare substance: for each section of the answer, does the decision
+(flagged / not flagged / undetermined) change with the name while the control's decision holds across
+its runs? Tally those decisions per name across runs before calling anything a finding, and check
+whether the decision the control makes is itself supported by the documents.
 
 ## Recording a completed run
 

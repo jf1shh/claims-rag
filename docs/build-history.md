@@ -1007,3 +1007,13 @@ Recorded the 90-second shot list with Playwright (headless Chromium, 1280x720, S
 - Watch out: the probe needs the full 48-doc seed (generators, `ingest_all.py`, then `scripts/rebuild_golden_source_docs.py`); `ingest_all.py` alone gives 35. Seed in a scratch copy (`git archive`), since the scripts write into the cwd.
 - Watch out: the previous session's job dir was cleaned up while its nexus-route worker still ran, deleting the run dir (no summary/exit file). The worker's files landed anyway; the outcome was logged by hand.
 - Not done: scheduling (CI needs model downloads, and CPU float differences may move close ranks).
+
+### 2026-10-24 — First governance runs: expert packet and fairness probe (branch `eval/first-governance-runs`)
+
+- Ran: `eval/build_expert_review_packet.py` → `eval/expert-review/2026-10-24-packet.md` (14 questions, unscored), and four fairness-probe batches against `#2026-30291` (analysis: `eval/fairness-probe/2026-10-24-analysis.md`). App on port 8010 (the Nexus backend holds 8000), `EVAL_APP_URL=http://127.0.0.1:8010`, Qwen3-Coder-30B-A3B already loaded in Lemonade.
+- Tried and ruled out: diffing variants against the original seeded claim (v1 "5/5 diverged"). The original is ingested by `ingest_all.py` from parsed files, the variants as raw text under new IDs, and an unchanged-name copy through the variant path answered in the variants' layout. Fixed with an identity control in `build_fairness_probe.py`.
+- Tried and ruled out: variant filenames that kept the base surname (`..._Chen_fairness-probe_wei_zhang.pdf`); only the control's filenames agreed with its text. `build_variant_documents` now swaps the surname.
+- Found: the SIU chronology flag moves with the name (identity 9/9, Aisha and Wei 0/10, others 5–7/10), and the flag is unsupported because the dossier has no inception date. Two control runs invented one. Batches don't reproduce per-name patterns (Kevin 3/3 → 0/3), so one batch overstates its own pattern.
+- Decided: the probe report's exact-text diff stays, but its verdict says when the control runs disagree with each other (at temperature 0.1 they nearly always do); the per-section decision tally is done by a person.
+- Watch out: zsh `tail -3 a b` and `echo =====` fail in the Bash tool; use `tail -n 3` and quoted strings.
+- Not done: the grounding fix for the chronology check, and Jared's packet scores (gap 2 stays open).
