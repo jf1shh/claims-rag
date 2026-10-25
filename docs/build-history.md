@@ -1110,3 +1110,26 @@ Recorded the 90-second shot list with Playwright (headless Chromium, 1280x720, S
 - PR #57 also hit the known `test_ingestion_load.py` throughput flake under runner contention (same
   as prior sessions); `gh run rerun --failed` resolved it, confirming it as a flake, not a regression,
   for the fourth time across sessions.
+
+### 2026-10-25 — ANSWERABILITY_GATE default flipped to llm (PR #60)
+
+- Decided: owner approved flipping the gate default this session ("yes, flip the gate default"), now
+  that both confirming gate-on golden runs and the PR #56 refusal-grounding fix had landed, closing
+  the correctness dip those runs had shown.
+- Changed: `config.py` dataclass default and `from_env` fallback, plus `.env.example`, from
+  `ANSWERABILITY_GATE=off` to `llm`; `tests/test_config.py`'s `test_answerability_gate_defaults_*`
+  flipped to assert the new default and cover explicit opt-out (`ANSWERABILITY_GATE=OFF`) instead of
+  explicit opt-in.
+- Verified: full suite 1378 passed / 30 skipped / 1 xfailed and ruff clean confirm
+  `backend/agentic_router.py`'s own independent `getattr(caps, "answerability_gate", "off")` fallback
+  and `tests/test_answerability_gate.py`'s explicit fixture are unaffected by this config default.
+  Live-verified with a server started with no `ANSWERABILITY_GATE` env var set at all, against the
+  populated DB: the gate engaged purely from the new default and refused the DUI probe query
+  (claim `#2026-55912`, `p_yes=0.0`) instead of hallucinating, with the `answerability` field present
+  in the response.
+- Watch out: the first attempt at this live check gave a false negative — the verification server was
+  started without `LLM_MODEL` set, so Lemonade rejected the completion request ("No model specified
+  in request") and both the answerability judge and synthesis silently fell back (fail-open,
+  per `.claude/rules/backend-constraints.md`), producing a plausible-looking but ungated response.
+  Always set `LLM_MODEL` explicitly for a from-scratch verification server when more than one model
+  is downloaded in Lemonade — a default/empty value is ambiguous to it, not a no-op.
