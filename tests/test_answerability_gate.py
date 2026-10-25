@@ -41,6 +41,15 @@ def test_gate_refuses_below_threshold_without_synthesis():
     assert any("Answerability judge" in line for line in result["pipeline_logs"])
 
 
+def test_gate_grounds_the_refusal_in_what_was_retrieved():
+    client = JudgingClient(0.02)
+    result = _run(client, _caps())
+    assert len(client.refusals) == 1 and client.refusals[0]["stage"] == "answerability_refusal"
+    assert result["answer"] == (
+        "The passages describe the Nevada and California mechanical labor caps, not this question."
+    )
+
+
 def test_gate_passes_an_answerable_question_through_to_synthesis():
     client = JudgingClient(0.97)
     result = _run(client, _caps())

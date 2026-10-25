@@ -107,3 +107,39 @@ def test_judge_joint_is_none_on_failure_or_nothing_to_judge():
     assert answerability.judge_joint(FakeJudge({"a.pdf": RuntimeError()}), "q", [{"filename": "a.pdf"}]) is None
     assert answerability.judge_joint(None, "q", [{"filename": "a.pdf"}]) is None
     assert answerability.judge_joint(FakeJudge({}), "q", []) is None
+
+
+class FakeCompleter:
+    def __init__(self, text_or_exc="The passages describe a water-related engine failure."):
+        self.text_or_exc = text_or_exc
+        self.calls = []
+
+    def model_for_stage(self, stage):
+        return "M"
+
+    def complete(self, messages, *, model, temperature, max_tokens, stage):
+        self.calls.append({"messages": messages, "model": model, "temperature": temperature,
+                            "max_tokens": max_tokens, "stage": stage})
+        if isinstance(self.text_or_exc, Exception):
+            raise self.text_or_exc
+        return self.text_or_exc
+
+
+def test_grounded_refusal_text_calls_the_refusal_stage_with_the_passages():
+    client = FakeCompleter()
+    text = answerability.grounded_refusal_text(client, "q", [{"filename": "a.pdf", "content": "x"}])
+    assert text == "The passages describe a water-related engine failure."
+    assert len(client.calls) == 1
+    call = client.calls[0]
+    assert call["stage"] == answerability.REFUSAL_STAGE and call["temperature"] == 0
+    assert call["messages"][0]["content"] == answerability.REFUSAL_SYSTEM_PROMPT
+    assert 'file="a.pdf"' in call["messages"][1]["content"]
+
+
+def test_grounded_refusal_text_is_none_on_failure_blank_or_nothing_to_ground():
+    assert answerability.grounded_refusal_text(FakeCompleter(RuntimeError("down")), "q",
+                                                [{"filename": "a.pdf"}]) is None
+    assert answerability.grounded_refusal_text(FakeCompleter("   "), "q", [{"filename": "a.pdf"}]) is None
+    assert answerability.grounded_refusal_text(None, "q", [{"filename": "a.pdf"}]) is None
+    assert answerability.grounded_refusal_text(FakeCompleter(), "q", []) is None
+    assert answerability.grounded_refusal_text(FakeJudge({}), "q", [{"filename": "a.pdf"}]) is None

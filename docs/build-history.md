@@ -1055,3 +1055,36 @@ Recorded the 90-second shot list with Playwright (headless Chromium, 1280x720, S
   comparison only.
 - Not done: the owner's call on whether to flip `ANSWERABILITY_GATE` to `llm` by default now that
   both runs have landed, or wait for one more confirming golden run given the faithfulness dip.
+
+### 2026-10-25 — JAG refusal grounded in retrieved content (follow-on to PR #55)
+
+- Found: PR #55 merged as `23aba19`. A second confirming gate-on 34-row run
+  (`eval/results.json`, 3494.9 s: hybrid P/R 0.823/0.968, faithfulness 0.798 [33/34], correctness
+  0.779 [34/34]) showed the same correctness dip as the first run on one row,
+  `rostova-dui-hallucination-probe`: 1.0 (baseline) → 0.3 → 0.22 across the three runs. Root-caused
+  by diffing per-row correctness across all three result files, then confirming live: the gate's
+  static refusal template discarded the specific grounded detail (water-related engine failure, not
+  DUI) that pre-gate synthesis used to produce correctly (baseline correctness 1.0).
+- Built: `backend/answerability.py::grounded_refusal_text` — fail-open LLM call
+  (`stage="answerability_refusal"`, temperature 0, 150 tokens) writing a 1-2 sentence refusal
+  grounded strictly in the served passages, never answering the gated question.
+  `_answerability_gate` (`backend/agentic_router.py`) uses it when available, falling back to the
+  exact old generic string on `None`. New stage name (not `*_check`) so it gets the full
+  `self.timeout` budget, not the short check timeout.
+- Tested: `tests/test_agentic_router_llm.py`'s shared `RecordingClient` gained a `refusals` bucket
+  keyed on `stage="answerability_refusal"` so it stops conflating the new call with real synthesis
+  calls in other tests. New tests in `tests/test_answerability.py` (grounded path; None on failure,
+  blank text, no client, no passages, or a client without `.complete`) and
+  `tests/test_answerability_gate.py` (`test_gate_grounds_the_refusal_in_what_was_retrieved`). Full
+  suite 1378 passed / 30 skipped / 1 xfailed, ruff clean.
+- Verified: restarted a gated server (`ANSWERABILITY_GATE=llm`) against the existing `rag_store.db`
+  and re-ran the exact probe query (`"Was the driver cited for DUI in Elena Rostova's claim?"`,
+  claim `#2026-55912`). Answer changed from the generic "...Please rephrase the question..." template
+  to "The documents do not address whether the driver was cited for DUI. The passages describe an
+  engine damage incident involving hydraulic lock due to driving through standing water...".
+- Decided: did not re-run the full 34-row eval for this wording-only change — the live spot-check
+  confirms the mechanism and the dip was isolated to this one row, so a full ~58-minute rerun was
+  judged not worth the cost. A judgment call; the next session can run it if the owner wants the
+  correctness number itself re-confirmed.
+- Not done: the `ANSWERABILITY_GATE` default-flip decision from the prior entry — still open, still
+  the owner's call, now also gated on this fix (done).

@@ -9,6 +9,7 @@ class RecordingClient(ChatClient):
     def __init__(self):
         self.plans = []
         self.synthesis = []
+        self.refusals = []
         self.models_calls = 0
     def models(self):
         self.models_calls += 1
@@ -22,6 +23,9 @@ class RecordingClient(ChatClient):
             self.plans.append(record)
             return '{"needs_global_policies": true, "needs_claim_dossier": false, ' \
                    '"sub_queries": ["labor"]}'
+        if stage == "answerability_refusal":
+            self.refusals.append(record)
+            return "The passages describe the Nevada and California mechanical labor caps, not this question."
         self.synthesis.append(record)
         return "The Nevada mechanical cap is $110/hr."
     def complete_stream(self, messages, *, model, temperature, max_tokens, stage="synthesis"):
