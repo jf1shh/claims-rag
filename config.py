@@ -194,8 +194,10 @@ class Settings:
     # Answerability gate (backend/answerability.py, JAG): "llm" asks the model once whether the
     # served passages answer the question and refuses below answerability_threshold (P(yes))
     # instead of synthesizing from lookalike passages; computed-tool audits are exempt; "off" skips
-    # it. Probe 2026-10-25: 15/16 absent questions caught, 26/26 answerable kept at 0.5.
-    answerability_gate: str = "off"
+    # it. Probe 2026-10-25: 15/16 absent questions caught, 26/26 answerable kept at 0.5. Default
+    # flipped to "llm" 2026-10-25 once the refusal-grounding fix (PR #56) closed the correctness
+    # dip the gate-on golden runs had shown.
+    answerability_gate: str = "llm"
     answerability_threshold: float = 0.5
 
     @classmethod
@@ -315,7 +317,7 @@ class Settings:
             conflict_check=env.get("CONFLICT_CHECK", "llm").strip().lower(),
             provenance_check=env.get("PROVENANCE_CHECK", "llm").strip().lower(),
             prompt_defense=env.get("PROMPT_DEFENSE", "sanitize").strip().lower(),
-            answerability_gate=env.get("ANSWERABILITY_GATE", "off").strip().lower(),
+            answerability_gate=env.get("ANSWERABILITY_GATE", "llm").strip().lower(),
             answerability_threshold=_float(env.get("ANSWERABILITY_THRESHOLD"), 0.5, "ANSWERABILITY_THRESHOLD"),
             answer_guard_allowed_domains=frozenset(
                 domain.strip().lower()
