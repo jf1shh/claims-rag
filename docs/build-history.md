@@ -1027,3 +1027,31 @@ Recorded the 90-second shot list with Playwright (headless Chromium, 1280x720, S
 - Decided: the rerun files carry `rerun` in their names, because the same-date name would have overwritten the original `2026-10-24-report.md`.
 - Watch out: Luis Fernandez run 1 calls chronology undetermined but later says the indicator is "flagged for further review", which an adjuster could misread; tallied U. The free text still differs by name, so only this one decision is grounded.
 - Not done: widening the probe (more claims, names, runs); Jared's expert-packet scores (workstream a, gap 2 stays open).
+
+### 2026-10-25 — Answerability gate ("JAG") built (branch `feat/jag-relevance-gate`)
+
+- Built: `backend/answerability.py` (`judge`/`judge_joint`, pure apart from the duck-typed LLM
+  client), `OpenAICompatibleClient.yes_probability`/`yes_share` in `backend/llm_client.py` (one
+  `max_tokens=1, logprobs=true` call, P(yes) from the top-10 logprobs), and
+  `AgenticRAGRouter._answerability_gate` wired in after context assembly. New config
+  `ANSWERABILITY_GATE=llm|off` (default off) + `ANSWERABILITY_THRESHOLD` (default 0.5); skips any
+  query with a computed `tool_section` and fails open on a `None`/errored judge call. 66 new tests
+  (`tests/test_answerability.py`, `tests/test_answerability_gate.py`, plus `test_config.py`
+  additions); full suite 1375 passed / 30 skipped / 1 xfailed, ruff clean.
+- Ran: `scripts/probe_answerability.py` against 33 golden + 16 absent questions (6 near-miss, 3
+  far-miss global; 7 claim-scoped) → `eval/answerability-probe-2026-10-25.json`. Joint judge, gated,
+  catches 15/16 absent at threshold 0.5 while keeping all 26/26 non-exempt answerable rows (AUC
+  0.965); rerank score alone only catches 3/16 holding every answerable row (AUC 0.930).
+- Ran: full 34-row golden eval with the gate on (`eval/results-2026-10-25-34row-jag.json`,
+  Qwen3-Coder-30B-A3B as judge and generator, 3410 s) → hybrid P/R 0.823/0.968, correctness 0.846
+  (34/34 scored), in line with the 2026-10-21 fts-or baseline (0.825/0.983, correctness 0.840).
+  Faithfulness 0.78 (32/34 scored, 2 failed) vs that baseline's 0.839 (33/34) — inside the documented
+  no-code-change judge-noise band (0.754–0.887) but on the low side, and the first run with this gate
+  in the loop.
+- Decided: the judge prompt states "you are not answering the question itself" — without that line a
+  passage that settles the question with "no"/"excluded" scored as not answering (`.claude/rules/backend-constraints.md`).
+- Decided: `judge_joint` (one call over all served passages) is the gating score, not per-passage
+  `judge` — some answers combine two passages that neither answers alone; kept `judge` for the probe
+  comparison only.
+- Not done: the owner's call on whether to flip `ANSWERABILITY_GATE` to `llm` by default now that
+  both runs have landed, or wait for one more confirming golden run given the faithfulness dip.

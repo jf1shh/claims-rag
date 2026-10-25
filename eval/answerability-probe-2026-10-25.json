@@ -1,0 +1,2330 @@
+{
+ "summary": {
+  "documents": 48,
+  "seconds": 224.0,
+  "shortlist": 8,
+  "exempt": 7,
+  "rerank": {
+   "auc": 0.9337,
+   "answerable": 33,
+   "absent": 16,
+   "cutoff_keeping_all_answerable": 0.0372,
+   "absent_caught_at_that_cutoff": 3,
+   "at_0.3": {
+    "answerable_kept": 32,
+    "absent_caught": 10
+   },
+   "at_0.5": {
+    "answerable_kept": 31,
+    "absent_caught": 10
+   }
+  },
+  "rerank_gated": {
+   "auc": 0.9303,
+   "answerable": 26,
+   "absent": 16,
+   "cutoff_keeping_all_answerable": 0.0372,
+   "absent_caught_at_that_cutoff": 3,
+   "at_0.3": {
+    "answerable_kept": 25,
+    "absent_caught": 10
+   },
+   "at_0.5": {
+    "answerable_kept": 24,
+    "absent_caught": 10
+   }
+  },
+  "judge": {
+   "auc": 0.9157,
+   "answerable": 33,
+   "absent": 16,
+   "cutoff_keeping_all_answerable": 0.0,
+   "absent_caught_at_that_cutoff": 0,
+   "at_0.3": {
+    "answerable_kept": 28,
+    "absent_caught": 14
+   },
+   "at_0.5": {
+    "answerable_kept": 28,
+    "absent_caught": 14
+   }
+  },
+  "judge_gated": {
+   "auc": 0.9411,
+   "answerable": 26,
+   "absent": 16,
+   "cutoff_keeping_all_answerable": 0.0,
+   "absent_caught_at_that_cutoff": 0,
+   "at_0.3": {
+    "answerable_kept": 24,
+    "absent_caught": 14
+   },
+   "at_0.5": {
+    "answerable_kept": 24,
+    "absent_caught": 14
+   }
+  },
+  "joint": {
+   "auc": 0.947,
+   "answerable": 33,
+   "absent": 16,
+   "cutoff_keeping_all_answerable": 0.0,
+   "absent_caught_at_that_cutoff": 0,
+   "at_0.3": {
+    "answerable_kept": 31,
+    "absent_caught": 15
+   },
+   "at_0.5": {
+    "answerable_kept": 31,
+    "absent_caught": 15
+   }
+  },
+  "joint_gated": {
+   "auc": 0.9651,
+   "answerable": 26,
+   "absent": 16,
+   "cutoff_keeping_all_answerable": 0.7577,
+   "absent_caught_at_that_cutoff": 15,
+   "at_0.3": {
+    "answerable_kept": 26,
+    "absent_caught": 15
+   },
+   "at_0.5": {
+    "answerable_kept": 26,
+    "absent_caught": 15
+   }
+  },
+  "either": {
+   "auc": 0.9555,
+   "answerable": 33,
+   "absent": 16,
+   "cutoff_keeping_all_answerable": 0.0003,
+   "absent_caught_at_that_cutoff": 12,
+   "at_0.3": {
+    "answerable_kept": 31,
+    "absent_caught": 14
+   },
+   "at_0.5": {
+    "answerable_kept": 31,
+    "absent_caught": 14
+   }
+  },
+  "either_gated": {
+   "auc": 0.9663,
+   "answerable": 26,
+   "absent": 16,
+   "cutoff_keeping_all_answerable": 0.9998,
+   "absent_caught_at_that_cutoff": 15,
+   "at_0.3": {
+    "answerable_kept": 26,
+    "absent_caught": 14
+   },
+   "at_0.5": {
+    "answerable_kept": 26,
+    "absent_caught": 14
+   }
+  }
+ },
+ "rows": [
+  {
+   "id": "labor-mechanical-cap",
+   "answerable": true,
+   "claim_id": null,
+   "exempt": false,
+   "rerank": 0.9963,
+   "judge": 1.0,
+   "joint": 1.0,
+   "either": 1.0,
+   "judged": [
+    {
+     "filename": "SOP_Auto_Repair_Labor_Rates.pdf",
+     "p": 0.9999999983627144
+    },
+    {
+     "filename": "SOP_Supplement_Review.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Case_Study_Stolen_Honda_Civic.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Rider_Roadside_Assistance_Plus.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Auto_Claims_Guidelines.docx",
+     "p": 0.0
+    },
+    {
+     "filename": "Case_Study_Engine_Hydro_Lock.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Endorsement_Rental_Car_Upgrade.docx",
+     "p": 0.0
+    },
+    {
+     "filename": "Auto_Deductibles_And_Limits.xlsx",
+     "p": 0.0
+    }
+   ]
+  },
+  {
+   "id": "labor-body-paint-caps",
+   "answerable": true,
+   "claim_id": null,
+   "exempt": false,
+   "rerank": 0.9998,
+   "judge": 1.0,
+   "joint": 1.0,
+   "either": 1.0,
+   "judged": [
+    {
+     "filename": "SOP_Auto_Repair_Labor_Rates.pdf",
+     "p": 0.9999999996014914
+    },
+    {
+     "filename": "SOP_Supplement_Review.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Endorsement_Custom_Equipment_Form402.pdf",
+     "p": 1.0407509318482475e-10
+    },
+    {
+     "filename": "Auto_Deductibles_And_Limits.xlsx",
+     "p": 0.0
+    },
+    {
+     "filename": "Case_Study_Hail_Damage_PlanA.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Endorsement_Windshield_Zero_Deductible.docx",
+     "p": 0.0
+    },
+    {
+     "filename": "Rider_OEM_Parts_Guarantee.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Auto_Claims_Guidelines.docx",
+     "p": 0.0
+    }
+   ]
+  },
+  {
+   "id": "dui-exclusion-trigger",
+   "answerable": true,
+   "claim_id": null,
+   "exempt": false,
+   "rerank": 0.9967,
+   "judge": 1.0,
+   "joint": 1.0,
+   "either": 1.0,
+   "judged": [
+    {
+     "filename": "DUI_Exclusion_Directive.txt",
+     "p": 0.9999999959041929
+    },
+    {
+     "filename": "Auto_Claims_Guidelines.docx",
+     "p": 0.0
+    },
+    {
+     "filename": "SOP_Coverage_Verification.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Auto_Policy_Exclusions.txt",
+     "p": 0.9999999590347376
+    },
+    {
+     "filename": "Rider_Roadside_Assistance_Plus.pdf",
+     "p": 1.057430826436381e-10
+    },
+    {
+     "filename": "Case_Study_Rear_End_Collision.pdf",
+     "p": 1.090096614240083e-10
+    },
+    {
+     "filename": "Endorsement_Rideshare_TNC_Form702.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "California_Auto_Claims_Regulations.pdf",
+     "p": 0.0
+    }
+   ]
+  },
+  {
+   "id": "oem-parts-eligibility",
+   "answerable": true,
+   "claim_id": null,
+   "exempt": false,
+   "rerank": 0.9997,
+   "judge": 1.0,
+   "joint": 1.0,
+   "either": 1.0,
+   "judged": [
+    {
+     "filename": "Rider_OEM_Parts_Guarantee.pdf",
+     "p": 0.999999906152131
+    },
+    {
+     "filename": "Endorsement_Windshield_Zero_Deductible.docx",
+     "p": 8.901626532372045e-09
+    },
+    {
+     "filename": "Endorsement_Rental_Car_Upgrade.docx",
+     "p": 0.0
+    },
+    {
+     "filename": "Endorsement_Custom_Equipment_Form402.pdf",
+     "p": 6.56797475523232e-10
+    },
+    {
+     "filename": "Case_Study_Stolen_Honda_Civic.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Rider_Roadside_Assistance_Plus.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Endorsement_Rideshare_TNC_Form702.pdf",
+     "p": 3.2585438110364735e-11
+    },
+    {
+     "filename": "SOP_Auto_Repair_Labor_Rates.pdf",
+     "p": 4.070486308912033e-06
+    }
+   ]
+  },
+  {
+   "id": "custom-av-cap",
+   "answerable": true,
+   "claim_id": null,
+   "exempt": false,
+   "rerank": 0.9618,
+   "judge": 1.0,
+   "joint": 1.0,
+   "either": 1.0,
+   "judged": [
+    {
+     "filename": "Endorsement_Custom_Equipment_Form402.pdf",
+     "p": 0.9999999995625467
+    },
+    {
+     "filename": "Rider_OEM_Parts_Guarantee.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Auto_Deductibles_And_Limits.xlsx",
+     "p": 0.0
+    },
+    {
+     "filename": "Auto_Claims_Guidelines.docx",
+     "p": 0.0
+    },
+    {
+     "filename": "Rider_Roadside_Assistance_Plus.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "SOP_Coverage_Verification.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Endorsement_Rideshare_TNC_Form702.pdf",
+     "p": 2.1196359888852785e-10
+    },
+    {
+     "filename": "Auto_Claims_Guidelines.docx",
+     "p": 0.0
+    }
+   ]
+  },
+  {
+   "id": "windshield-zero-deductible",
+   "answerable": true,
+   "claim_id": null,
+   "exempt": false,
+   "rerank": 0.9996,
+   "judge": 1.0,
+   "joint": 1.0,
+   "either": 1.0,
+   "judged": [
+    {
+     "filename": "Endorsement_Windshield_Zero_Deductible.docx",
+     "p": 0.9999999998125751
+    },
+    {
+     "filename": "Auto_Claims_Guidelines.docx",
+     "p": 0.9546181574407034
+    },
+    {
+     "filename": "Rider_Roadside_Assistance_Plus.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Rider_OEM_Parts_Guarantee.pdf",
+     "p": 5.229571388857848e-10
+    },
+    {
+     "filename": "Endorsement_Rideshare_TNC_Form702.pdf",
+     "p": 6.815474755424671e-09
+    },
+    {
+     "filename": "Case_Study_Hail_Damage_PlanA.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Guideline_Betterment_Adjustments.docx",
+     "p": 4.311300389090869e-10
+    },
+    {
+     "filename": "SOP_Coverage_Verification.pdf",
+     "p": 0.0003247065980216901
+    }
+   ]
+  },
+  {
+   "id": "rental-upgrade-rider",
+   "answerable": true,
+   "claim_id": null,
+   "exempt": false,
+   "rerank": 0.9999,
+   "judge": 1.0,
+   "joint": 1.0,
+   "either": 1.0,
+   "judged": [
+    {
+     "filename": "Endorsement_Rental_Car_Upgrade.docx",
+     "p": 0.9999999877835074
+    },
+    {
+     "filename": "Auto_Claims_Guidelines.docx",
+     "p": 8.24406172874935e-07
+    },
+    {
+     "filename": "Auto_Deductibles_And_Limits.xlsx",
+     "p": 0.0
+    },
+    {
+     "filename": "Rider_Roadside_Assistance_Plus.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Rider_OEM_Parts_Guarantee.pdf",
+     "p": 6.145055147290758e-08
+    },
+    {
+     "filename": "Endorsement_Rideshare_TNC_Form702.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Rider_Gap_Insurance_Coverage.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "SOP_Vehicle_Storage_Fees.txt",
+     "p": 0.0
+    }
+   ]
+  },
+  {
+   "id": "rollover-total-loss-threshold",
+   "answerable": true,
+   "claim_id": null,
+   "exempt": false,
+   "rerank": 0.9993,
+   "judge": 1.0,
+   "joint": 1.0,
+   "either": 1.0,
+   "judged": [
+    {
+     "filename": "Adjuster_Guide_Rollover_Claims.docx",
+     "p": 0.9999999817121025
+    },
+    {
+     "filename": "SOP_Total_Loss_Valuation.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Guideline_Diminished_Value.docx",
+     "p": 5.062284414587886e-10
+    },
+    {
+     "filename": "SOP_Coverage_Verification.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Case_Study_Hail_Damage_PlanA.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "SOP_Subrogation_Recovery.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Case_Study_Stolen_Honda_Civic.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "SOP_Vehicle_Storage_Fees.txt",
+     "p": 0.0
+    }
+   ]
+  },
+  {
+   "id": "fraud-chronology-red-flag",
+   "answerable": true,
+   "claim_id": null,
+   "exempt": false,
+   "rerank": 0.9928,
+   "judge": 1.0,
+   "joint": 1.0,
+   "either": 1.0,
+   "judged": [
+    {
+     "filename": "SOP_Claims_Fraud_Red_Flags.pdf",
+     "p": 0.9999999986803341
+    },
+    {
+     "filename": "SOP_Coverage_Verification.pdf",
+     "p": 3.34557724183243e-06
+    },
+    {
+     "filename": "SOP_Subrogation_Recovery.pdf",
+     "p": 9.796704448285145e-10
+    },
+    {
+     "filename": "SOP_Claims_Fraud_Red_Flags.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Texas_Auto_Insurance_Code_2026.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "California_Auto_Claims_Regulations.pdf",
+     "p": 6.043324321743643e-11
+    },
+    {
+     "filename": "California_Auto_Claims_Regulations.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Case_Study_Engine_Hydro_Lock.pdf",
+     "p": 7.132833351414322e-11
+    }
+   ]
+  },
+  {
+   "id": "ca-claim-ack-timeline",
+   "answerable": true,
+   "claim_id": null,
+   "exempt": false,
+   "rerank": 0.9999,
+   "judge": 1.0,
+   "joint": 1.0,
+   "either": 1.0,
+   "judged": [
+    {
+     "filename": "California_Auto_Claims_Regulations.pdf",
+     "p": 1.0
+    },
+    {
+     "filename": "Texas_Auto_Insurance_Code_2026.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "California_Auto_Claims_Regulations.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "SOP_Coverage_Verification.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "SOP_Subrogation_Recovery.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "SOP_Claims_Fraud_Red_Flags.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "DUI_Exclusion_Directive.txt",
+     "p": 0.0
+    },
+    {
+     "filename": "SOP_Liability_Determination.pdf",
+     "p": 0.0
+    }
+   ]
+  },
+  {
+   "id": "rear-impact-adas-fee",
+   "answerable": true,
+   "claim_id": null,
+   "exempt": false,
+   "rerank": 0.9975,
+   "judge": 1.0,
+   "joint": 1.0,
+   "either": 1.0,
+   "judged": [
+    {
+     "filename": "Adjuster_Guide_Rear_Impact.docx",
+     "p": 0.9999999998015638
+    },
+    {
+     "filename": "Endorsement_Windshield_Zero_Deductible.docx",
+     "p": 2.3366021977677472e-08
+    },
+    {
+     "filename": "Case_Study_Rear_End_Collision.pdf",
+     "p": 0.9999997207739045
+    },
+    {
+     "filename": "Auto_Claims_Guidelines.docx",
+     "p": 0.0
+    },
+    {
+     "filename": "Endorsement_Custom_Equipment_Form402.pdf",
+     "p": 2.7021254586644744e-09
+    },
+    {
+     "filename": "Case_Study_Hail_Damage_PlanA.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Rider_Roadside_Assistance_Plus.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "SOP_Liability_Determination.pdf",
+     "p": 0.0
+    }
+   ]
+  },
+  {
+   "id": "plan-a-comprehensive-deductible",
+   "answerable": true,
+   "claim_id": null,
+   "exempt": false,
+   "rerank": 0.9824,
+   "judge": 1.0,
+   "joint": 1.0,
+   "either": 1.0,
+   "judged": [
+    {
+     "filename": "Auto_Claims_Guidelines.docx",
+     "p": 6.456750959920384e-08
+    },
+    {
+     "filename": "Auto_Deductibles_And_Limits.xlsx",
+     "p": 0.9999998807652868
+    },
+    {
+     "filename": "Case_Study_Hail_Damage_PlanA.pdf",
+     "p": 0.9999999999923419
+    },
+    {
+     "filename": "Case_Study_Hail_Damage_PlanA.pdf",
+     "p": 0.999999994342588
+    },
+    {
+     "filename": "Auto_Claims_Guidelines.docx",
+     "p": 0.0
+    },
+    {
+     "filename": "Endorsement_Windshield_Zero_Deductible.docx",
+     "p": 0.000340315736330866
+    },
+    {
+     "filename": "Endorsement_Rideshare_TNC_Form702.pdf",
+     "p": 0.007479708429033778
+    },
+    {
+     "filename": "Endorsement_Custom_Equipment_Form402.pdf",
+     "p": 2.1491234410677e-07
+    }
+   ]
+  },
+  {
+   "id": "sterling-oem-eligibility",
+   "answerable": true,
+   "claim_id": "#2026-99382",
+   "exempt": true,
+   "rerank": 0.9052,
+   "judge": 1.0,
+   "joint": 1.0,
+   "either": 1.0,
+   "judged": [
+    {
+     "filename": "tesla_rear_collision_description.txt",
+     "p": 0.00047759490498992937
+    },
+    {
+     "filename": "shop_email_thread_Sterling.pdf",
+     "p": 0.9999655054669295
+    },
+    {
+     "filename": "police_report_Sterling.pdf",
+     "p": 3.4799989795434296e-07
+    },
+    {
+     "filename": "Rider_OEM_Parts_Guarantee.pdf",
+     "p": 1.1516203467755729e-05
+    },
+    {
+     "filename": "Case_Study_Rear_End_Collision.pdf",
+     "p": 8.45863271853059e-07
+    },
+    {
+     "filename": "Endorsement_Windshield_Zero_Deductible.docx",
+     "p": 2.5339112866172293e-07
+    },
+    {
+     "filename": "Case_Study_Stolen_Honda_Civic.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "SOP_Auto_Repair_Labor_Rates.pdf",
+     "p": 4.536270916441257e-06
+    }
+   ]
+  },
+  {
+   "id": "sterling-shop-estimate-detail",
+   "answerable": true,
+   "claim_id": "#2026-99382",
+   "exempt": false,
+   "rerank": 0.0372,
+   "judge": 1.0,
+   "joint": 1.0,
+   "either": 1.0,
+   "judged": [
+    {
+     "filename": "shop_email_thread_Sterling.pdf",
+     "p": 0.9999999996507629
+    },
+    {
+     "filename": "SOP_Auto_Repair_Labor_Rates.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "SOP_Supplement_Review.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Case_Study_Stolen_Honda_Civic.pdf",
+     "p": 6.89426299654063e-08
+    },
+    {
+     "filename": "tesla_rear_collision_description.txt",
+     "p": 0.0
+    },
+    {
+     "filename": "police_report_Sterling.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Case_Study_Hail_Damage_PlanA.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Case_Study_Hail_Damage_PlanA.pdf",
+     "p": 1.2309991215309852e-08
+    }
+   ]
+  },
+  {
+   "id": "jenkins-repaint-vs-pdr",
+   "answerable": true,
+   "claim_id": "#2026-10492",
+   "exempt": false,
+   "rerank": 0.7259,
+   "judge": 0.0001,
+   "joint": 0.9998,
+   "either": 0.9998,
+   "judged": [
+    {
+     "filename": "dent_photos_description_Jenkins.pdf",
+     "p": 8.800008988087212e-05
+    },
+    {
+     "filename": "Case_Study_Hail_Damage_PlanA.pdf",
+     "p": 1.0554092523605028e-05
+    },
+    {
+     "filename": "f150_hail_damage_description.txt",
+     "p": 0.0
+    },
+    {
+     "filename": "Case_Study_Hail_Damage_PlanA.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Case_Study_Rear_End_Collision.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Auto_Claims_Guidelines.docx",
+     "p": 0.0
+    },
+    {
+     "filename": "Case_Study_Stolen_Honda_Civic.pdf",
+     "p": 3.936491044476519e-10
+    },
+    {
+     "filename": "Guideline_Diminished_Value.docx",
+     "p": 0.0
+    }
+   ]
+  },
+  {
+   "id": "chen-custom-equipment-cap",
+   "answerable": true,
+   "claim_id": "#2026-30291",
+   "exempt": false,
+   "rerank": 0.603,
+   "judge": 0.0,
+   "joint": 0.9999,
+   "either": 0.9999,
+   "judged": [
+    {
+     "filename": "Endorsement_Custom_Equipment_Form402.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "police_theft_report_Chen.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "inspection_photos_Chen.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "civic_smashed_window_description.txt",
+     "p": 0.0
+    },
+    {
+     "filename": "Endorsement_Rental_Car_Upgrade.docx",
+     "p": 0.0
+    },
+    {
+     "filename": "Auto_Claims_Guidelines.docx",
+     "p": 0.0
+    },
+    {
+     "filename": "Endorsement_Rideshare_TNC_Form702.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Endorsement_Windshield_Zero_Deductible.docx",
+     "p": 0.0
+    },
+    {
+     "filename": "custom_equipment_receipts_Chen.xlsx",
+     "p": 1.0757486403660203e-08
+    }
+   ]
+  },
+  {
+   "id": "chen-theft-report-detail",
+   "answerable": true,
+   "claim_id": "#2026-30291",
+   "exempt": false,
+   "rerank": 0.9962,
+   "judge": 1.0,
+   "joint": 1.0,
+   "either": 1.0,
+   "judged": [
+    {
+     "filename": "police_theft_report_Chen.pdf",
+     "p": 0.9999995823631918
+    },
+    {
+     "filename": "inspection_photos_Chen.pdf",
+     "p": 0.5264902951908063
+    },
+    {
+     "filename": "civic_smashed_window_description.txt",
+     "p": 0.9826257582586618
+    },
+    {
+     "filename": "Case_Study_Stolen_Honda_Civic.pdf",
+     "p": 2.632912812142478e-07
+    },
+    {
+     "filename": "Auto_Claims_Guidelines.docx",
+     "p": 0.0
+    },
+    {
+     "filename": "SOP_Liability_Determination.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Case_Study_Rear_End_Collision.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "DUI_Exclusion_Directive.txt",
+     "p": 0.0
+    },
+    {
+     "filename": "custom_equipment_receipts_Chen.xlsx",
+     "p": 0.0
+    }
+   ]
+  },
+  {
+   "id": "rostova-hydrolock-coverage",
+   "answerable": true,
+   "claim_id": "#2026-55912",
+   "exempt": false,
+   "rerank": 0.3727,
+   "judge": 1.0,
+   "joint": 1.0,
+   "either": 1.0,
+   "judged": [
+    {
+     "filename": "Case_Study_Engine_Hydro_Lock.pdf",
+     "p": 0.999999811727117
+    },
+    {
+     "filename": "Adjuster_Guide_Rollover_Claims.docx",
+     "p": 0.0
+    },
+    {
+     "filename": "SOP_Coverage_Verification.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "SOP_Vehicle_Storage_Fees.txt",
+     "p": 0.0
+    },
+    {
+     "filename": "Guideline_Diminished_Value.docx",
+     "p": 0.0
+    },
+    {
+     "filename": "Rider_Roadside_Assistance_Plus.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Auto_Policy_Exclusions.txt",
+     "p": 0.0
+    },
+    {
+     "filename": "Florida_Auto_Insurance_Statutes.pdf",
+     "p": 3.306071409287647e-08
+    },
+    {
+     "filename": "bmw_water_damage_description.txt",
+     "p": 0.997895886831432
+    },
+    {
+     "filename": "engine_diagnostic_report_Rostova.pdf",
+     "p": 0.5673857321495154
+    },
+    {
+     "filename": "telematics_log_Rostova.pdf",
+     "p": 0.9924091772868616
+    }
+   ]
+  },
+  {
+   "id": "rostova-dui-hallucination-probe",
+   "answerable": false,
+   "claim_id": "#2026-55912",
+   "exempt": false,
+   "rerank": 0.2888,
+   "judge": 0.0,
+   "joint": 0.0,
+   "either": 0.0,
+   "judged": [
+    {
+     "filename": "DUI_Exclusion_Directive.txt",
+     "p": 0.0
+    },
+    {
+     "filename": "SOP_Liability_Determination.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Case_Study_Rear_End_Collision.pdf",
+     "p": 2.719663293883383e-10
+    },
+    {
+     "filename": "Case_Study_Engine_Hydro_Lock.pdf",
+     "p": 2.8673256761924353e-10
+    },
+    {
+     "filename": "California_Auto_Claims_Regulations.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Auto_Policy_Exclusions.txt",
+     "p": 3.5067438591504083e-07
+    },
+    {
+     "filename": "Case_Study_Hail_Damage_PlanA.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "SOP_Claims_Fraud_Red_Flags.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "bmw_water_damage_description.txt",
+     "p": 0.0
+    },
+    {
+     "filename": "engine_diagnostic_report_Rostova.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "telematics_log_Rostova.pdf",
+     "p": 0.0
+    }
+   ]
+  },
+  {
+   "id": "subrogation-referral-trigger",
+   "answerable": true,
+   "claim_id": null,
+   "exempt": false,
+   "rerank": 0.9998,
+   "judge": 1.0,
+   "joint": 1.0,
+   "either": 1.0,
+   "judged": [
+    {
+     "filename": "SOP_Subrogation_Recovery.pdf",
+     "p": 0.9999999999762723
+    },
+    {
+     "filename": "SOP_Claims_Fraud_Red_Flags.pdf",
+     "p": 0.11424698436265
+    },
+    {
+     "filename": "SOP_Coverage_Verification.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "California_Auto_Claims_Regulations.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Texas_Auto_Insurance_Code_2026.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "SOP_Claims_Fraud_Red_Flags.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "DUI_Exclusion_Directive.txt",
+     "p": 6.941118880154984e-09
+    },
+    {
+     "filename": "California_Auto_Claims_Regulations.pdf",
+     "p": 0.0
+    }
+   ]
+  },
+  {
+   "id": "subrogation-partial-deductible",
+   "answerable": true,
+   "claim_id": null,
+   "exempt": false,
+   "rerank": 0.9983,
+   "judge": 1.0,
+   "joint": 1.0,
+   "either": 1.0,
+   "judged": [
+    {
+     "filename": "SOP_Subrogation_Recovery.pdf",
+     "p": 0.9999999947508964
+    },
+    {
+     "filename": "Texas_Auto_Insurance_Code_2026.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Auto_Claims_Guidelines.docx",
+     "p": 0.0
+    },
+    {
+     "filename": "California_Auto_Claims_Regulations.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Case_Study_Rear_End_Collision.pdf",
+     "p": 1.4122435741271693e-05
+    },
+    {
+     "filename": "Case_Study_Hail_Damage_PlanA.pdf",
+     "p": 2.9566872678368143e-07
+    },
+    {
+     "filename": "Auto_Deductibles_And_Limits.xlsx",
+     "p": 0.0
+    },
+    {
+     "filename": "Case_Study_Stolen_Honda_Civic.pdf",
+     "p": 0.2709703834035189
+    }
+   ]
+  },
+  {
+   "id": "supplement-reinspection-threshold",
+   "answerable": true,
+   "claim_id": null,
+   "exempt": false,
+   "rerank": 0.9996,
+   "judge": 1.0,
+   "joint": 1.0,
+   "either": 1.0,
+   "judged": [
+    {
+     "filename": "SOP_Supplement_Review.pdf",
+     "p": 0.9999999997217408
+    },
+    {
+     "filename": "SOP_Coverage_Verification.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Rider_OEM_Parts_Guarantee.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Adjuster_Guide_Rollover_Claims.docx",
+     "p": 0.0
+    },
+    {
+     "filename": "Auto_Claims_Guidelines.docx",
+     "p": 0.0
+    },
+    {
+     "filename": "Endorsement_Rental_Car_Upgrade.docx",
+     "p": 0.0
+    },
+    {
+     "filename": "Case_Study_Rear_End_Collision.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "SOP_Total_Loss_Valuation.pdf",
+     "p": 0.0
+    }
+   ]
+  },
+  {
+   "id": "salvage-owner-retention",
+   "answerable": true,
+   "claim_id": null,
+   "exempt": false,
+   "rerank": 0.9929,
+   "judge": 1.0,
+   "joint": 1.0,
+   "either": 1.0,
+   "judged": [
+    {
+     "filename": "SOP_Total_Loss_Valuation.pdf",
+     "p": 1.0
+    },
+    {
+     "filename": "Rider_Gap_Insurance_Coverage.pdf",
+     "p": 2.9757500992548956e-08
+    },
+    {
+     "filename": "SOP_Vehicle_Storage_Fees.txt",
+     "p": 1.8153276168123612e-07
+    },
+    {
+     "filename": "SOP_Total_Loss_Valuation.pdf",
+     "p": 0.9991751483235056
+    },
+    {
+     "filename": "Case_Study_Stolen_Honda_Civic.pdf",
+     "p": 5.299329935975717e-10
+    },
+    {
+     "filename": "Endorsement_Classic_Car_Agreed_Value.pdf",
+     "p": 2.354855975464669e-07
+    },
+    {
+     "filename": "SOP_Coverage_Verification.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Auto_Claims_Guidelines.docx",
+     "p": 0.0
+    }
+   ]
+  },
+  {
+   "id": "diminished-value-third-party",
+   "answerable": true,
+   "claim_id": null,
+   "exempt": false,
+   "rerank": 0.9998,
+   "judge": 1.0,
+   "joint": 1.0,
+   "either": 1.0,
+   "judged": [
+    {
+     "filename": "Guideline_Diminished_Value.docx",
+     "p": 0.9999999998039522
+    },
+    {
+     "filename": "SOP_Subrogation_Recovery.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Rider_Gap_Insurance_Coverage.pdf",
+     "p": 6.4463916153799555e-09
+    },
+    {
+     "filename": "SOP_Coverage_Verification.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Endorsement_Classic_Car_Agreed_Value.pdf",
+     "p": 1.218196773206396e-09
+    },
+    {
+     "filename": "DUI_Exclusion_Directive.txt",
+     "p": 2.4650847344067406e-10
+    },
+    {
+     "filename": "SOP_Total_Loss_Valuation.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "SOP_Total_Loss_Valuation.pdf",
+     "p": 0.0
+    }
+   ]
+  },
+  {
+   "id": "betterment-tires",
+   "answerable": true,
+   "claim_id": null,
+   "exempt": false,
+   "rerank": 0.9997,
+   "judge": 1.0,
+   "joint": 1.0,
+   "either": 1.0,
+   "judged": [
+    {
+     "filename": "Guideline_Betterment_Adjustments.docx",
+     "p": 0.9999999987139014
+    },
+    {
+     "filename": "Rider_OEM_Parts_Guarantee.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Auto_Claims_Guidelines.docx",
+     "p": 0.0
+    },
+    {
+     "filename": "Guideline_Diminished_Value.docx",
+     "p": 0.0
+    },
+    {
+     "filename": "Endorsement_Custom_Equipment_Form402.pdf",
+     "p": 3.3952615534198904e-09
+    },
+    {
+     "filename": "SOP_Total_Loss_Valuation.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Case_Study_Stolen_Honda_Civic.pdf",
+     "p": 3.921702300709465e-11
+    },
+    {
+     "filename": "Endorsement_Windshield_Zero_Deductible.docx",
+     "p": 0.0
+    }
+   ]
+  },
+  {
+   "id": "liability-comparative-fault-texas",
+   "answerable": true,
+   "claim_id": null,
+   "exempt": false,
+   "rerank": 0.9963,
+   "judge": 1.0,
+   "joint": 1.0,
+   "either": 1.0,
+   "judged": [
+    {
+     "filename": "SOP_Liability_Determination.pdf",
+     "p": 0.9999999988964722
+    },
+    {
+     "filename": "California_Auto_Claims_Regulations.pdf",
+     "p": 0.0005934702411782481
+    },
+    {
+     "filename": "Texas_Auto_Insurance_Code_2026.pdf",
+     "p": 0.9986017291483514
+    },
+    {
+     "filename": "California_Auto_Claims_Regulations.pdf",
+     "p": 1.5390631463688557e-06
+    },
+    {
+     "filename": "SOP_Subrogation_Recovery.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "SOP_Total_Loss_Valuation.pdf",
+     "p": 2.118471737020265e-10
+    },
+    {
+     "filename": "Texas_Auto_Insurance_Code_2026.pdf",
+     "p": 2.4792043708271047e-06
+    },
+    {
+     "filename": "Florida_Auto_Insurance_Statutes.pdf",
+     "p": 3.204431742679635e-10
+    }
+   ]
+  },
+  {
+   "id": "towing-after-accident",
+   "answerable": true,
+   "claim_id": null,
+   "exempt": false,
+   "rerank": 0.9994,
+   "judge": 1.0,
+   "joint": 0.7577,
+   "either": 1.0,
+   "judged": [
+    {
+     "filename": "Rider_Roadside_Assistance_Plus.pdf",
+     "p": 0.9999999906590494
+    },
+    {
+     "filename": "Auto_Deductibles_And_Limits.xlsx",
+     "p": 1.2461772050006136e-08
+    },
+    {
+     "filename": "SOP_Vehicle_Storage_Fees.txt",
+     "p": 1.0047994724090775e-08
+    },
+    {
+     "filename": "Endorsement_Rideshare_TNC_Form702.pdf",
+     "p": 2.4624090213603457e-08
+    },
+    {
+     "filename": "Adjuster_Guide_Rear_Impact.docx",
+     "p": 0.0
+    },
+    {
+     "filename": "Auto_Policy_Exclusions.txt",
+     "p": 0.0
+    },
+    {
+     "filename": "SOP_Coverage_Verification.pdf",
+     "p": 3.987678784341046e-09
+    },
+    {
+     "filename": "Case_Study_Rear_End_Collision.pdf",
+     "p": 4.98436120699461e-09
+    }
+   ]
+  },
+  {
+   "id": "storage-fee-cutoff",
+   "answerable": true,
+   "claim_id": null,
+   "exempt": false,
+   "rerank": 0.9992,
+   "judge": 1.0,
+   "joint": 1.0,
+   "either": 1.0,
+   "judged": [
+    {
+     "filename": "SOP_Vehicle_Storage_Fees.txt",
+     "p": 0.9999999997516333
+    },
+    {
+     "filename": "Rider_Roadside_Assistance_Plus.pdf",
+     "p": 4.350785897816012e-10
+    },
+    {
+     "filename": "Case_Study_Stolen_Honda_Civic.pdf",
+     "p": 9.554407989356992e-10
+    },
+    {
+     "filename": "SOP_Total_Loss_Valuation.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Auto_Deductibles_And_Limits.xlsx",
+     "p": 1.492662022272523e-10
+    },
+    {
+     "filename": "Auto_Claims_Guidelines.docx",
+     "p": 0.0
+    },
+    {
+     "filename": "Case_Study_Rear_End_Collision.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Endorsement_Rental_Car_Upgrade.docx",
+     "p": 0.0
+    }
+   ]
+  },
+  {
+   "id": "sterling-coverage-verification",
+   "answerable": true,
+   "claim_id": "#2026-99382",
+   "exempt": true,
+   "rerank": 0.9982,
+   "judge": 0.0,
+   "joint": 0.0003,
+   "either": 0.0003,
+   "judged": [
+    {
+     "filename": "shop_email_thread_Sterling.pdf",
+     "p": 1.0648960116218079e-09
+    },
+    {
+     "filename": "police_report_Sterling.pdf",
+     "p": 2.2926210818992724e-06
+    },
+    {
+     "filename": "Case_Study_Rear_End_Collision.pdf",
+     "p": 5.029368083054449e-06
+    },
+    {
+     "filename": "tesla_rear_collision_description.txt",
+     "p": 0.0
+    },
+    {
+     "filename": "Case_Study_Stolen_Honda_Civic.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "SOP_Coverage_Verification.pdf",
+     "p": 8.532865672546912e-07
+    },
+    {
+     "filename": "DUI_Exclusion_Directive.txt",
+     "p": 1.3339108296700118e-08
+    },
+    {
+     "filename": "Auto_Claims_Guidelines.docx",
+     "p": 0.0
+    }
+   ]
+  },
+  {
+   "id": "chen-siu-checklist",
+   "answerable": true,
+   "claim_id": "#2026-30291",
+   "exempt": true,
+   "rerank": 0.9637,
+   "judge": 0.657,
+   "joint": 1.0,
+   "either": 1.0,
+   "judged": [
+    {
+     "filename": "inspection_photos_Chen.pdf",
+     "p": 0.65695937589248
+    },
+    {
+     "filename": "Case_Study_Stolen_Honda_Civic.pdf",
+     "p": 0.0014389411565981043
+    },
+    {
+     "filename": "police_theft_report_Chen.pdf",
+     "p": 0.4558141326190264
+    },
+    {
+     "filename": "SOP_Claims_Fraud_Red_Flags.pdf",
+     "p": 0.0002209740646543166
+    },
+    {
+     "filename": "civic_smashed_window_description.txt",
+     "p": 1.6210684848561634e-07
+    },
+    {
+     "filename": "Case_Study_Rear_End_Collision.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "SOP_Claims_Fraud_Red_Flags.pdf",
+     "p": 1.2016109299467345e-10
+    },
+    {
+     "filename": "DUI_Exclusion_Directive.txt",
+     "p": 9.545391546210631e-10
+    },
+    {
+     "filename": "custom_equipment_receipts_Chen.xlsx",
+     "p": 5.999615132930065e-10
+    }
+   ]
+  },
+  {
+   "id": "brooks-siu-checklist",
+   "answerable": true,
+   "claim_id": "#2026-84410",
+   "exempt": true,
+   "rerank": 0.9538,
+   "judge": 0.0633,
+   "joint": 1.0,
+   "either": 1.0,
+   "judged": [
+    {
+     "filename": "inspection_photos_Brooks.pdf",
+     "p": 0.06328680897810551
+    },
+    {
+     "filename": "SOP_Claims_Fraud_Red_Flags.pdf",
+     "p": 0.0007398548779309872
+    },
+    {
+     "filename": "loss_statement_Brooks.pdf",
+     "p": 5.341186948559791e-07
+    },
+    {
+     "filename": "Case_Study_Rear_End_Collision.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Case_Study_Hail_Damage_PlanA.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "SOP_Claims_Fraud_Red_Flags.pdf",
+     "p": 1.2875849582609002e-10
+    },
+    {
+     "filename": "DUI_Exclusion_Directive.txt",
+     "p": 1.1552326344867998e-09
+    },
+    {
+     "filename": "California_Auto_Claims_Regulations.pdf",
+     "p": 0.0
+    }
+   ]
+  },
+  {
+   "id": "rostova-siu-flag-unexplained",
+   "answerable": true,
+   "claim_id": "#2026-55912",
+   "exempt": true,
+   "rerank": 0.9588,
+   "judge": 0.8557,
+   "joint": 1.0,
+   "either": 1.0,
+   "judged": [
+    {
+     "filename": "telematics_log_Rostova.pdf",
+     "p": 0.289742673960818
+    },
+    {
+     "filename": "engine_diagnostic_report_Rostova.pdf",
+     "p": 6.892300449885172e-05
+    },
+    {
+     "filename": "SOP_Claims_Fraud_Red_Flags.pdf",
+     "p": 0.0037972791052858306
+    },
+    {
+     "filename": "Case_Study_Engine_Hydro_Lock.pdf",
+     "p": 0.8556967886786538
+    },
+    {
+     "filename": "Case_Study_Rear_End_Collision.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "SOP_Claims_Fraud_Red_Flags.pdf",
+     "p": 4.894602239673257e-11
+    },
+    {
+     "filename": "bmw_water_damage_description.txt",
+     "p": 1.6844995424297658e-08
+    },
+    {
+     "filename": "DUI_Exclusion_Directive.txt",
+     "p": 3.526843855112908e-10
+    }
+   ]
+  },
+  {
+   "id": "webb-subrogation-triage",
+   "answerable": true,
+   "claim_id": "#2026-71845",
+   "exempt": true,
+   "rerank": 0.9953,
+   "judge": 0.9999,
+   "joint": 1.0,
+   "either": 1.0,
+   "judged": [
+    {
+     "filename": "police_report_Webb.pdf",
+     "p": 0.9999135679303192
+    },
+    {
+     "filename": "witness_statement_Webb.pdf",
+     "p": 7.453466102962573e-06
+    },
+    {
+     "filename": "dashcam_summary_Webb.pdf",
+     "p": 3.470832440973594e-05
+    },
+    {
+     "filename": "Case_Study_Rear_End_Collision.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Case_Study_Stolen_Honda_Civic.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "DUI_Exclusion_Directive.txt",
+     "p": 0.0009960153940900172
+    },
+    {
+     "filename": "SOP_Liability_Determination.pdf",
+     "p": 1.2840700044187847e-08
+    },
+    {
+     "filename": "SOP_Subrogation_Recovery.pdf",
+     "p": 1.4435003497616674e-08
+    }
+   ]
+  },
+  {
+   "id": "jenkins-subrogation-no-indicator",
+   "answerable": true,
+   "claim_id": "#2026-10492",
+   "exempt": true,
+   "rerank": 0.9874,
+   "judge": 0.0099,
+   "joint": 0.0,
+   "either": 0.0099,
+   "judged": [
+    {
+     "filename": "dent_photos_description_Jenkins.pdf",
+     "p": 1.4278993077392927e-09
+    },
+    {
+     "filename": "Case_Study_Hail_Damage_PlanA.pdf",
+     "p": 6.316340076010515e-10
+    },
+    {
+     "filename": "f150_hail_damage_description.txt",
+     "p": 0.0
+    },
+    {
+     "filename": "Case_Study_Rear_End_Collision.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Case_Study_Stolen_Honda_Civic.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "DUI_Exclusion_Directive.txt",
+     "p": 0.009937298961106324
+    },
+    {
+     "filename": "SOP_Liability_Determination.pdf",
+     "p": 1.1605554875765637e-08
+    },
+    {
+     "filename": "SOP_Subrogation_Recovery.pdf",
+     "p": 1.804587105933124e-08
+    }
+   ]
+  },
+  {
+   "id": "absent-form-905-limit",
+   "answerable": false,
+   "claim_id": null,
+   "exempt": false,
+   "rerank": 0.9586,
+   "judge": 0.0,
+   "joint": 0.0,
+   "either": 0.0,
+   "judged": [
+    {
+     "filename": "Endorsement_Classic_Car_Agreed_Value.pdf",
+     "p": 3.209756988088979e-11
+    },
+    {
+     "filename": "Endorsement_Custom_Equipment_Form402.pdf",
+     "p": 1.3278826807997831e-08
+    },
+    {
+     "filename": "Endorsement_Rideshare_TNC_Form702.pdf",
+     "p": 7.253107015781871e-10
+    },
+    {
+     "filename": "Auto_Claims_Guidelines.docx",
+     "p": 0.0
+    },
+    {
+     "filename": "Endorsement_Rideshare_TNC_Form702.pdf",
+     "p": 3.079149825684556e-10
+    },
+    {
+     "filename": "Endorsement_Rental_Car_Upgrade.docx",
+     "p": 5.488203040025859e-06
+    },
+    {
+     "filename": "SOP_Coverage_Verification.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Auto_Deductibles_And_Limits.xlsx",
+     "p": 0.0
+    }
+   ]
+  },
+  {
+   "id": "absent-upholstery-labor-cap",
+   "answerable": false,
+   "claim_id": null,
+   "exempt": false,
+   "rerank": 0.1126,
+   "judge": 0.0,
+   "joint": 0.0,
+   "either": 0.0,
+   "judged": [
+    {
+     "filename": "SOP_Auto_Repair_Labor_Rates.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "SOP_Supplement_Review.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Endorsement_Rental_Car_Upgrade.docx",
+     "p": 0.0
+    },
+    {
+     "filename": "Case_Study_Hail_Damage_PlanA.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Auto_Claims_Guidelines.docx",
+     "p": 0.0
+    },
+    {
+     "filename": "SOP_Total_Loss_Valuation.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Endorsement_Custom_Equipment_Form402.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Case_Study_Hail_Damage_PlanA.pdf",
+     "p": 0.0
+    }
+   ]
+  },
+  {
+   "id": "absent-nevada-ack-deadline",
+   "answerable": false,
+   "claim_id": null,
+   "exempt": false,
+   "rerank": 0.9727,
+   "judge": 0.0,
+   "joint": 0.0,
+   "either": 0.0,
+   "judged": [
+    {
+     "filename": "California_Auto_Claims_Regulations.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Texas_Auto_Insurance_Code_2026.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "SOP_Coverage_Verification.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "SOP_Subrogation_Recovery.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "SOP_Claims_Fraud_Red_Flags.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Auto_Claims_Guidelines.docx",
+     "p": 0.0
+    },
+    {
+     "filename": "Rider_OEM_Parts_Guarantee.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "DUI_Exclusion_Directive.txt",
+     "p": 0.0
+    }
+   ]
+  },
+  {
+   "id": "absent-ny-pip-minimum",
+   "answerable": false,
+   "claim_id": null,
+   "exempt": false,
+   "rerank": 0.2088,
+   "judge": 0.0,
+   "joint": 0.0,
+   "either": 0.0,
+   "judged": [
+    {
+     "filename": "Texas_Auto_Insurance_Code_2026.pdf",
+     "p": 1.2177674168831178e-09
+    },
+    {
+     "filename": "Florida_Auto_Insurance_Statutes.pdf",
+     "p": 5.777956460107301e-10
+    },
+    {
+     "filename": "Endorsement_Custom_Equipment_Form402.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Rider_Roadside_Assistance_Plus.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Texas_Auto_Insurance_Code_2026.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Endorsement_Rideshare_TNC_Form702.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Endorsement_Rental_Car_Upgrade.docx",
+     "p": 0.0
+    },
+    {
+     "filename": "California_Auto_Claims_Regulations.pdf",
+     "p": 0.0
+    }
+   ]
+  },
+  {
+   "id": "absent-arbitration-filing-fee",
+   "answerable": false,
+   "claim_id": null,
+   "exempt": false,
+   "rerank": 0.7388,
+   "judge": 0.0,
+   "joint": 0.0,
+   "either": 0.0,
+   "judged": [
+    {
+     "filename": "SOP_Subrogation_Recovery.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Texas_Auto_Insurance_Code_2026.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Texas_Auto_Insurance_Code_2026.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Endorsement_Windshield_Zero_Deductible.docx",
+     "p": 0.0
+    },
+    {
+     "filename": "Auto_Policy_Exclusions.txt",
+     "p": 0.0
+    },
+    {
+     "filename": "California_Auto_Claims_Regulations.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Rider_Gap_Insurance_Coverage.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "SOP_Coverage_Verification.pdf",
+     "p": 0.0
+    }
+   ]
+  },
+  {
+   "id": "absent-um-pd-deductible",
+   "answerable": false,
+   "claim_id": null,
+   "exempt": false,
+   "rerank": 0.1392,
+   "judge": 0.8864,
+   "joint": 0.0,
+   "either": 0.8864,
+   "judged": [
+    {
+     "filename": "Florida_Auto_Insurance_Statutes.pdf",
+     "p": 1.2481796587456245e-09
+    },
+    {
+     "filename": "DUI_Exclusion_Directive.txt",
+     "p": 0.0
+    },
+    {
+     "filename": "Auto_Deductibles_And_Limits.xlsx",
+     "p": 0.0
+    },
+    {
+     "filename": "Endorsement_Custom_Equipment_Form402.pdf",
+     "p": 0.8863778197859633
+    },
+    {
+     "filename": "SOP_Subrogation_Recovery.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Auto_Claims_Guidelines.docx",
+     "p": 0.0
+    },
+    {
+     "filename": "Case_Study_Rear_End_Collision.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Case_Study_Hail_Damage_PlanA.pdf",
+     "p": 0.0
+    }
+   ]
+  },
+  {
+   "id": "absent-motorcycle-accessory-limit",
+   "answerable": false,
+   "claim_id": null,
+   "exempt": false,
+   "rerank": 0.6166,
+   "judge": 1.0,
+   "joint": 1.0,
+   "either": 1.0,
+   "judged": [
+    {
+     "filename": "Endorsement_Custom_Equipment_Form402.pdf",
+     "p": 0.9999963566520367
+    },
+    {
+     "filename": "Endorsement_Rideshare_TNC_Form702.pdf",
+     "p": 3.960375478068694e-08
+    },
+    {
+     "filename": "Endorsement_Rideshare_TNC_Form702.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Endorsement_Rental_Car_Upgrade.docx",
+     "p": 0.0
+    },
+    {
+     "filename": "Auto_Claims_Guidelines.docx",
+     "p": 0.0
+    },
+    {
+     "filename": "Endorsement_Classic_Car_Agreed_Value.pdf",
+     "p": 1.0389956176314443e-10
+    },
+    {
+     "filename": "Auto_Deductibles_And_Limits.xlsx",
+     "p": 0.0
+    },
+    {
+     "filename": "Endorsement_Windshield_Zero_Deductible.docx",
+     "p": 8.07134377133556e-11
+    }
+   ]
+  },
+  {
+   "id": "absent-pet-injury-benefit",
+   "answerable": false,
+   "claim_id": null,
+   "exempt": false,
+   "rerank": 0.2682,
+   "judge": 0.0,
+   "joint": 0.0,
+   "either": 0.0,
+   "judged": [
+    {
+     "filename": "Texas_Auto_Insurance_Code_2026.pdf",
+     "p": 4.895932331891842e-09
+    },
+    {
+     "filename": "Rider_Roadside_Assistance_Plus.pdf",
+     "p": 2.3604650142985215e-10
+    },
+    {
+     "filename": "Florida_Auto_Insurance_Statutes.pdf",
+     "p": 4.0160416154394635e-08
+    },
+    {
+     "filename": "Endorsement_Rideshare_TNC_Form702.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "California_Auto_Claims_Regulations.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Auto_Deductibles_And_Limits.xlsx",
+     "p": 0.0
+    },
+    {
+     "filename": "Rider_Gap_Insurance_Coverage.pdf",
+     "p": 3.3321307147004456e-10
+    },
+    {
+     "filename": "Case_Study_Stolen_Honda_Civic.pdf",
+     "p": 0.0
+    }
+   ]
+  },
+  {
+   "id": "absent-boat-trailer",
+   "answerable": false,
+   "claim_id": null,
+   "exempt": false,
+   "rerank": 0.0177,
+   "judge": 0.0,
+   "joint": 0.0004,
+   "either": 0.0004,
+   "judged": [
+    {
+     "filename": "Rider_Roadside_Assistance_Plus.pdf",
+     "p": 2.009129460072275e-05
+    },
+    {
+     "filename": "SOP_Coverage_Verification.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "DUI_Exclusion_Directive.txt",
+     "p": 0.0
+    },
+    {
+     "filename": "SOP_Vehicle_Storage_Fees.txt",
+     "p": 0.0
+    },
+    {
+     "filename": "Auto_Policy_Exclusions.txt",
+     "p": 0.0
+    },
+    {
+     "filename": "Case_Study_Engine_Hydro_Lock.pdf",
+     "p": 5.2460565323768943e-11
+    },
+    {
+     "filename": "SOP_Subrogation_Recovery.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Auto_Policy_Exclusions.txt",
+     "p": 0.0
+    }
+   ]
+  },
+  {
+   "id": "absent-chen-invoice-number",
+   "answerable": false,
+   "claim_id": "#2026-30291",
+   "exempt": false,
+   "rerank": 0.2855,
+   "judge": 0.0119,
+   "joint": 0.0,
+   "either": 0.0119,
+   "judged": [
+    {
+     "filename": "inspection_photos_Chen.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "police_theft_report_Chen.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "civic_smashed_window_description.txt",
+     "p": 0.0
+    },
+    {
+     "filename": "Case_Study_Stolen_Honda_Civic.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "SOP_Total_Loss_Valuation.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Rider_Gap_Insurance_Coverage.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "SOP_Subrogation_Recovery.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "SOP_Claims_Fraud_Red_Flags.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "custom_equipment_receipts_Chen.xlsx",
+     "p": 0.01191415235376243
+    }
+   ]
+  },
+  {
+   "id": "absent-webb-settlement",
+   "answerable": false,
+   "claim_id": "#2026-71845",
+   "exempt": false,
+   "rerank": 0.2252,
+   "judge": 0.0,
+   "joint": 0.0,
+   "either": 0.0,
+   "judged": [
+    {
+     "filename": "police_report_Webb.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "dashcam_summary_Webb.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "California_Auto_Claims_Regulations.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "California_Auto_Claims_Regulations.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Rider_Gap_Insurance_Coverage.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Endorsement_Classic_Car_Agreed_Value.pdf",
+     "p": 6.870390924946632e-09
+    },
+    {
+     "filename": "SOP_Subrogation_Recovery.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Texas_Auto_Insurance_Code_2026.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "witness_statement_Webb.pdf",
+     "p": 0.0
+    }
+   ]
+  },
+  {
+   "id": "absent-sterling-bac",
+   "answerable": false,
+   "claim_id": "#2026-99382",
+   "exempt": false,
+   "rerank": 0.5562,
+   "judge": 0.0,
+   "joint": 0.0,
+   "either": 0.0,
+   "judged": [
+    {
+     "filename": "police_report_Sterling.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "DUI_Exclusion_Directive.txt",
+     "p": 0.0
+    },
+    {
+     "filename": "tesla_rear_collision_description.txt",
+     "p": 0.0
+    },
+    {
+     "filename": "SOP_Liability_Determination.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Case_Study_Stolen_Honda_Civic.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "SOP_Claims_Fraud_Red_Flags.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "shop_email_thread_Sterling.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Auto_Claims_Guidelines.docx",
+     "p": 0.0
+    }
+   ]
+  },
+  {
+   "id": "absent-jenkins-tow-statement",
+   "answerable": false,
+   "claim_id": "#2026-10492",
+   "exempt": false,
+   "rerank": 0.7462,
+   "judge": 0.0,
+   "joint": 0.0,
+   "either": 0.0,
+   "judged": [
+    {
+     "filename": "f150_hail_damage_description.txt",
+     "p": 0.0
+    },
+    {
+     "filename": "dent_photos_description_Jenkins.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Case_Study_Hail_Damage_PlanA.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Auto_Claims_Guidelines.docx",
+     "p": 0.0
+    },
+    {
+     "filename": "Rider_Roadside_Assistance_Plus.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Case_Study_Engine_Hydro_Lock.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "SOP_Coverage_Verification.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "SOP_Liability_Determination.pdf",
+     "p": 0.0
+    }
+   ]
+  },
+  {
+   "id": "absent-brooks-rental",
+   "answerable": false,
+   "claim_id": "#2026-84410",
+   "exempt": false,
+   "rerank": 0.0113,
+   "judge": 0.0,
+   "joint": 0.0,
+   "either": 0.0,
+   "judged": [
+    {
+     "filename": "loss_statement_Brooks.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "inspection_photos_Brooks.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Endorsement_Rental_Car_Upgrade.docx",
+     "p": 0.0
+    },
+    {
+     "filename": "Auto_Claims_Guidelines.docx",
+     "p": 0.0
+    },
+    {
+     "filename": "Texas_Auto_Insurance_Code_2026.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Rider_OEM_Parts_Guarantee.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "California_Auto_Claims_Regulations.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "SOP_Subrogation_Recovery.pdf",
+     "p": 0.0
+    }
+   ]
+  },
+  {
+   "id": "absent-rostova-witness",
+   "answerable": false,
+   "claim_id": "#2026-55912",
+   "exempt": false,
+   "rerank": 0.0333,
+   "judge": 0.0,
+   "joint": 0.0,
+   "either": 0.0,
+   "judged": [
+    {
+     "filename": "Case_Study_Engine_Hydro_Lock.pdf",
+     "p": 3.8076040509741446e-09
+    },
+    {
+     "filename": "bmw_water_damage_description.txt",
+     "p": 0.0
+    },
+    {
+     "filename": "engine_diagnostic_report_Rostova.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "telematics_log_Rostova.pdf",
+     "p": 5.057148268665082e-10
+    },
+    {
+     "filename": "Auto_Claims_Guidelines.docx",
+     "p": 0.0
+    },
+    {
+     "filename": "California_Auto_Claims_Regulations.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Case_Study_Stolen_Honda_Civic.pdf",
+     "p": 0.0
+    },
+    {
+     "filename": "Auto_Claims_Guidelines.docx",
+     "p": 0.0
+    }
+   ]
+  }
+ ]
+}

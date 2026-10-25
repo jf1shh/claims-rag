@@ -254,6 +254,30 @@ As of September 6, the authoritative state is [portfolio-hardening.md](portfolio
 > passed / 30 skipped / 1 xfailed, ruff clean. **Next:** open the PR for this branch; then the Week 1
 > Owner items (score packet, recruit reviewers) are the maintainer's own work, not Claude's.
 
+> **Answerability gate ("JAG") built 2026-10-25, landed opt-in** (branch `feat/jag-relevance-gate`):
+> retrieval always returns `top_k` passages, relevant or not, so a question the corpus cannot answer
+> was drafted from lookalikes (e.g. "Endorsement Form 905" retrieves Form 402) instead of refused.
+> `backend/answerability.py` asks the local model once whether the served passages, read together,
+> answer the question, and reads P(yes) off the first token's logprobs
+> (`OpenAICompatibleClient.yes_probability`, contract in `docs/architecture.md`). New config
+> `ANSWERABILITY_GATE=llm|off` (default **off**) + `ANSWERABILITY_THRESHOLD` (default 0.5);
+> `AgenticRAGRouter._answerability_gate` runs after context assembly, skips any query with a computed
+> `tool_section` (claims-tools audits), and fails open (never refuses) when the judge call errors or
+> returns `None`. **Probe** (`scripts/probe_answerability.py` -> `eval/answerability-probe-2026-10-25.json`,
+> 33 golden + 16 absent questions, 7 exempt): the joint judge, gated, catches **15/16 absent questions
+> while keeping all 26/26 non-exempt answerable ones** at threshold 0.5 (AUC 0.965); the cross-encoder
+> rerank score alone cannot separate them (AUC 0.930, only 3/16 caught holding every answerable row).
+> **Full 34-row golden run with the gate on** (`eval/results-2026-10-25-34row-jag.json`, same
+> Qwen3-Coder-30B model as judge and generator, 3410 s): hybrid P/R 0.823/0.968, correctness 0.846
+> (34/34 scored) -- both in line with the 2026-10-21 fts-or baseline (0.825/0.983, correctness 0.840).
+> Faithfulness read 0.78 (32/34 scored, 2 failed) against that baseline's 0.839 (33/34) -- within the
+> documented no-code-change judge-noise band (0.754-0.887, see Known Issues) but on the low side, and
+> the first run with this gate in the loop, so it is not yet a confirmed cost. **Left for the owner**:
+> whether to flip the default to `llm` now that both runs have landed (the `.env.example`/`config.py`
+> comments say "off until the eval runs land") or to get one more confirming golden run first, given
+> the faithfulness dip. Nothing else blocks landing the code with the default left `off`. **Next:**
+> owner decision on the default, then commit/PR/merge per the standing per-milestone instruction.
+
 > **License changed 2026-10-17**: MIT → AGPL-3.0 (owner decision; `LICENSE`, README badge and a new License section). Code copied before the change stays under MIT.
 
 Priority after hardening: the answer/evidence leg of this is **done** (2026-09-22 full-suite rerun, numbers under Known Issues); what remains is a confirming run to separate judge variance from drift. The **adversarial baseline was measured 2026-09-26** ([adversarial-evaluation.md](adversarial-evaluation.md)): injection through retrieved documents succeeded 14/16 with `decision_status` still `not_a_decision`, and `conflicting_evidence` is never emitted. **Fix 1 landed 2026-09-26**: `backend/answer_guard.py` (`ANSWER_GUARD_MODE=withhold` default) withholds answers asserting unsupported claim outcomes or off-allowlist contacts — decision forgery 0/4→4/4 blocked, attack success 87.5%→56.3%, 0/19 golden false positives. **Fix 2 landed 2026-09-26**: `backend/conflict_check.py` (`CONFLICT_CHECK=llm` default) — the model extracts each source's value (labelled policy_value/claim_amount), code decides numeric disagreement → `conflicting_evidence` on 9/9 real conflicts, 0/2 controls and 0/19 golden answers mislabelled, ≈ +3–4.5 s per answer. **Fix 3 landed 2026-09-26**: `backend/prompt_defense.py`, default `PROMPT_DEFENSE=sanitize` (owner decision) — removes 0 honest sentences, cuts known attacks 56%→25%, but 0/12 of a white-box held-out set (`eval/adversarial/cases_holdout.py`); `sandwich` generalises (held-out 42%→17%) but cost ~0.12 golden correctness, `datamark` hurt. A reworded sandwich (no "answer only") recovered quality (0.882/0.789) but lost all held-out protection (50%) — the narrowing *is* the protection, so the strict wording stays, opt-in (`eval/prompt_defense_ab.json`). Adversarial work on this branch is complete; remaining evidence items are human-reviewed cases and the Postgres performance rerun — rerunning `eval/run_adversarial_eval.py` against the baseline after each. Also: repeat real Postgres performance measurements with the corrected factory; validate deployment-specific IdP, retention, and infrastructure controls before any real claims data. The earlier roadmap below is historical context.

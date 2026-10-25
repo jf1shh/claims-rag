@@ -84,6 +84,7 @@ claims-rag/
 | Embedding search performance? | In-memory pre-normalized matrix cache, invalidated on write | Avoids re-reading BLOBs and recomputing corpus norms every query; keeps the "no per-row loops" constraint intact at scale. |
 | Enterprise deployment hardware? (2026-10-16) | Assume several on-prem DGX Spark units or high-memory Apple Silicon Macs running large models; keep the single-GPU local profile working | Owner's expectation for how a carrier would run it. Keeps every model call behind OpenAI-compatible endpoints, configurable per role, with a larger judge and a new eval baseline per model. Detail: `docs/enterprise-migration.md` target architecture. |
 | Which license? | AGPL-3.0 (from 2026-10-17; MIT before) | Owner choice: keeps the code open and readable for reviewers, while anyone running a modified copy as a service must publish their source, which deters closed commercial reuse. Copies taken under MIT keep MIT terms. |
+| How does the router say "not found"? (2026-10-25) | Optional answerability gate (`ANSWERABILITY_GATE=llm`): one local-model call reads the served passages together and returns P(yes) from first-token logprobs; below 0.5 the answer is refused before synthesis | Retrieval always returns top_k passages, so a question the corpus cannot answer was drafted from lookalikes. The best cross-encoder score could not separate them (keeping every answerable question it caught 3/16 absent ones); the joint judge caught 15/16 with 26/26 answerable kept (`eval/answerability-probe-2026-10-25.json`). One call over all passages beat one call per passage, which could not see answers that combine two passages. After Subworkflow's "RAG vs JAG" (judgement-augmented generation), run on the local model, never a cloud judge. |
 
 ## Claims tools contract (2026-10-16)
 
@@ -96,6 +97,28 @@ a dict with `tool`, a status or result, and `inputs`: a list of `{name, value, s
 generator text; `tests/test_claims_tools.py` fails on drift. Missing inputs (ACV, salvage,
 mileage) are reported, never assumed. Findings that are not math (custom-equipment lines, SIU
 exclusions) live in `CLAIM_EVIDENCE` in `agentic_router.py`.
+
+## Answerability gate contract (2026-10-25)
+
+`OpenAICompatibleClient.yes_probability(messages, *, model, stage="answerability_check")` posts
+`max_tokens: 1, temperature: 0, logprobs: true, top_logprobs: 10` and returns
+`yes_share(top_logprobs)` = P(yes) / (P(yes) + P(no)), with case and leading spaces folded, or
+None when the server sends no logprobs. Stages ending in `_check` use `LLM_CHECK_TIMEOUT_SECONDS`.
+Lemonade (llama.cpp) returns `choices[0].logprobs.content[0].top_logprobs`.
+
+`backend/answerability.py` is pure apart from that duck-typed client. `judge_joint(client, query,
+passages)` sends every served passage (up to 12, 900 chars each, HTML-escaped inside
+`<passage file=...>` delimiters) in one call. `judge()` scores each passage separately and is kept
+for the probe. Both return None on any failure and never raise. The prompt tells the model it is not
+answering the question: a passage that settles it with "no" or "excluded" counts as yes. Without
+that line, yes/no questions whose answer is no scored ~0.
+
+`AgenticRAGRouter._answerability_gate` runs after `_assemble_context`, on the exact `top_matches`
+synthesis would see. It is skipped when the gate is off, when a computed tool section exists
+(SIU, subrogation, coverage and other claim audits answered by `claims_tools`), and when the judge
+returns None (fail open, logged). A refusal returns `sources: []` (so `structured_projection` reports
+`insufficient_evidence`) plus `answerability: {p_yes, threshold, judged}`. Measure with
+`scripts/probe_answerability.py` (the absent set is `eval/absent_queries.py`).
 
 ## Component / Service Status
 
