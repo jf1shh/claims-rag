@@ -278,6 +278,27 @@ As of September 6, the authoritative state is [portfolio-hardening.md](portfolio
 > the faithfulness dip. Nothing else blocks landing the code with the default left `off`. **Next:**
 > owner decision on the default, then commit/PR/merge per the standing per-milestone instruction.
 
+> **JAG refusal grounded in retrieved content, 2026-10-25** (PR #55 merged as `23aba19`, this fix
+> on a follow-on branch): a second confirming gate-on 34-row run (`eval/results-2026-10-25-34row-jag.json`
+> twice) root-caused a correctness dip to one row, `rostova-dui-hallucination-probe` — the gate's
+> refusal was a static template that discarded the specific grounded detail (water-related engine
+> failure, not DUI) that pre-gate synthesis used to produce (correctness 1.0 → 0.3 → 0.22 across the
+> baseline and two gate-on runs). Added `backend/answerability.py::grounded_refusal_text` — a
+> constrained, fail-open LLM call (`stage="answerability_refusal"`, temperature 0, 150 tokens) that
+> writes a 1-2 sentence refusal naming only what the passages actually describe, never answering the
+> gated question. `_answerability_gate` now uses it when available, falling back to the exact old
+> generic string otherwise. Spot-checked against the live gated server for the same probe query:
+> answer changed from "The retrieved documents discuss related material but do not state the
+> answer... Please rephrase..." to "The documents do not address whether the driver was cited for
+> DUI. The passages describe an engine damage incident involving hydraulic lock due to driving
+> through standing water...". New tests cover the grounded and fallback paths
+> (`tests/test_answerability.py`, `tests/test_answerability_gate.py`); full suite and ruff clean.
+> Did not re-run the full 34-row eval for this wording-only change — the mechanism is confirmed by
+> the live spot-check and the dip was isolated to this one row, so a full ~58-minute rerun was judged
+> not worth the cost; still a judgment call if the owner wants the number re-confirmed. The
+> `ANSWERABILITY_GATE` default-flip decision from the entry above is still open and unaffected by this
+> fix.
+
 > **License changed 2026-10-17**: MIT → AGPL-3.0 (owner decision; `LICENSE`, README badge and a new License section). Code copied before the change stays under MIT.
 
 Priority after hardening: the answer/evidence leg of this is **done** (2026-09-22 full-suite rerun, numbers under Known Issues); what remains is a confirming run to separate judge variance from drift. The **adversarial baseline was measured 2026-09-26** ([adversarial-evaluation.md](adversarial-evaluation.md)): injection through retrieved documents succeeded 14/16 with `decision_status` still `not_a_decision`, and `conflicting_evidence` is never emitted. **Fix 1 landed 2026-09-26**: `backend/answer_guard.py` (`ANSWER_GUARD_MODE=withhold` default) withholds answers asserting unsupported claim outcomes or off-allowlist contacts — decision forgery 0/4→4/4 blocked, attack success 87.5%→56.3%, 0/19 golden false positives. **Fix 2 landed 2026-09-26**: `backend/conflict_check.py` (`CONFLICT_CHECK=llm` default) — the model extracts each source's value (labelled policy_value/claim_amount), code decides numeric disagreement → `conflicting_evidence` on 9/9 real conflicts, 0/2 controls and 0/19 golden answers mislabelled, ≈ +3–4.5 s per answer. **Fix 3 landed 2026-09-26**: `backend/prompt_defense.py`, default `PROMPT_DEFENSE=sanitize` (owner decision) — removes 0 honest sentences, cuts known attacks 56%→25%, but 0/12 of a white-box held-out set (`eval/adversarial/cases_holdout.py`); `sandwich` generalises (held-out 42%→17%) but cost ~0.12 golden correctness, `datamark` hurt. A reworded sandwich (no "answer only") recovered quality (0.882/0.789) but lost all held-out protection (50%) — the narrowing *is* the protection, so the strict wording stays, opt-in (`eval/prompt_defense_ab.json`). Adversarial work on this branch is complete; remaining evidence items are human-reviewed cases and the Postgres performance rerun — rerunning `eval/run_adversarial_eval.py` against the baseline after each. Also: repeat real Postgres performance measurements with the corrected factory; validate deployment-specific IdP, retention, and infrastructure controls before any real claims data. The earlier roadmap below is historical context.

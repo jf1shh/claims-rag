@@ -1111,7 +1111,7 @@ class AgenticRAGRouter:
         Probe evidence: eval/answerability-probe-2026-10-25.json."""
         if getattr(caps, "answerability_gate", "off") != "llm" or tool_section is not None:
             return None
-        from backend.answerability import judge_joint
+        from backend.answerability import grounded_refusal_text, judge_joint
         p_yes = judge_joint(llm_client, query_text, top_matches)
         threshold = getattr(caps, "answerability_threshold", 0.5)
         if p_yes is None:
@@ -1122,12 +1122,18 @@ class AgenticRAGRouter:
             return None
         logs.append(f"❌ [Synthesis Skipped] Answerability judge: the served passages do not answer "
                     f"this question (p={p_yes:.3f} < {threshold}); refusing instead of answering from lookalikes.")
+        grounded = grounded_refusal_text(llm_client, query_text, top_matches)
+        if grounded:
+            logs.append("✍️ [Answerability] Grounded the refusal in what was actually retrieved.")
+        else:
+            logs.append("⚠️ [Answerability] Grounded refusal unavailable; using the generic template.")
         elapsed = (time.time() - start_time) * 1000
         logs.append(f"✅ [Agentic Coordinator] Completed reasoning cycle in {elapsed:.1f}ms")
         return {
-            "answer": "The retrieved documents discuss related material but do not state the answer to this "
+            "answer": grounded or (
+                      "The retrieved documents discuss related material but do not state the answer to this "
                       "question" + (f" in the guidelines or the claim {claim_id} dossier" if claim_id else "") + ". "
-                      "Please rephrase the question or confirm the relevant policy/claim documents have been uploaded.",
+                      "Please rephrase the question or confirm the relevant policy/claim documents have been uploaded."),
             "sources": [],
             "claim_dossier": None,
             "engine": "lm-studio (agentic)",
