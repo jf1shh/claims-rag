@@ -194,6 +194,7 @@ Per-phase implementation narratives formerly under `Current State → Confirmed 
 
 ---
 | 2026-10-09 | First CI run after the repo went public (jobs routed to hosted `ubuntu-latest`, fresh model cache, `HF_HUB_OFFLINE=1`) | 14 failures in `tests/test_api_answer_guard.py` and `tests/test_api_conflict_check.py`: `OSError` couldn't connect to huggingface.co | Both fixtures stubbed `agentic_router` but not `_get_embedding_engine`; `/api/chat` evaluates `embedding_engine=runtime._get_embedding_engine()` as an argument before the stub ignores it, loading MiniLM. The self-hosted runner had the model cached, which hid it. Fixed by patching `_get_embedding_engine` in both fixtures (the documented Critical Constraint). |
+| 2026-10-24 | Reran the SIU fairness probe after the first runs showed the Chronology flag moving with the claimant's name | The flag was raised 9/9 with the original name and 0 to 7 of 10 per swapped name, and two control runs invented an inception date from a global case study. After the fix the rerun was 18/18 undetermined, no date invented | Not the name. A document-only claim (every probe claim) had no computed section on SIU questions, so the model reasoned about chronology from prose, and the live fraud trigger was too narrow to route an ordinary SIU question to `siu_checklist`. The ungrounded decision moved with whatever else changed in the prompt. Fixed with a `missing` result for an absent inception date, a `\bsiu\b` trigger and a fixed UNDETERMINED section for document-only claims. Case study: `docs/governance/fairness-case-study.md` |
 
 ---
 
@@ -1017,3 +1018,12 @@ Recorded the 90-second shot list with Playwright (headless Chromium, 1280x720, S
 - Decided: the probe report's exact-text diff stays, but its verdict says when the control runs disagree with each other (at temperature 0.1 they nearly always do); the per-section decision tally is done by a person.
 - Watch out: zsh `tail -3 a b` and `echo =====` fail in the Bash tool; use `tail -n 3` and quoted strings.
 - Not done: the grounding fix for the chronology check, and Jared's packet scores (gap 2 stays open).
+
+### 2026-10-24 — SIU chronology grounding and fairness case study (branch `fix/siu-chronology-grounding`)
+
+- Built: `_chronology_check` returns `missing` without an inception date (`b53e59a`); the live fraud trigger is `\bsiu\b` (`e144a81`); document-only claims get a fixed computed SIU section, chronology UNDETERMINED with no date (`43b1a6d`, pinned by `tests/test_siu_chronology_grounding.py`). Suite 1328 passed / 30 skipped / 1 xfailed, ruff clean.
+- Ran: the probe again on the live path (`a4e9184`): 18/18 answers undetermined, none raises the flag, none invents a date (control before: 9/9 flagged). Evidence: `eval/fairness-probe/2026-10-24-rerun-report.md` and `-rerun-analysis.md`.
+- Wrote: `docs/governance/fairness-case-study.md`; NAIC row 2.4 and gap 3 updated (gap 3 stays Partial: one claim, not a bias analysis); a Results pointer in the probe protocol.
+- Decided: the rerun files carry `rerun` in their names, because the same-date name would have overwritten the original `2026-10-24-report.md`.
+- Watch out: Luis Fernandez run 1 calls chronology undetermined but later says the indicator is "flagged for further review", which an adjuster could misread; tallied U. The free text still differs by name, so only this one decision is grounded.
+- Not done: widening the probe (more claims, names, runs); Jared's expert-packet scores (workstream a, gap 2 stays open).

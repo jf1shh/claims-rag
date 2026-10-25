@@ -221,9 +221,22 @@ As of September 6, the authoritative state is [portfolio-hardening.md](docs/port
 >   name-sensitive answer, not as evidence of group bias. Details:
 >   `eval/fairness-probe/2026-10-24-analysis.md`.
 >
-> **Next:** (1) owner scores the expert packet; (2) ground the free-text SIU chronology check (route
-> it through `claims_tools.siu_checklist` or require an inception date), then rerun and widen the
-> fairness probe; (3) go-to-market plan (`docs/go-to-market/plan.md`). Later: claim-scoped golden
+> **SIU chronology grounded and probe rerun 2026-10-24** (branch `fix/siu-chronology-grounding`):
+> * **Root cause**: a claim that exists only as documents (every probe claim) had no computed section on
+>   SIU questions, and the live path's fraud trigger was too narrow to send an ordinary SIU question to
+>   `siu_checklist`. Fixed in three commits: `_chronology_check` returns `missing` instead of raising
+>   `KeyError` (`b53e59a`), the trigger is `\bsiu\b` (`e144a81`), and a document-only claim gets a fixed
+>   computed section, chronology UNDETERMINED with no date (`43b1a6d`). Pinned by
+>   `tests/test_siu_chronology_grounding.py`; suite 1328 passed / 30 skipped / 1 xfailed, ruff clean.
+> * **Rerun**: 18 of 18 answers (identity control plus 5 names, 3 runs each) call chronology
+>   undetermined, none raises it, none invents an inception date (control before: 9/9 flagged). The free
+>   text still differs by name, and one answer words the indicator loosely. One claim, so it is not a
+>   bias analysis. Evidence: `eval/fairness-probe/2026-10-24-rerun-analysis.md`; write-up:
+>   `docs/governance/fairness-case-study.md`. NAIC gap 3 stays Partial.
+>
+> **Next:** (1) workstream a: owner scores the expert packet (`eval/expert-review/2026-10-24-packet.md`);
+> (2) widen the fairness probe (more claims, names and runs) when there is a reason to; (3) go-to-market
+> plan (`docs/go-to-market/plan.md`). Later: claim-scoped golden
 > questions for the supplement and total-loss buttons (needs a GPU judge re-score).
 
 > **License changed 2026-10-17**: MIT → AGPL-3.0 (owner decision; `LICENSE`, README badge and a new License section). Code copied before the change stays under MIT.

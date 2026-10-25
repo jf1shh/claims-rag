@@ -62,7 +62,7 @@ to a consumer without a person deciding to send it.
 | 2.3 c | Independence of decision-makers, lines of defence | **Partial** | The SIU role is read-only: it can investigate all claims but cannot upload, attach or delete ([`backend/rbac.py` `read-only investigation`](../../backend/rbac.py)). Organisational lines of defence are **Insurer**. |
 | 2.3 d | Monitoring, auditing, escalation, reporting | **Built** | Every action that reads claim content or changes data writes an audit event, including denials: chat (streamed or not), upload, delete, document content and download, claim document listing, claim purge and the internal search endpoint ([`backend/api.py` `def _audit(`](../../backend/api.py)). The plain list endpoints (documents, claims, job status) are not audited. Each event carries subject, tenant, request id and a UTC timestamp, and the sink refuses an event without event, request id and tenant ([`backend/audit.py` `REQUIRED_FIELDS`](../../backend/audit.py)). Escalation: a withheld answer is replaced by a notice that it was "withheld for human review", and no generated text survives ([`backend/answer_guard.py` `withheld for human review`](../../backend/answer_guard.py)). |
 | 2.3 e | Training and supervision | **Insurer** | Handler-facing write-ups for each review mode exist in [docs/workflows/](../workflows/README.md) and could seed training material. |
-| 2.4 | Predictive-model procedures, error and bias detection | **Partial** | ClaimsRAG trains no model on historical claims data, so it holds no Predictive Model in the bulletin's sense (models that mine historic data to predict outcomes). Its models are pretrained retrieval and generative models, covered in 3.3 and 3.4. Error detection is built (3.4). Unfair-discrimination testing is a **Gap**: a first name-swap probe ran 2026-10-24 and found a name-sensitive SIU decision, not a clean result ([analysis](../../eval/fairness-probe/2026-10-24-analysis.md)). |
+| 2.4 | Predictive-model procedures, error and bias detection | **Partial** | ClaimsRAG trains no model on historical claims data, so it holds no Predictive Model in the bulletin's sense (models that mine historic data to predict outcomes). Its models are pretrained retrieval and generative models, covered in 3.3 and 3.4. Error detection is built (3.4). Unfair-discrimination testing is a **Gap**: a first name-swap probe ran 2026-10-24 and found a name-sensitive SIU decision, not a clean result ([analysis](../../eval/fairness-probe/2026-10-24-analysis.md)). The cause was fixed and a rerun on the same claim showed no flag for any name ([case study](fairness-case-study.md)); that is one claim, not a bias analysis. |
 
 ## 3.0 Risk management and internal controls
 
@@ -137,8 +137,11 @@ In rough order of value for a deployment:
    [analysis](../../eval/fairness-probe/2026-10-24-analysis.md)) found two flaws in the probe, both
    fixed, and then one real defect: on one synthetic claim, the SIU chronology flag was raised 9/9
    times with the original name and 0–7/10 times with each swapped name, and the flag itself is
-   unsupported (the file has no inception date). Next: ground that check, then rerun and widen the
-   probe (more claims, names and runs). Address was ruled out of scope —
+   unsupported (the file has no inception date). That check is now grounded: a rerun on the same
+   claim (18 answers, 5 names plus the identity control) called chronology undetermined every time and
+   invented no date ([case study](fairness-case-study.md),
+   [rerun analysis](../../eval/fairness-probe/2026-10-24-rerun-analysis.md)). This is one claim, so
+   the gap stays **Partial**. Next: widen the probe (more claims, names and runs). Address was ruled out of scope —
    the seeded claims have no claimant address separate from the loss location, and varying the loss
    location would change the facts under test.
 4. **Document currency** (3.2). Track effective dates and superseded SOP and endorsement versions so an
