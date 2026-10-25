@@ -208,9 +208,22 @@ As of September 6, the authoritative state is [portfolio-hardening.md](docs/port
 > address exists separate from the loss location in the seeded data). No probe has been run yet — same
 > prerequisite as the expert-review packet (server up, model loaded in Lemonade, GPU).
 >
-> **Next:** run the first expert-review packet AND the first fairness probe (owner, needs Lemonade +
-> GPU) and record findings here.
-> Then the next governance gap: bias and unfair-discrimination analysis. Later: claim-scoped golden
+> **First governance runs 2026-10-24** (Qwen3-Coder-30B-A3B on Lemonade, app on port 8010 because
+> Nexus holds 8000):
+> * **Expert-review packet generated, unscored**: `eval/expert-review/2026-10-24-packet.md`, 14
+>   questions. Gap 2 stays open until the owner fills in `_Score:_`/`_Notes:_` and commits it.
+> * **Fairness probe ran, and its first verdict was wrong**: "5/5 variants diverged" was mostly two
+>   probe confounds (baseline ingested by a different path; variant filenames kept the base surname).
+>   Both are fixed in `eval/build_fairness_probe.py` (identity control, `--repeats`, surname swap in
+>   filenames). With them fixed, one real defect remains: the SIU chronology flag on `#2026-30291` was
+>   raised 9/9 times with the original name, 0/10 for two swapped names and 5–7/10 for the others, and
+>   the flag is unsupported (the dossier has no inception date). Read it as an unstable,
+>   name-sensitive answer, not as evidence of group bias. Details:
+>   `eval/fairness-probe/2026-10-24-analysis.md`.
+>
+> **Next:** (1) owner scores the expert packet; (2) ground the free-text SIU chronology check (route
+> it through `claims_tools.siu_checklist` or require an inception date), then rerun and widen the
+> fairness probe; (3) go-to-market plan (`docs/go-to-market/plan.md`). Later: claim-scoped golden
 > questions for the supplement and total-loss buttons (needs a GPU judge re-score).
 
 > **License changed 2026-10-17**: MIT → AGPL-3.0 (owner decision; `LICENSE`, README badge and a new License section). Code copied before the change stays under MIT.

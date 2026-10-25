@@ -62,7 +62,7 @@ to a consumer without a person deciding to send it.
 | 2.3 c | Independence of decision-makers, lines of defence | **Partial** | The SIU role is read-only: it can investigate all claims but cannot upload, attach or delete ([`backend/rbac.py` `read-only investigation`](../../backend/rbac.py)). Organisational lines of defence are **Insurer**. |
 | 2.3 d | Monitoring, auditing, escalation, reporting | **Built** | Every action that reads claim content or changes data writes an audit event, including denials: chat (streamed or not), upload, delete, document content and download, claim document listing, claim purge and the internal search endpoint ([`backend/api.py` `def _audit(`](../../backend/api.py)). The plain list endpoints (documents, claims, job status) are not audited. Each event carries subject, tenant, request id and a UTC timestamp, and the sink refuses an event without event, request id and tenant ([`backend/audit.py` `REQUIRED_FIELDS`](../../backend/audit.py)). Escalation: a withheld answer is replaced by a notice that it was "withheld for human review", and no generated text survives ([`backend/answer_guard.py` `withheld for human review`](../../backend/answer_guard.py)). |
 | 2.3 e | Training and supervision | **Insurer** | Handler-facing write-ups for each review mode exist in [docs/workflows/](../workflows/README.md) and could seed training material. |
-| 2.4 | Predictive-model procedures, error and bias detection | **Partial** | ClaimsRAG trains no model on historical claims data, so it holds no Predictive Model in the bulletin's sense (models that mine historic data to predict outcomes). Its models are pretrained retrieval and generative models, covered in 3.3 and 3.4. Error detection is built (3.4). Unfair-discrimination testing is a **Gap**. |
+| 2.4 | Predictive-model procedures, error and bias detection | **Partial** | ClaimsRAG trains no model on historical claims data, so it holds no Predictive Model in the bulletin's sense (models that mine historic data to predict outcomes). Its models are pretrained retrieval and generative models, covered in 3.3 and 3.4. Error detection is built (3.4). Unfair-discrimination testing is a **Gap**: a first name-swap probe ran 2026-10-24 and found a name-sensitive SIU decision, not a clean result ([analysis](../../eval/fairness-probe/2026-10-24-analysis.md)). |
 
 ## 3.0 Risk management and internal controls
 
@@ -124,15 +124,21 @@ In rough order of value for a deployment:
    ([docs/operations/drift-monitoring.md](../operations/drift-monitoring.md), `.github/workflows/drift-monitor.yml`).
 2. **Validation on real claims with expert review** (3.4). Every number so far comes from synthetic
    data. The expert-review half now has a protocol and tooling
-   ([docs/governance/expert-review-protocol.md](expert-review-protocol.md)), but no review has been run
-   yet. The real-claims half still needs a pilot with handler-reviewed answers on real files, under the
+   ([docs/governance/expert-review-protocol.md](expert-review-protocol.md)). The first packet was
+   generated 2026-10-24 (`eval/expert-review/2026-10-24-packet.md`) and is waiting for scores, so no
+   review is complete yet. The real-claims half still needs a pilot with handler-reviewed answers on real files, under the
    insurer's data controls — out of reach in this repo.
 3. **Bias and unfair-discrimination analysis** (2.4, 3.2). Check that output doesn't vary with
    claimant name when the claim facts are held constant. The deterministic rule tools in
    `backend/claims_tools.py` take no name/address input and aren't a bias surface; the free-text
    agentic path is, since it reads claim documents that name the claimant. A protocol and tooling now
    exist ([docs/governance/fairness-probe-protocol.md](fairness-probe-protocol.md),
-   `eval/build_fairness_probe.py`), but no probe has been run yet. Address was ruled out of scope —
+   `eval/build_fairness_probe.py`). The first runs (2026-10-24,
+   [analysis](../../eval/fairness-probe/2026-10-24-analysis.md)) found two flaws in the probe, both
+   fixed, and then one real defect: on one synthetic claim, the SIU chronology flag was raised 9/9
+   times with the original name and 0–7/10 times with each swapped name, and the flag itself is
+   unsupported (the file has no inception date). Next: ground that check, then rerun and widen the
+   probe (more claims, names and runs). Address was ruled out of scope —
    the seeded claims have no claimant address separate from the loss location, and varying the loss
    location would change the facts under test.
 4. **Document currency** (3.2). Track effective dates and superseded SOP and endorsement versions so an
