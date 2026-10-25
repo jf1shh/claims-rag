@@ -1311,6 +1311,9 @@ class AgenticRAGRouter:
     # (verified misroutes: a police-report fault question routed to "letter", an interest-rate
     # question to "labor", a rental-coverage question to "coverage"). "letter" and "total_loss" are
     # checked first because their own button phrasing also contains "subrogation" / "supplement".
+    # "siu" is the exception to explicit phrasing: the acronym has no incidental use, and an SIU
+    # question with no computed section is where the model invented a policy inception date
+    # (eval/fairness-probe/2026-10-24-analysis.md).
     LIVE_AUDIT_KEYWORDS = [
         ("letter", re.compile(r"\bsettlement letter\b")),
         ("total_loss", re.compile(r"\btotal loss\b")),
@@ -1319,7 +1322,7 @@ class AgenticRAGRouter:
         ("coverage", re.compile(r"\bverify(?:ing)? coverage\b")),
         ("labor", re.compile(r"\blabor rate\b|\blabor cap\b")),
         ("oem", re.compile(r"\boem parts\b")),
-        ("fraud", re.compile(r"\bsiu indicator checklist\b")),
+        ("fraud", re.compile(r"\bsiu\b")),
     ]
 
     @classmethod

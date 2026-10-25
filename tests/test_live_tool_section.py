@@ -229,3 +229,22 @@ def test_withheld_answer_gets_the_section_without_a_figure_check(api):
         assert body["answer"].endswith("\n\n---\n\n" + SECTION)
         assert "48,250" not in body["answer"]
         assert "figure_check" not in body
+
+
+SIU_QUERY = "Is this claim flagged for any SIU review concerns?"  # the fairness probe's question
+
+
+@pytest.mark.parametrize("query", [
+    SIU_QUERY,
+    "Any SIU red flags on this file?",
+    "Run the SIU indicator checklist for claim #123.",
+])
+def test_siu_questions_route_to_the_checklist_on_the_live_path(query):
+    assert AgenticRAGRouter._detect_live_audit_type(query) == "fraud"
+
+
+def test_a_siu_question_on_a_seeded_claim_carries_the_computed_checklist():
+    result, client = _run(SIU_QUERY, "#2026-30291")
+    assert "SIU Indicator Checklist" in result["tool_section"]
+    assert "`siu_checklist`" in result["tool_section"]
+    assert "<computed_figures>" in _user_prompt(client)
