@@ -277,6 +277,8 @@ Python · FastAPI (JSON + server-sent events) · SQLite with a custom hybrid vec
 
 Built independently by [Jared Fisher](https://www.linkedin.com/in/jaredfisher-ai/) with AI coding agents, drawing on 17 years at Liberty Mutual, including 11 as senior appraiser. Jared defines the requirements, directs the build, and verifies the results. Moving into AI enablement and product; open to Associate Product Manager, AI operations, and claims roles.
 
+**Data and employer note.** Every document, claim, claimant and figure in this repo is synthetic, generated for this project ([`generate_auto_pdfs.py`](generate_auto_pdfs.py), [`create_sample_files.py`](create_sample_files.py), [`ingest_all.py`](ingest_all.py)). No Liberty Mutual material, process or data is used anywhere in this repo. Built on Jared's own time and equipment, not as part of his employment.
+
 [GitHub profile](https://github.com/jf1shh) · [LinkedIn](https://www.linkedin.com/in/jaredfisher-ai/) · [Live portfolio](https://jf1shh.github.io/agentic-app-harness/)
 
 ## License
