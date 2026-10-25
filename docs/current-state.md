@@ -297,7 +297,13 @@ As of September 6, the authoritative state is [portfolio-hardening.md](portfolio
 > the live spot-check and the dip was isolated to this one row, so a full ~58-minute rerun was judged
 > not worth the cost; still a judgment call if the owner wants the number re-confirmed. The
 > `ANSWERABILITY_GATE` default-flip decision from the entry above is still open and unaffected by this
-> fix.
+> fix. **Merged as PR #56.**
+
+> **Eval scratch housekeeping, 2026-10-25**: the two-session-old uncommitted `eval/results.json`
+> (second gate-on 34-row rerun, correctness 0.779) is now committed as dated evidence at
+> `eval/results-2026-10-25-34row-jag-rerun2.json` (PR #57, content-fixed in PR #58 after a `git mv`
+> staged-stale-content gotcha — see `docs/build-history.md`). No numbers changed; this is filing, not
+> a new run.
 
 > **License changed 2026-10-17**: MIT → AGPL-3.0 (owner decision; `LICENSE`, README badge and a new License section). Code copied before the change stays under MIT.
 

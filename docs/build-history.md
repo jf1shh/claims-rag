@@ -1088,3 +1088,25 @@ Recorded the 90-second shot list with Playwright (headless Chromium, 1280x720, S
   correctness number itself re-confirmed.
 - Not done: the `ANSWERABILITY_GATE` default-flip decision from the prior entry — still open, still
   the owner's call, now also gated on this fix (done).
+
+### 2026-10-25 — PR #56 landed; eval scratch housekeeping (PRs #57, #58)
+
+- Landed: PR #56 (the JAG refusal-grounding fix above) merged clean after CI passed. Rebased local
+  `main`'s one unpushed commit (a `.trail/learnings/` note) on top of the merge rather than force-
+  pushing or discarding it.
+- Housekeeping: renamed the two-session-old scratch `eval/results.json` (an uncommitted second
+  gate-on 34-row run) to `eval/results-2026-10-25-34row-jag-rerun2.json` to keep it as dated
+  evidence instead of an open working-tree diff (PR #57).
+- Found and fixed a self-inflicted bug from that rename: `git mv <tracked-file-with-unstaged-edits>
+  <new-path>` stages the rename against the file's *last-committed* content, not its current working-
+  tree content — `git status` showed this as an `RM` (renamed + further modified) line, which went
+  unnoticed. Committing without `git add -A` or `-a` landed PR #57 with the wrong numbers (the first
+  gate-on run, correctness 0.84) under a filename and commit message describing the second run
+  (correctness 0.779). Root-caused by diffing the merged file against the backed-up working-tree
+  content; fixed with a follow-on content-only commit (PR #58, no code changes).
+- Watch out: when `git mv`-ing a file that already has unstaged modifications, always `git add` (or
+  `commit -a`) the destination path afterward and verify `git status` shows a clean `R` (not `RM`)
+  before committing — otherwise the rename silently carries stale content.
+- PR #57 also hit the known `test_ingestion_load.py` throughput flake under runner contention (same
+  as prior sessions); `gh run rerun --failed` resolved it, confirming it as a flake, not a regression,
+  for the fourth time across sessions.
