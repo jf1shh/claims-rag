@@ -968,7 +968,8 @@ def _chronology_check(reported: Optional[str], policy: Dict[str, Any]) -> Dict[s
         return {"indicator": "chronology", "result": "missing",
                 "detail": "the date the loss was reported is not on file", "source": DOSSIER, "section": None}
     report_date = date.fromisoformat(reported)
-    candidates = [("policy inception", policy["effective"])]
+    inception = policy.get("effective")
+    candidates = [("policy inception", inception)] if inception else []
     for change in policy.get("coverage_changes") or []:
         candidates.append((change["change"], change["date"]))
     scored = [(label, trigger, (report_date - date.fromisoformat(trigger)).days) for label, trigger in candidates]
@@ -978,6 +979,10 @@ def _chronology_check(reported: Optional[str], policy: Dict[str, Any]) -> Dict[s
         return {"indicator": "chronology", "result": "present",
                 "detail": f"claim reported {days} day(s) after {label} ({trigger}), within "
                            f"{SIU_CHRONOLOGY_DAYS} days", "source": FRAUD_SOP, "section": "2. Red Flags Checklist"}
+    if not inception:
+        # Without the inception date the rule can't be ruled out, only left open.
+        return {"indicator": "chronology", "result": "missing",
+                "detail": "the policy inception date is not on file", "source": DOSSIER, "section": None}
     label, trigger, days = min(scored, key=lambda item: abs(item[2]))
     return {"indicator": "chronology", "result": "absent",
             "detail": f"claim reported {days} day(s) after {label} ({trigger}), outside "
@@ -1096,7 +1101,7 @@ def siu_checklist(*, claim_id: str, reported: Optional[str], loss_date: str, los
         cite("claim", claim_id, DOSSIER),
         cite("loss date", loss_date, DOSSIER),
         cite("reported", reported or "not on file", DOSSIER),
-        cite("policy effective", policy.get("effective", "unknown"), policy.get("source", DOSSIER)),
+        cite("policy effective", policy.get("effective") or "not on file", policy.get("source", DOSSIER)),
         cite("SIU chronology rule", f"filed within {SIU_CHRONOLOGY_DAYS} days of policy inception or a "
              "coverage upgrade", FRAUD_SOP, "2. Red Flags Checklist"),
         cite("SIU paper-accident rule", "single-vehicle collision, late at night, remote area, no police "

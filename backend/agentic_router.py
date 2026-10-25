@@ -1098,13 +1098,18 @@ class AgenticRAGRouter:
 
     def _live_tool_section(self, claim_id: Optional[str], query_text: str, logs: List[str]) -> Optional[str]:
         """The simulated path's computed claim answer, for the live path to ground on and append.
-        None when there is no known claim or no audit type; a tool error never fails the request."""
-        claim = next((c for c in CLAIMS_DATA if c["id"] == claim_id), None) if claim_id else None
-        if claim is None:
+        None when there is no claim or no audit type; a tool error never fails the request."""
+        if not claim_id:
             return None
         audit_type = self._detect_live_audit_type(query_text)
         if audit_type == "general":
             return None
+        claim = next((c for c in CLAIMS_DATA if c["id"] == claim_id), None)
+        if claim is None:
+            # A document-only claim has no structured record, so nothing can be computed. SIU is
+            # the audit where the model otherwise invents the missing date (fairness probe
+            # 2026-10-24), so it alone gets a section: chronology undetermined.
+            return "\n".join(self._siu_document_only_answer(claim_id, logs)) if audit_type == "fraud" else None
         try:
             return "\n".join(self._computed_claim_answer(claim, audit_type, query_text, logs))
         except Exception as exc:  # noqa: BLE001 -- the live answer still goes out, just without computed figures
@@ -1311,6 +1316,9 @@ class AgenticRAGRouter:
     # (verified misroutes: a police-report fault question routed to "letter", an interest-rate
     # question to "labor", a rental-coverage question to "coverage"). "letter" and "total_loss" are
     # checked first because their own button phrasing also contains "subrogation" / "supplement".
+    # "siu" is the exception to explicit phrasing: the acronym has no incidental use, and an SIU
+    # question with no computed section is where the model invented a policy inception date
+    # (eval/fairness-probe/2026-10-24-analysis.md).
     LIVE_AUDIT_KEYWORDS = [
         ("letter", re.compile(r"\bsettlement letter\b")),
         ("total_loss", re.compile(r"\btotal loss\b")),
@@ -1319,7 +1327,7 @@ class AgenticRAGRouter:
         ("coverage", re.compile(r"\bverify(?:ing)? coverage\b")),
         ("labor", re.compile(r"\blabor rate\b|\blabor cap\b")),
         ("oem", re.compile(r"\boem parts\b")),
-        ("fraud", re.compile(r"\bsiu indicator checklist\b")),
+        ("fraud", re.compile(r"\bsiu\b")),
     ]
 
     @classmethod
@@ -1388,6 +1396,28 @@ class AgenticRAGRouter:
             out += ["", "**Coverage notes (not fraud indicators)**"] + [f"* {note}" for note in notes]
         out += ["", "*Indicator screen for the adjuster; SIU referral is the adjuster's decision.*"]
         return out + ct.render_inputs([result])
+
+    def _siu_document_only_answer(self, claim_id: str, logs: List[str]) -> List[str]:
+        """SIU screen for a claim that has documents but no structured record.
+
+        Nothing is computed. The chronology rule needs a policy inception or coverage-change date
+        that only a structured record supplies, so the row is undetermined and no date is offered.
+        """
+        logs.append("🧮 [Tool] siu_checklist: not computed (no structured claim record)")
+        rule = f"filed within {ct.SIU_CHRONOLOGY_DAYS} days of policy inception or a coverage upgrade"
+        return [
+            f"### 🔍 SIU Indicator Checklist: {claim_id}",
+            "**No structured claim record: the SIU indicators were not computed for this claim.**", "",
+            "| Indicator | Result | Detail | Source |", "| --- | --- | --- | --- |",
+            f"| Chronology | UNDETERMINED | no policy inception or coverage-change date in the claim record; "
+            f"the rule ({rule}) needs that date and the report date | {ct.FRAUD_SOP}, 2. Red Flags Checklist |",
+            "",
+            "Raise the chronology indicator only if a cited source for this claim states the policy inception "
+            "or coverage-change date. Do not assume one, and do not take one from another claim or a case study. "
+            "Paper accident, pre-existing damage and duplicate invoices: answer from the cited sources.",
+            "",
+            "*Indicator screen for the adjuster; SIU referral is the adjuster's decision.*",
+        ]
 
     @staticmethod
     def _policy_deductible(claim: Dict[str, Any]):

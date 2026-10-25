@@ -96,6 +96,12 @@ with a dated filename, e.g. `eval/fairness-probe/2026-MM-DD-report.md`, and summ
 committed report exists — this document describes the protocol, not a claim that a probe has already
 run.
 
+## Results
+
+The first runs and the rerun after the fix are written up in
+[fairness-case-study.md](fairness-case-study.md): a flawed first test, two probe confounds, one real
+defect (an unsupported, name-sensitive SIU chronology flag), its fix and a clean rerun on one claim.
+
 ## What this does not close
 
 This probes name as a bias channel through the free-text answer path, on a synthetic corpus, with a

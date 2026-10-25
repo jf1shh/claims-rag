@@ -64,6 +64,23 @@ class TestChronology:
         result = _result(reported=None)
         assert _indicator(result, "chronology")["result"] == "missing"
 
+    def test_missing_inception_date_is_missing_not_a_crash(self):
+        row = _indicator(_result(policy={}), "chronology")
+        assert row["result"] == "missing"
+        assert "policy inception date is not on file" in row["detail"]
+
+    def test_a_coverage_change_inside_the_window_still_flags_without_an_inception_date(self):
+        policy = {"coverage_changes": [{"change": "collision added", "date": "2026-01-01"}]}
+        assert _indicator(_result(policy=policy), "chronology")["result"] == "present"
+
+    def test_a_coverage_change_outside_the_window_cannot_clear_a_missing_inception_date(self):
+        policy = {"coverage_changes": [{"change": "collision added", "date": "2025-06-01"}]}
+        assert _indicator(_result(policy=policy), "chronology")["result"] == "missing"
+
+    def test_the_inputs_table_says_the_inception_date_is_not_on_file(self):
+        lines = ct.render_inputs([_result(policy={})])
+        assert any("| policy effective | not on file |" in line for line in lines)
+
 
 class TestPaperAccident:
     FULL_SCENE = {"single_vehicle": True, "remote": True, "police_report": None, "witnesses": []}
