@@ -72,7 +72,7 @@ def test_stream_carries_the_section_and_the_claim_dossier():
 @pytest.mark.parametrize("query,claim_id", [
     ("Summarize this file for me.", CLAIM),  # audit type "general"
     (LABOR_QUERY, None),  # no claim
-    (LABOR_QUERY, "#0000-00000"),  # not in CLAIMS_DATA
+    (LABOR_QUERY, "#0000-00000"),  # not in CLAIMS_DATA (only an SIU question gets a section there)
 ])
 def test_no_section_without_a_claim_or_an_audit_type(query, claim_id):
     result, client = _run(query, claim_id)
