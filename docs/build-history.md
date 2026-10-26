@@ -1187,3 +1187,27 @@ regression until this load test re-exposed it.
   machine that's supposed to have a GPU.
 - Full write-up: `docs/enterprise-migration.md` Phase 6.1 status (2026-10-26 entry) and
   `docs/current-state.md` What's Next item 2.
+
+### 2026-10-26 — Silent CPU-fallback warning shipped (PR #64); GPU re-verification specced for later
+
+Picked up the two follow-ups left by the load-test re-run above, one at a time.
+
+- **PR #64 (merged)**: `resolve_rerank_device` (`backend/rag_engine.py`) now prints a warning
+  whenever `RERANK_DEVICE=auto` resolves to CPU, naming the unpinned-torch cause and what to check —
+  mirrors the warning that already existed for an explicit `RERANK_DEVICE=cuda` falling back. Two
+  new tests in `tests/test_rag_engine.py::TestResolveRerankDevice` (warning present on auto-CPU
+  fallback, absent on auto-GPU) using the existing `_stub_torch` seam, so this stays torch-free in
+  CI. Full `tests/test_rag_engine.py` run: 48 passed, 1 skipped. CI green, merged as PR #64.
+- **GPU re-verification deferred, specced in detail instead of run**: the owner asked to spec this
+  out for later rather than attempt it now (GPU still busy with Lemonade). Wrote a full spec —
+  preconditions, exact reinstall/pin/re-run procedure, acceptance criteria, and what to do if the
+  numbers don't reproduce — into `docs/enterprise-migration.md`'s Phase 6.1 section, right after the
+  2026-10-26 load-test entry ("Spec: re-verify GPU reranker numbers"). Key addition beyond what the
+  load-test session flagged: pinning `torch` in `requirements.txt` after reinstalling the ROCm
+  wheel, since the PR #64 warning only surfaces the fallback, it doesn't stop a routine
+  `pip install -r requirements.txt` from causing it a third time.
+- Docs-only, no routing: both were a single coherent write-up/small-function change, under this
+  project's ~20-line routing threshold, so stayed with Claude directly per `nexus-orchestrator`.
+- Next: a future session starts with `gpu-preflight`, and if the GPU is free, follows the spec in
+  `docs/enterprise-migration.md` end to end (reinstall ROCm torch, pin it, re-run both load-test
+  tiers, update the three docs again on completion).
