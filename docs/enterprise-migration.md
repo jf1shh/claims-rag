@@ -773,6 +773,89 @@ RLS onto live multi-tenant data is the most expensive mistake in this plan.
 >   --duration 15s --no-assert-p95 --synthetic-models`, p95 11.0ms, passed) before the ~35-minute
 >   full run. Both runs' containers and server processes were confirmed torn down cleanly afterward
 >   (`docker ps`, `pgrep`).
+>
+> **Follow-up (b), done 2026-10-26 (PR #64):** `resolve_rerank_device` (`backend/rag_engine.py`) now
+> prints a warning whenever `RERANK_DEVICE=auto` resolves to CPU, naming the unpinned-torch cause
+> above, so this regression can't recur silently. Covered by
+> `tests/test_rag_engine.py::TestResolveRerankDevice`. Follow-up (a) — reproducing the session-36 GPU
+> numbers — is specced out below, deferred until the GPU is free.
+
+### Spec: re-verify GPU reranker numbers (follow-up (a), deferred)
+
+**Goal.** Confirm the session-36 GPU reranker measurement (sequential p95 65ms, concurrent p95
+475ms, both via `RERANK_DEVICE=auto`/`cuda`) still holds once the venv's torch build is restored to
+ROCm, now that the 2026-10-26 run has shown the CPU-only build silently crept back in. This closes
+follow-up (a) from the 2026-10-26 entry above; it is a measurement task, not a code change — no
+source edit is expected unless the numbers *don't* reproduce.
+
+**Preconditions — check every one before starting, in order.**
+1. `rocm-smi --showuse` shows the GPU is not already busy with another workload. This machine's
+   rule is one GPU workload at a time; `gpu-preflight` is the gate — run it and follow what it says.
+   Lemonade (`lemond`, port 13305) and this measurement cannot run concurrently. If Lemonade is
+   active, stop it the same way `gpu-preflight`/the GPU rules expect, and restore it afterward with
+   `--ctx-size 32768` (never `8192`) per this machine's standing rule — do not change that flag.
+2. `.venv/bin/python -c "import torch; print(torch.__version__, torch.cuda.is_available())"` from
+   the main checkout — confirm it currently prints the CPU-only build (`False`) as the 2026-10-26
+   session found, so there's a real before/after to report. If it already prints `True`, someone
+   else already fixed the venv — skip reinstall, go straight to Step 2 of Procedure.
+3. Run this from the **main checkout**, not a worktree (worktrees here have no `.venv`/Docker
+   access — see the 2026-10-26 handoff's gotcha on this).
+
+**Procedure.**
+1. Reinstall the ROCm torch wheel session 36 used: `2.13.0+rocm7.2`, matching the ROCm 7.2.4
+   toolchain already on this machine (`GPU rig config` reference memory has the exact pip index URL
+   session 36 used — recall it, don't re-derive from scratch). Do **not** set
+   `PYTORCH_HIP_ALLOC_CONF=expandable_segments:True` (this machine's standing rule — causes known
+   problems). Verify immediately after install:
+   `.venv/bin/python -c "import torch; print(torch.__version__, torch.cuda.is_available())"` must
+   now print the ROCm build and `True`.
+2. Pin it so this can't silently regress a third time: add an explicit `torch==2.13.0+rocm7.2` line
+   (with its ROCm index URL, however this project's other pinned/indexed deps express that — check
+   `requirements.txt` for precedent, e.g. how the CPU-only wheel pin was done for Docker per the
+   Deferred Findings table below) to `requirements.txt`, rather than continuing to rely on
+   `sentence-transformers`'s transitive, unpinned pull. This is the actual fix for the root cause
+   documented 2026-10-26 ("torch has no line in requirements.txt"); the Step 1 reinstall alone would
+   only set the venv right until the next `pip install -r requirements.txt`.
+3. Re-run both load-test tiers used on 2026-10-26, from the main checkout, same flags, so the
+   comparison is apples-to-apples:
+   - Smoke test: `.venv/bin/python scripts/run_retrieval_load_test.py --count 500 --tenants 2
+     --users 5 --spawn-rate 5 --duration 15s --no-assert-p95 --synthetic-models`
+   - Full run: `.venv/bin/python scripts/run_retrieval_load_test.py --count 100000 --tenants 8
+     --users 50 --spawn-rate 10 --duration 120s` (background it — the full run took ~35 minutes on
+     2026-10-26; use Monitor or `run_in_background`, not a sleep loop).
+4. Confirm clean teardown afterward exactly as 2026-10-26 did: `docker ps -a` (no leftover
+   `claimsrag-loadtest-pg*` container from this run) and `pgrep -af "uvicorn.*backend.app"` (no
+   leftover server process).
+5. Also re-check the RERANK_DEVICE=auto warning added in PR #64 does *not* fire now (confirms the
+   fix is actually active, not just that torch imports) — eyeball the server's stdout/log for the
+   "RERANK_DEVICE=auto resolved to CPU" line; it must be absent.
+
+**Acceptance criteria.**
+- `torch.cuda.is_available()` is `True` in the main checkout's venv, with the ROCm build installed
+  (`+rocm7.2`, not a CUDA or CPU-only wheel).
+- `requirements.txt` has an explicit torch pin after this, so a routine `pip install -r
+  requirements.txt` can no longer silently swap it back (this is the part of follow-up (a) that
+  actually prevents a fourth recurrence, beyond just the warning PR #64 added).
+- Full load-test run reproduces session-36's order of magnitude: sequential p95 in the neighborhood
+  of 65ms, concurrent p95 in the neighborhood of 475ms (not required to match exactly — this is a
+  shared desktop machine, not isolated test infrastructure, same caveat as every other Phase 6.1
+  entry) — specifically, both must land far below the 3900ms CPU-fallback number from 2026-10-26,
+  confirming the GPU path is genuinely active and not just torch importing without using the card.
+- No leftover Docker container or uvicorn process after the run.
+- Findings appended as a new dated paragraph in this same Phase 6.1 narrative (same place as the
+  2026-10-26 and prior entries), plus an update to `docs/current-state.md`'s "What's Next" list once
+  this closes the last open Phase 6.1 item, plus a `docs/build-history.md` Session Log entry — same
+  three-file pattern PR #63 used.
+
+**If the numbers *don't* reproduce** (e.g. GPU reranking is on but p95 is still far above
+session-36's numbers): that's a new finding, not a spec failure — investigate rather than force the
+acceptance criteria. Don't assume the session-36 numbers were wrong; also don't assume whatever
+regressed this time is the same unpinned-torch cause already fixed in Step 2.
+
+**Why this is deferred, not done now (2026-10-26):** the GPU was at 100% use from Lemonade when this
+spec was written, and swapping the project venv's torch build is an environment change this
+machine's rules gate behind `gpu-preflight`, not something to do opportunistically mid-task. Pick
+this up in a session that starts with a clean `gpu-preflight` check.
 
 ---
 
