@@ -1153,3 +1153,37 @@ Recorded the 90-second shot list with Playwright (headless Chromium, 1280x720, S
   per `.claude/rules/backend-constraints.md`), producing a plausible-looking but ungated response.
   Always set `LLM_MODEL` explicitly for a from-scratch verification server when more than one model
   is downloaded in Lemonade — a default/empty value is ambiguous to it, not a no-op.
+
+### 2026-10-26 — Phase 6.1 load test re-run finds a silent GPU-reranker regression
+
+Ran `scripts/run_retrieval_load_test.py` for real (100,000 docs, 8 tenants, 50 concurrent users,
+120s), the authoritative Postgres/HTTP Locust comparison sessions 33–38 never completed (Postgres
+was unavailable each time). It ran end to end this time — throwaway `pgvector/pgvector:pg16`
+container, real `alembic upgrade head`, real seed, real `backend.app:app` server, real Locust load —
+and measured **p95 = 3900ms, still over the 100ms bar**. A quick synthetic-models smoke run
+(500 docs, 15s) passed first to confirm the harness itself still works.
+
+That number matches the pre-GPU-fix 2026-09-02 CPU measurement (3800ms), not session 36's post-GPU
+numbers (475ms concurrent, 65ms sequential). Investigated why: `torch.cuda.is_available()` is
+`False` in this venv, and `pip show torch` shows the plain CUDA build (`2.14.1`, `nvidia-cudnn-cu13`
+etc.), not the ROCm wheel session 36 installed by hand. `torch` has no line in `requirements.txt` —
+it comes in transitively, unpinned, via `sentence-transformers` — and the installed wheel's file
+mtime (2026-10-16) lines up with a `requirements.txt`-touching commit, consistent with a routine
+`pip install -r requirements.txt` silently overwriting the hand-installed ROCm build with the plain
+PyPI CUDA one. `RERANK_DEVICE=auto` fails open to CPU with no warning logged, so nothing flagged the
+regression until this load test re-exposed it.
+
+- Decided: report this honestly as "the authoritative comparison has now run, and it surfaced a
+  reproducibility gap" rather than either (a) claiming the 3900ms number disproves the session-36
+  fix, or (b) silently reinstalling ROCm torch and re-running on GPU to get a cleaner number. The
+  GPU was already at 100% use (Lemonade) during this session, and this machine's rule is one GPU
+  workload at a time with `gpu-preflight` as the gate — swapping torch builds and claiming the GPU
+  mid-session was out of scope for a load-test task.
+- Root cause confirmed unchanged from sessions 33–36: CPU-bound cross-encoder reranking. What's new
+  is that the fix for it (GPU reranking) isn't currently active in this environment, and nothing in
+  the repo pins the ROCm torch build or detects the silent fallback.
+- Next: reinstall the ROCm torch wheel when the GPU is free and re-measure to confirm session 36's
+  numbers still hold; consider a startup warning when `RERANK_DEVICE=auto` resolves to CPU on a
+  machine that's supposed to have a GPU.
+- Full write-up: `docs/enterprise-migration.md` Phase 6.1 status (2026-10-26 entry) and
+  `docs/current-state.md` What's Next item 2.

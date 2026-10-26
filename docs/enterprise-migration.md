@@ -735,6 +735,44 @@ RLS onto live multi-tenant data is the most expensive mistake in this plan.
 > run because the documented local PostgreSQL instance on port 55432 was not
 > running. The concurrent p95 bar therefore remains open and must be remeasured
 > on the corrected factory/load harness when Postgres is available.
+>
+> **Re-measured 2026-10-26 (the authoritative Postgres/HTTP comparison, now run end to end) — and a
+> real regression found along the way.** `scripts/run_retrieval_load_test.py --count 100000
+> --tenants 8 --users 50 --spawn-rate 10 --duration 120s` ran its full real path: a throwaway
+> `pgvector/pgvector:pg16` Docker container, schema via `alembic upgrade head`, 100,000 docs seeded
+> across 8 tenants, a real `backend.app:app` server, a warm-up request, then 120s of real Locust
+> HTTP load at 50 concurrent users against `/api/chat`.
+> - **Seed throughput: 48.8 docs/sec sustained** (2050.17s total, 84.7 → 48.8 docs/sec across the
+>   run — same shape as the 2026-09-02 run's 60.9 docs/sec, just slower; shared desktop machine, not
+>   dedicated test infrastructure, per the existing caveat).
+> - **Retrieval: p95 = 3900ms under 50 concurrent users — does not meet the 100ms bar.**
+> - **This number matches the pre-GPU 2026-09-02 CPU measurement (3800ms), not the post-GPU-fix
+>   session-36 measurement (475ms concurrent, 65ms sequential, both already below or near the bar).
+>   That is the real finding here: the session-36 GPU reranker fix is not active in this venv right
+>   now.** `torch.cuda.is_available()` returns `False`; `pip show torch` reports `2.14.1` with CUDA
+>   dependencies (`nvidia-cudnn-cu13`, etc.), not the ROCm build session 36 installed. `torch` has no
+>   line in `requirements.txt` — it comes in transitively via `sentence-transformers`, unpinned — and
+>   the installed wheel's file mtime (2026-10-16) lands exactly on a `requirements.txt`-touching
+>   commit, consistent with a routine `pip install -r requirements.txt` re-run silently replacing the
+>   hand-installed ROCm wheel with the plain PyPI CUDA one (which cannot see an AMD card). `config.py`
+>   and `RERANK_DEVICE=auto` fail open to CPU with no warning logged when this happens, so nothing
+>   flagged the regression until this load test re-exposed it as a 3900ms p95.
+> - **This is a reproducibility gap, not evidence the session-36 fix was wrong.** The fix itself
+>   (`RERANK_DEVICE`, GPU-aware `LocalReranker`) is still in the code and still correct; what's
+>   missing is anything that pins the ROCm torch build or warns when `auto` silently resolves to
+>   CPU despite a GPU being expected. Re-measuring on GPU was not attempted in this session: the
+>   machine's one AMD GPU was already at 100% use (Lemonade) per this machine's own "one workload at
+>   a time, GPU-preflight first" rule, and reinstalling a ROCm torch wheel into the project venv is
+>   an environment change beyond what a load-test re-run should do on its own judgment.
+> - **Phase 6.1's authoritative Postgres/HTTP comparison has now run end to end** — the piece the
+>   2026-09-13 follow-up couldn't complete (Postgres was unavailable) is no longer missing. What's
+>   open is narrower than before: (a) reproduce the session-36 GPU numbers once the ROCm torch wheel
+>   is reinstalled and the GPU is free, to confirm the fix still holds; (b) add a startup check or
+>   pinned install instructions so this silent CPU fallback can't recur unnoticed.
+> - Harness itself was smoke-tested first (`--count 500 --tenants 2 --users 5 --spawn-rate 5
+>   --duration 15s --no-assert-p95 --synthetic-models`, p95 11.0ms, passed) before the ~35-minute
+>   full run. Both runs' containers and server processes were confirmed torn down cleanly afterward
+>   (`docker ps`, `pgrep`).
 
 ---
 
