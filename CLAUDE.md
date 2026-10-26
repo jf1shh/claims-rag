@@ -20,10 +20,12 @@ Read `IDENTITY.md` and `CONTEXT.md` before exploring the repository. They are th
 
 1. [docs/current-state.md](docs/current-state.md) — build plan, Current State, Known Issues, What's Next. **Read at session start, update at session end.**
 2. [docs/architecture.md](docs/architecture.md) — components, file structure, locked design decisions, component status. Read before touching a component.
-3. [docs/build-history.md](docs/build-history.md) — phases 1-18, Debugging History, full session log. Not loaded by default; append at session end.
+3. [docs/build-history.md](docs/build-history.md) — phases 1-18, Debugging History, full session log. Not loaded by default; append at session end. To find a topic without reading the whole 1200+ line file, grep it first, e.g. `grep -n 'retrieval\|embedding\|FTS' docs/build-history.md | head -50`.
 4. [README.md](README.md) — portfolio-facing case study. Keep it in sync with Current State.
 
 Key code: [backend/rag_engine.py](backend/rag_engine.py) (parse, chunk, embed, rerank, hybrid store), [backend/agentic_router.py](backend/agentic_router.py) (plan/retrieve/synthesize + simulation), [backend/app.py](backend/app.py) (FastAPI endpoints).
+
+For logs and large generated files — including `audit.log.jsonl` — prefer `logdigest`/`jsonpeek`/`peek` over a raw read or grep; never read `audit.log.jsonl` directly, it can run into the megabytes. These tools are installed globally on PATH (see the global CLAUDE.md for the full cost-saving toolset).
 
 ## Critical Constraints
 
