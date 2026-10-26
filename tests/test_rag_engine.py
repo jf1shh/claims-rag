@@ -90,6 +90,16 @@ class TestResolveRerankDevice:
         self._stub_torch(monkeypatch, available=False)
         assert resolve_rerank_device("auto") == "cpu"
 
+    def test_auto_fallback_warns_so_a_regression_cant_go_silent(self, monkeypatch, capsys):
+        self._stub_torch(monkeypatch, available=False)
+        resolve_rerank_device("auto")
+        assert "RERANK_DEVICE=auto resolved to CPU" in capsys.readouterr().out
+
+    def test_auto_on_gpu_prints_no_fallback_warning(self, monkeypatch, capsys):
+        self._stub_torch(monkeypatch, available=True)
+        resolve_rerank_device("auto")
+        assert "resolved to CPU" not in capsys.readouterr().out
+
     def test_explicit_cuda_falls_back_rather_than_raising(self, monkeypatch):
         """A missing GPU must not take the whole app down at startup."""
         self._stub_torch(monkeypatch, available=False)

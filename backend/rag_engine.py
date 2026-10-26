@@ -194,6 +194,14 @@ def resolve_rerank_device(preference="auto"):
         return "cuda"
     if preference == "cuda":
         print("RERANK_DEVICE=cuda requested but no GPU is visible to torch; using CPU.")
+    elif preference == "auto":
+        print(
+            "RERANK_DEVICE=auto resolved to CPU: no GPU is visible to torch. "
+            "Expected on a CPU-only host (e.g. CI); on a GPU box, check that the "
+            "ROCm/CUDA torch build is installed -- a plain `pip install -r "
+            "requirements.txt` can silently replace it with the CPU-only wheel "
+            "since torch has no version/variant pin there."
+        )
     return "cpu"
 
 
