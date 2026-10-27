@@ -1255,3 +1255,35 @@ Same day as the PR #63/#64/#65 work above; picked up the deferred spec once the 
   2 and 3 rewritten), and this entry — same three-file pattern PR #63 used.
 - No routing: single coherent measurement-and-writeup task requiring direct shell/venv/GPU access
   this session already had; under the project's routing threshold per `nexus-orchestrator`.
+
+### 2026-10-27 — PR #67 CI failure fixed: bare torch pin instead of a ROCm-variant pin
+
+Picked up where the above session's handoff left off: PR #67 (the ROCm torch pin + re-verification
+above) opened with both `postgres` and `pytest-linux` CI jobs failing.
+
+- **Diagnosed from the actual failure logs first, no guessing**: `gh run view --log-failed` showed
+  both jobs failing identically at "Install dependencies" / "Install test dependencies" —
+  `ERROR: Could not install packages due to an OSError: [Errno 122] Disk quota exceeded` while
+  downloading `torch-2.13.0%2Brocm7.2-...whl (6227.8 MB)`. Root cause: the prior session's
+  `requirements.txt` pin (`torch==2.13.0+rocm7.2` plus a blanket
+  `--extra-index-url https://download.pytorch.org/whl/rocm7.2`) forces every CI install (and, it
+  turned out, the Dockerfile build too — its own CPU-torch-first layer didn't actually make the
+  requirements.txt line a no-op once that line pinned a different variant+version string) to try
+  downloading the 6.2GB ROCm wheel on a GPU-less hosted runner.
+- **Fix: pin the bare version, not the variant.** Changed `requirements.txt` to `torch==2.13.0`
+  (no `+rocm7.2`, no extra index). PEP 440 equality ignores the local version segment, so this bare
+  pin is satisfied by whatever variant is already installed — confirmed directly with
+  `packaging.specifiers.SpecifierSet('==2.13.0')`, which contains both `Version('2.13.0+rocm7.2')`
+  and `Version('2.13.0+cpu')`. CI (`tests.yml`, both jobs) and the Dockerfile each gained an
+  explicit `pip install torch==2.13.0 --index-url https://download.pytorch.org/whl/cpu` step/layer
+  before installing `requirements.txt`, mirroring the pattern the Dockerfile already used for the
+  *unpinned* case — now the version matches too, so nothing redownloads.
+- **Verified locally without touching CI**: `pip install -r requirements.txt --dry-run` in the main
+  checkout's venv (still on the ROCm build from the prior session) reported
+  `torch==2.13.0 ... already satisfied ... (2.13.0+rocm7.2)` — the local GPU build is still
+  protected from silent downgrade, which was the whole point of pinning torch in the first place.
+- Updated `docs/enterprise-migration.md` (a "Follow-up" paragraph appended after the prior session's
+  Outcome note) and `docs/current-state.md` (What's Next item 3 extended) plus this entry.
+- No routing: a ~26-line fix across three files (`requirements.txt`, `Dockerfile`,
+  `.github/workflows/tests.yml`) diagnosed and verified with direct `gh`/`pip`/`packaging` access
+  this session already had; under the project's routing threshold per `nexus-orchestrator`.

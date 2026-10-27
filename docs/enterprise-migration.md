@@ -906,6 +906,17 @@ number was never the same workload (10 direct calls vs. 50 Locust users), and se
 flat-concurrency finding already predicts this gap. Cross-request batching remains the open lever,
 not yet implemented.
 
+**Follow-up (2026-10-26/27, PR #67 CI fix):** the ROCm pin as first written
+(`torch==2.13.0+rocm7.2` plus a blanket `--extra-index-url .../rocm7.2`) broke CI — the hosted
+runner tried to download the 6.2GB ROCm wheel and hit its disk quota (both `postgres` and
+`pytest-linux` jobs failed identically). Fixed by pinning the bare version instead
+(`torch==2.13.0`, no variant, no extra index) and having CI and the Dockerfile each install a
+matching `torch==2.13.0` CPU build in their own earlier step/layer, exactly as the Dockerfile
+already did for the unpinned case. PEP 440 equality ignores the local version segment, so
+`torch==2.13.0` is satisfied by whichever variant (`+rocm7.2` locally, `+cpu` in CI/Docker) is
+already installed, and nothing redownloads. Verified locally with `pip install -r requirements.txt
+--dry-run` (reports the ROCm build as already satisfying the bare pin).
+
 ---
 
 ## Deferred findings (close-out record, 2026-08-28)

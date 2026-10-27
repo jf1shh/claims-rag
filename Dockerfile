@@ -35,8 +35,11 @@ RUN pip install --upgrade pip
 # resolves the default CUDA build (~7GB of nvidia-cu13 wheels) even though
 # this app is CPU-only end to end (embedding, reranking, generation all run
 # via Lemonade, not in-process GPU inference). Installing the CPU-only wheel
-# first satisfies that dependency before requirements.txt is processed.
-RUN pip install torch --index-url https://download.pytorch.org/whl/cpu
+# first, pinned to the same version requirements.txt pins torch to, satisfies
+# that dependency before requirements.txt is processed (PEP 440 equality
+# ignores the local version segment, so torch==2.13.0+cpu satisfies the bare
+# torch==2.13.0 in requirements.txt without a second install).
+RUN pip install torch==2.13.0 --index-url https://download.pytorch.org/whl/cpu
 RUN pip install -r requirements.txt
 
 # Pre-cache the embedding + cross-encoder reranker models (network required
