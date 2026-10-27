@@ -1,4 +1,13 @@
 # Pinned to the versions this project is developed and evaluated against.
+
+# torch: sentence-transformers pulls it in transitively with no version/variant pin, which lets a
+# routine `pip install -r requirements.txt` silently replace a GPU build with the CPU-only default
+# (Phase 6.1, 2026-10-26 regression). Pinned explicitly here with the ROCm wheel this machine's GPU
+# reranker needs; the Dockerfile installs its own CPU-only torch before this file in its own layer,
+# so this line is a no-op there (already satisfied).
+--extra-index-url https://download.pytorch.org/whl/rocm7.2
+torch==2.13.0+rocm7.2
+
 # Runtime
 fastapi==0.139.0
 starlette==1.9.0  # fastapi does not pin it; CI and local drifted (PR #25)
