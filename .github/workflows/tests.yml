@@ -32,6 +32,15 @@ jobs:
       - name: Set up venv
         run: python3.12 -m venv .venv && .venv/bin/pip install --upgrade pip
 
+      # requirements.txt pins a bare torch==2.13.0 (no build variant) so a local
+      # ROCm GPU build never gets silently replaced (Phase 6.1, 2026-10-26).
+      # This runner has no GPU, so install the matching CPU build first --
+      # mirrors the Dockerfile's layering -- or pip would otherwise resolve
+      # torch straight off PyPI, which for this version is the multi-GB CUDA
+      # build and exceeds the runner's disk quota (PR #67 CI failure).
+      - name: Install CPU torch
+        run: .venv/bin/pip install torch==2.13.0 --index-url https://download.pytorch.org/whl/cpu
+
       # Install the pinned runtime/test dependencies needed by the API,
       # contracts, parsers, and tests. Model engines import lazily, so CI does
       # not contact hosted model services or require keys/tokens.
@@ -109,6 +118,10 @@ jobs:
       # release for this distro; use the runner host's system Python 3.12.
       - name: Set up venv
         run: python3.12 -m venv .venv && .venv/bin/pip install --upgrade pip
+
+      # See the matching "Install CPU torch" step and comment in pytest-linux.
+      - name: Install CPU torch
+        run: .venv/bin/pip install torch==2.13.0 --index-url https://download.pytorch.org/whl/cpu
 
       - name: Install dependencies
         run: .venv/bin/pip install -r requirements.txt

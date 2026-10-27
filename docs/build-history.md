@@ -1211,3 +1211,79 @@ Picked up the two follow-ups left by the load-test re-run above, one at a time.
 - Next: a future session starts with `gpu-preflight`, and if the GPU is free, follows the spec in
   `docs/enterprise-migration.md` end to end (reinstall ROCm torch, pin it, re-run both load-test
   tiers, update the three docs again on completion).
+
+### 2026-10-26 — GPU reranker re-verified: torch pinned, GPU confirmed active, concurrent gap traced to known batching lever
+
+Same day as the PR #63/#64/#65 work above; picked up the deferred spec once the GPU was free.
+
+- **gpu-preflight gate followed, not bypassed**: it was `BLOCKED` (Lemonade at 100% GPU use, VRAM
+  over its limit). Ran `lemonade unload`, confirmed `gpu-preflight` went `CLEAR`, did the work, then
+  restored Lemonade afterward (`lemonade load Qwen3-Coder-30B-A3B-Instruct-GGUF --ctx-size 65536` —
+  this machine's current standing context for that model; an older note said restore at 32768, but
+  the live config and `gpu-preflight`'s own restore suggestion both point to 65536 now).
+- **Reinstalled and pinned ROCm torch**: `pip install --index-url https://download.pytorch.org/whl/rocm7.2
+  "torch==2.13.0+rocm7.2"` in the main checkout's venv. Verified with `torch.cuda.is_available()`
+  (`True`) and a real 4096² all-ones matmul on device (sum 68719476736.0, the correct value, not
+  just an import check). Then pinned `torch==2.13.0+rocm7.2` plus its `--extra-index-url` directly in
+  `requirements.txt` — this is the actual fix for "torch has no line in requirements.txt" from the
+  earlier entry today; PR #64's warning only detects the fallback, it doesn't prevent it.
+- **Re-ran both load-test tiers from the main checkout** (worktrees here still have no
+  `.venv`/Docker access): smoke test unchanged at p95=11.0ms; full run (100,000 docs, 8 tenants, 50
+  users, 120s) seeded at 51.8 docs/sec (1930.75s total) and measured **p95 = 970ms — still "LOAD
+  TEST FAILED," still above the 100ms bar**, but ~4x faster than the same harness's 3900ms
+  CPU-fallback number from earlier today. `resolve_rerank_device('auto')` resolves to `cuda` with no
+  warning printed, confirming the GPU path is genuinely active, not just torch importing inertly.
+- **970ms doesn't match session-36's 475ms, and that's a real finding, investigated rather than
+  assumed away**: session 36's 475ms was 10 simultaneous *direct* reranker calls at a small
+  candidate pool — not a 50-user Locust run against a 100,000-doc Postgres-backed corpus. The two
+  numbers were never measuring the same workload. Session 36 already diagnosed the mechanism that
+  explains the gap: sweeping `RERANK_MAX_CONCURRENCY` 1/2/4/8/16 on GPU gave a flat 492-589ms,
+  because un-batched reranker forward passes serialize on the GPU one at a time regardless of the
+  concurrency knob. Scaling that from 10 concurrent calls to 50 concurrent Locust users should get
+  worse, not better, and 970ms is consistent with that — not with a new, unrelated bottleneck.
+  Session 36 already named the fix this needs: cross-request batching in `LocalReranker`, still not
+  implemented.
+- **Confirmed clean teardown**: `docker ps -a --filter name=claimsrag-loadtest-pg` showed no
+  container from this run (only an unrelated 7-week-old exited container from a different project);
+  `pgrep -af "uvicorn.*backend.app"` showed nothing running.
+- **Not implemented this session, by design**: cross-request reranker batching. The spec that opened
+  this work was scoped as a measurement task expecting no source change unless the numbers didn't
+  reproduce. They partially didn't — the gap traces to a nontrivial, already-named batching change,
+  not something to bolt on inside a measurement session.
+- Updated `docs/enterprise-migration.md` (new dated paragraph after the 2026-10-26 load-test entry,
+  plus an "Outcome" note appended to the spec itself), `docs/current-state.md` (`What's Next` items
+  2 and 3 rewritten), and this entry — same three-file pattern PR #63 used.
+- No routing: single coherent measurement-and-writeup task requiring direct shell/venv/GPU access
+  this session already had; under the project's routing threshold per `nexus-orchestrator`.
+
+### 2026-10-27 — PR #67 CI failure fixed: bare torch pin instead of a ROCm-variant pin
+
+Picked up where the above session's handoff left off: PR #67 (the ROCm torch pin + re-verification
+above) opened with both `postgres` and `pytest-linux` CI jobs failing.
+
+- **Diagnosed from the actual failure logs first, no guessing**: `gh run view --log-failed` showed
+  both jobs failing identically at "Install dependencies" / "Install test dependencies" —
+  `ERROR: Could not install packages due to an OSError: [Errno 122] Disk quota exceeded` while
+  downloading `torch-2.13.0%2Brocm7.2-...whl (6227.8 MB)`. Root cause: the prior session's
+  `requirements.txt` pin (`torch==2.13.0+rocm7.2` plus a blanket
+  `--extra-index-url https://download.pytorch.org/whl/rocm7.2`) forces every CI install (and, it
+  turned out, the Dockerfile build too — its own CPU-torch-first layer didn't actually make the
+  requirements.txt line a no-op once that line pinned a different variant+version string) to try
+  downloading the 6.2GB ROCm wheel on a GPU-less hosted runner.
+- **Fix: pin the bare version, not the variant.** Changed `requirements.txt` to `torch==2.13.0`
+  (no `+rocm7.2`, no extra index). PEP 440 equality ignores the local version segment, so this bare
+  pin is satisfied by whatever variant is already installed — confirmed directly with
+  `packaging.specifiers.SpecifierSet('==2.13.0')`, which contains both `Version('2.13.0+rocm7.2')`
+  and `Version('2.13.0+cpu')`. CI (`tests.yml`, both jobs) and the Dockerfile each gained an
+  explicit `pip install torch==2.13.0 --index-url https://download.pytorch.org/whl/cpu` step/layer
+  before installing `requirements.txt`, mirroring the pattern the Dockerfile already used for the
+  *unpinned* case — now the version matches too, so nothing redownloads.
+- **Verified locally without touching CI**: `pip install -r requirements.txt --dry-run` in the main
+  checkout's venv (still on the ROCm build from the prior session) reported
+  `torch==2.13.0 ... already satisfied ... (2.13.0+rocm7.2)` — the local GPU build is still
+  protected from silent downgrade, which was the whole point of pinning torch in the first place.
+- Updated `docs/enterprise-migration.md` (a "Follow-up" paragraph appended after the prior session's
+  Outcome note) and `docs/current-state.md` (What's Next item 3 extended) plus this entry.
+- No routing: a ~26-line fix across three files (`requirements.txt`, `Dockerfile`,
+  `.github/workflows/tests.yml`) diagnosed and verified with direct `gh`/`pip`/`packaging` access
+  this session already had; under the project's routing threshold per `nexus-orchestrator`.

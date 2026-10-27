@@ -780,6 +780,48 @@ RLS onto live multi-tenant data is the most expensive mistake in this plan.
 > `tests/test_rag_engine.py::TestResolveRerankDevice`. Follow-up (a) — reproducing the session-36 GPU
 > numbers — is specced out below, deferred until the GPU is free.
 
+> **Follow-up (a) re-measured 2026-10-26 (same day, GPU freed): ROCm torch restored, GPU reranker
+> confirmed active — but the 100ms bar is still not met at full Locust scale, for a reason session
+> 36 already diagnosed.**
+> - `gpu-preflight` was blocked by Lemonade (100% GPU use); stopped with `lemonade unload`, confirmed
+>   `CLEAR` by `gpu-preflight`, then reinstalled `torch==2.13.0+rocm7.2` from the ROCm 7.2 index
+>   (`pip install --index-url https://download.pytorch.org/whl/rocm7.2 "torch==2.13.0+rocm7.2"`).
+>   `torch.cuda.is_available()` is now `True`, confirmed with a real 4096² matmul on device (sum
+>   68719476736.0, correct for an all-ones matrix of that size), and `resolve_rerank_device('auto')`
+>   resolves to `cuda` with no CPU-fallback warning printed (the PR #64 warning path, confirmed quiet).
+>   `torch==2.13.0+rocm7.2` plus a `--extra-index-url` for the ROCm wheel index is now pinned in
+>   `requirements.txt`, so a routine `pip install -r requirements.txt` can no longer silently swap it
+>   back — closing the root cause from the 2026-10-26 entry above, not just the warning from PR #64.
+> - Re-ran both load-test tiers from the main checkout: smoke test (500 docs, 5 users,
+>   `--synthetic-models`) passed at p95=11.0ms, unchanged from before. Full run (100,000 docs, 8
+>   tenants, 50 concurrent users, 120s) seeded at 51.8 docs/sec sustained (1930.75s total, same shape
+>   as every prior run on this shared machine) and measured **p95 = 970ms** — **"LOAD TEST FAILED:
+>   p95 exceeded bar."** Containers and server process confirmed torn down cleanly afterward
+>   (`docker ps`, `pgrep`), matching the 2026-10-26 run's cleanup.
+> - **970ms confirms the GPU path is genuinely active, not just torch importing without using the
+>   card** — it is ~4x faster than the CPU-fallback 3900ms this same harness measured earlier today,
+>   and `resolve_rerank_device` resolves to `cuda` with the warning silent. But it does not reproduce
+>   session-36's ~475ms concurrent number, and it still misses the 100ms bar. Per the spec above,
+>   this is a new finding to investigate, not a spec failure to force past.
+> - **Investigated, not assumed:** session 36's own concurrent measurement (475ms) was 10
+>   simultaneous direct reranker calls at a small candidate pool, not a 50-user Locust run against a
+>   100,000-doc Postgres corpus — the two numbers were never actually the same workload. Session 36
+>   also already found the mechanism that explains this gap: sweeping `RERANK_MAX_CONCURRENCY`
+>   1/2/4/8/16 on GPU gave a flat 492-589ms because "the GPU is running these small batches one at a
+>   time" — unbatched forward passes serialize regardless of the concurrency knob. At 50 concurrent
+>   Locust users instead of session 36's 10, the same serialization should scale worse, and 970ms is
+>   consistent with that, not with a new, different bottleneck. Session 36 already named the next
+>   lever this would need: cross-request batching of reranker calls, not yet implemented.
+> - **Not done this session** (judged a scope boundary, not an oversight): implementing cross-request
+>   batching in `backend/reranker.py`/`LocalReranker`. The spec that opened this entry called this a
+>   measurement task expecting no source change unless the numbers didn't reproduce — they didn't
+>   fully reproduce, and the gap traces to an already-identified, nontrivial batching change, not a
+>   quick fix alongside this measurement.
+> - **Restored Lemonade afterward**: `lemonade load Qwen3-Coder-30B-A3B-Instruct-GGUF --ctx-size
+>   65536` (this machine's current standing context for that model, per `gpu-preflight`'s own restore
+>   suggestion and the GPU rig config reference — not the 32768 figure in an older note, which predates
+>   the 65536 load this machine has run since).
+
 ### Spec: re-verify GPU reranker numbers (follow-up (a), deferred)
 
 **Goal.** Confirm the session-36 GPU reranker measurement (sequential p95 65ms, concurrent p95
@@ -856,6 +898,24 @@ regressed this time is the same unpinned-torch cause already fixed in Step 2.
 spec was written, and swapping the project venv's torch build is an environment change this
 machine's rules gate behind `gpu-preflight`, not something to do opportunistically mid-task. Pick
 this up in a session that starts with a clean `gpu-preflight` check.
+
+**Outcome (2026-10-26, same day the GPU freed up): see the dated entry above this spec.** ROCm
+torch was restored and pinned (closing the root cause), and the GPU path is confirmed active — but
+the full-scale number (970ms p95 at 50 users) didn't reproduce session-36's 475ms, because that
+number was never the same workload (10 direct calls vs. 50 Locust users), and session 36's own
+flat-concurrency finding already predicts this gap. Cross-request batching remains the open lever,
+not yet implemented.
+
+**Follow-up (2026-10-26/27, PR #67 CI fix):** the ROCm pin as first written
+(`torch==2.13.0+rocm7.2` plus a blanket `--extra-index-url .../rocm7.2`) broke CI — the hosted
+runner tried to download the 6.2GB ROCm wheel and hit its disk quota (both `postgres` and
+`pytest-linux` jobs failed identically). Fixed by pinning the bare version instead
+(`torch==2.13.0`, no variant, no extra index) and having CI and the Dockerfile each install a
+matching `torch==2.13.0` CPU build in their own earlier step/layer, exactly as the Dockerfile
+already did for the unpinned case. PEP 440 equality ignores the local version segment, so
+`torch==2.13.0` is satisfied by whichever variant (`+rocm7.2` locally, `+cpu` in CI/Docker) is
+already installed, and nothing redownloads. Verified locally with `pip install -r requirements.txt
+--dry-run` (reports the ROCm build as already satisfying the bare pin).
 
 ---
 

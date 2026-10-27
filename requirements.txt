@@ -1,4 +1,15 @@
 # Pinned to the versions this project is developed and evaluated against.
+
+# torch: sentence-transformers pulls it in transitively with no version/variant pin, which lets a
+# routine `pip install -r requirements.txt` silently replace a GPU build with the CPU-only default,
+# or (worse, off PyPI directly) a multi-GB CUDA build (Phase 6.1, 2026-10-26 regression). Pinned to
+# the bare version here -- no build variant, no extra index -- because PEP 440 equality ignores the
+# local version segment, so this is satisfied by whatever variant (+rocm7.2, +cpu) is already
+# installed and never triggers a redownload. CI and the Dockerfile each install their own
+# torch==2.13.0 CPU build in an earlier layer/step before this file; local GPU dev installs its own
+# ROCm build the same way (see docs/enterprise-migration.md, "Spec: re-verify GPU reranker numbers").
+torch==2.13.0
+
 # Runtime
 fastapi==0.139.0
 starlette==1.9.0  # fastapi does not pin it; CI and local drifted (PR #25)
