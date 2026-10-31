@@ -137,6 +137,9 @@ class IngestionWorker:
         max_upload_bytes: int = 25 * 1024 * 1024,
         max_document_chars: int = 2_000_000,
         parse_timeout_seconds: int = 120,
+        ocr_fallback_mode: str = "off",
+        ocr_fallback_python: Any | None = None,
+        ocr_fallback_timeout_seconds: int = 120,
         heartbeat_interval_seconds: float | None = None,
         tenant_id: str | None = None,
         job_retention_days: int | None = None,
@@ -148,6 +151,9 @@ class IngestionWorker:
         self.parse_timeout_seconds = parse_timeout_seconds
         self.max_upload_bytes = max_upload_bytes
         self.max_document_chars = max_document_chars
+        self.ocr_fallback_mode = ocr_fallback_mode
+        self.ocr_fallback_python = ocr_fallback_python
+        self.ocr_fallback_timeout_seconds = ocr_fallback_timeout_seconds
         self.queue = queue
         self.vector_store = vector_store
         self.blob_store = blob_store
@@ -459,7 +465,8 @@ class IngestionWorker:
 
             try:
                 from backend.document_limits import parse_bounded
-                text = parse_bounded(tmp_path, file_ext, self.max_upload_bytes, self.max_document_chars, self.parse_timeout_seconds)
+                text = parse_bounded(tmp_path, file_ext, self.max_upload_bytes, self.max_document_chars, self.parse_timeout_seconds,
+                                      ocr_fallback_mode=self.ocr_fallback_mode, ocr_fallback_python=self.ocr_fallback_python, ocr_fallback_timeout=self.ocr_fallback_timeout_seconds)
             except Exception:
                 # Corrupt/truncated/password-protected files fail deep inside the
                 # parser. That is a client error (the bytes are unreadable), so
@@ -662,6 +669,9 @@ def build_ingestion_worker(
         max_upload_bytes=settings.max_upload_bytes,
         max_document_chars=settings.max_document_chars,
         parse_timeout_seconds=settings.request_timeout_seconds,
+        ocr_fallback_mode=settings.ocr_fallback_mode,
+        ocr_fallback_python=settings.ocr_fallback_python,
+        ocr_fallback_timeout_seconds=settings.ocr_fallback_timeout_seconds,
         tenant_id=settings.tenant_id,
         job_retention_days=settings.job_retention_days,
     )

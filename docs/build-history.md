@@ -1287,3 +1287,72 @@ above) opened with both `postgres` and `pytest-linux` CI jobs failing.
 - No routing: a ~26-line fix across three files (`requirements.txt`, `Dockerfile`,
   `.github/workflows/tests.yml`) diagnosed and verified with direct `gh`/`pip`/`packaging` access
   this session already had; under the project's routing threshold per `nexus-orchestrator`.
+
+## Docling OCR fallback for scanned PDFs — 2026-10-31 (branch `worktree-docling-ocr-fallback`, not yet merged)
+
+**Goal**: real-world claims documents include scanned (image-only, no text layer) PDFs that
+`pypdf` silently ingests as empty text. Owner wants a Docling-based OCR fallback, isolated in its
+own venv (owner's explicit pick over installing docling into the main venv, via AskUserQuestion).
+
+**Debugging history — the ABI crash from an earlier session (now fixed)**:
+- Symptom: `RuntimeError: operator torchvision::nms does not exist` when running Docling's
+  `DocumentConverter` in a scratch venv.
+- Root cause: the scratch venv used Python 3.14 (whatever bare `python3` resolves to on this
+  machine's rolling-release PATH), not the 3.13 the main project venv and `uv python list` already
+  have installed. Wrong interpreter version, not a missing wheel.
+- Fix: `uv venv --python 3.13 <dir>`, then `uv pip install --python <dir>/bin/python torch
+  torchvision --index-url https://download.pytorch.org/whl/cpu` **in one command** — plain `pip`
+  installing torch and torchvision as two separate calls leaves a stale, non-matching torchvision
+  build in place ("Requirement already satisfied") because pip does not re-resolve once a version
+  string already satisfies the specifier; `uv pip install` with both packages together does.
+  Installing `docling` afterward into the same venv did not disturb either pinned version.
+- Verified against a synthetic scanned PDF (image-only, `pypdf` extracts `''`): Docling's
+  `export_to_markdown()` recovered the claim number, VIN, all five line-item dollar amounts and
+  the exact total, no crash.
+
+**Implementation** (this session, continuing from the ABI fix):
+- `backend/ocr_fallback_worker.py`: standalone entry point (no imports from the rest of `backend`),
+  run as `[ocr_python, '-m', 'backend.ocr_fallback_worker', path, output, max_chars]` under the
+  separate Docling venv's python; exit codes mirror `backend/parse_document.py`'s convention
+  (0 success, 2 exception, 3 over max_chars); `html.unescape()`s Docling's markdown export.
+- `config.py` / `document_limits.py` / `backend/api.py` / `backend/ingestion_worker.py`: threaded
+  three new settings (`ocr_fallback_mode`, `ocr_fallback_python`, `ocr_fallback_timeout_seconds`)
+  through both the sync upload path and the async ingestion-worker path. `_ocr_fallback` runs the
+  worker subprocess with a scrubbed env (`PATH,HOME,LANG,LC_ALL,TMPDIR` only) and returns `None`
+  (never raises) on timeout, nonzero exit, or missing output — a broken OCR venv must not break an
+  upload whose primary parse already succeeded.
+- `scripts/setup_docling_ocr.sh`: builds `.venv-docling/` (prefers `uv venv --python python3.13`,
+  falls back to `python3.13 -m venv` + ensurepip), installs torch+torchvision together from the CPU
+  index in one call, then docling, asserts both end in `+cpu`.
+- `tests/test_ocr_fallback.py`: 5 tests, all mock `subprocess.run` patched on the global
+  `subprocess` module (`parse_bounded` does `import subprocess` locally inside the function, so
+  patching `document_limits.subprocess` does not work — there is no such module attribute).
+- Confirmed which `backend.document_limits` pytest actually imports when invoked from inside the
+  worktree (`import backend.document_limits as d; print(d.__file__)` resolved to the worktree's
+  copy, as expected from cwd-prepended `sys.path`) before trusting the test run as evidence.
+- Full suite from inside the worktree: 1392 passed, 30 skipped, 1 xfailed. Foundation gate: 0
+  blocking (56 pre-existing warnings, none new). Confirmed zero `docling` references in
+  `.github/workflows/` or `requirements*.txt`.
+
+**Decisions**:
+- Docling must never be installed in the main venv or CI — isolating it in `.venv-docling/`,
+  invoked only as a subprocess, was the owner's explicit choice. See `.claude/rules/
+  backend-constraints.md` "Docling Must Never Enter the Main Venv or CI".
+- OCR fallback fails open, not closed — mirrors the answerability gate's documented fail-open
+  precedent.
+- Scoped to `kind == 'pdf'` only (not docx/xlsx) — scanned documents in real claims workflows are
+  PDFs; avoids speculative scope creep.
+- Did not explore Docling's OCR-only/lite pipeline mode (would sidestep torchvision entirely) —
+  once the ABI fix worked cleanly, there was no remaining reason to chase a more invasive
+  alternative. Worth remembering if a future Docling version reintroduces a similar ABI mismatch.
+- No routing: the new worker script and the `document_limits.py`/`api.py`/`ingestion_worker.py`
+  wiring are tightly coupled to exact existing conventions (the subprocess-sandboxing pattern in
+  `parse_document.py`, the `Settings` dataclass field style, the `monkeypatch.setattr(subprocess,
+  'run', ...)` test pattern) that the implementing session had just finished reading; briefing a
+  routed worker with all of that context would have cost roughly as much as doing the edits
+  directly, with no parallelism gain since every file in the change set depends on the others'
+  exact shapes.
+
+**Not yet done**: commit, push, PR, merge (owner's standing per-milestone instruction for this
+repo); live-provisioning a real `.venv-docling/` on this machine and setting `OCR_FALLBACK_PYTHON`
+in `.env`, so the feature is live locally rather than merged-but-inert (optional, lower priority).

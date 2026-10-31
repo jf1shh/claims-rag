@@ -7,6 +7,7 @@
 ### Components
 
 * **DocumentParser** ([backend/rag_engine.py](backend/rag_engine.py)): Extracts text from PDF (`pypdf`), DOCX (`python-docx`), Excel (`pandas`/`openpyxl`), and TXT files.
+* **OCR fallback** ([backend/ocr_fallback_worker.py](backend/ocr_fallback_worker.py), 2026-10-31): when `pypdf` returns empty text for a PDF (a scanned, image-only page), `document_limits.parse_bounded` optionally shells out to a Docling-based OCR worker running under a **separate** `.venv-docling/` interpreter, never the main venv. Off by default (`OCR_FALLBACK=off`); set `OCR_FALLBACK_PYTHON` to the venv's python (built by `scripts/setup_docling_ocr.sh`) to opt in. Fails open: a missing venv, timeout, or nonzero exit falls back to the original empty text rather than raising. Docling itself is never imported into, or installed in, the main venv or CI — see the constraint below.
 * **TextChunker** ([backend/rag_engine.py](backend/rag_engine.py)): Hierarchical parent/child chunking. Parent chunks (~1200 chars / 200 overlap) preserve context and back the FTS5 index; child chunks (~250 chars / 50 overlap) are embedded for precise vector matching. Boundaries snap to whitespace.
 * **EmbeddingEngine** ([backend/rag_engine.py](backend/rag_engine.py)): Instantiates `sentence-transformers/all-MiniLM-L6-v2` locally to generate 384-dimensional vectors. Imported lazily so the vector store can be used without loading torch.
 * **Reranker** ([backend/reranker.py](backend/reranker.py)): Provider-neutral cross-encoder seam. `LocalReranker` preserves the lazy CPU implementation; `RemoteReranker` sends a bounded candidate pool to a dedicated GPU HTTP service; `FallbackReranker` fails open to local.
@@ -59,6 +60,9 @@ claims-rag/
 │   ├── provenance_check.py     ← answer provenance check: redacts planted identifiers/filenames (2026-10-16)
 │   ├── figure_check.py         ← live answers: money/percent/date figures checked against computed tool figures (2026-10-20)
 │   ├── prompt_defense.py       ← sanitize / sandwich / datamark prompt-injection defenses (2026-09-26)
+│   ├── ocr_fallback_worker.py  ← standalone Docling OCR entry point, run under .venv-docling/ (2026-10-31)
+├── scripts/
+│   ├── setup_docling_ocr.sh    ← builds .venv-docling/ (Python 3.13, CPU torch+torchvision, then docling) (2026-10-31)
 ├── frontend/
 │   ├── index.html              ← Claims Handler Dashboard UI
 │   ├── style.css               ← ClaimCenter/Jutro light-mode styling
@@ -85,6 +89,7 @@ claims-rag/
 | Enterprise deployment hardware? (2026-10-16) | Assume several on-prem DGX Spark units or high-memory Apple Silicon Macs running large models; keep the single-GPU local profile working | Owner's expectation for how a carrier would run it. Keeps every model call behind OpenAI-compatible endpoints, configurable per role, with a larger judge and a new eval baseline per model. Detail: `docs/enterprise-migration.md` target architecture. |
 | Which license? | AGPL-3.0 (from 2026-10-17; MIT before) | Owner choice: keeps the code open and readable for reviewers, while anyone running a modified copy as a service must publish their source, which deters closed commercial reuse. Copies taken under MIT keep MIT terms. |
 | How does the router say "not found"? (2026-10-25) | Optional answerability gate (`ANSWERABILITY_GATE=llm`): one local-model call reads the served passages together and returns P(yes) from first-token logprobs; below 0.5 the answer is refused before synthesis | Retrieval always returns top_k passages, so a question the corpus cannot answer was drafted from lookalikes. The best cross-encoder score could not separate them (keeping every answerable question it caught 3/16 absent ones); the joint judge caught 15/16 with 26/26 answerable kept (`eval/answerability-probe-2026-10-25.json`). One call over all passages beat one call per passage, which could not see answers that combine two passages. After Subworkflow's "RAG vs JAG" (judgement-augmented generation), run on the local model, never a cloud judge. |
+| How to handle scanned (image-only) PDFs? (2026-10-31) | Optional Docling OCR fallback (`OCR_FALLBACK=auto`, off by default), run as a subprocess under an isolated `.venv-docling/` interpreter, never installed in the main venv or CI | `pypdf` silently returns empty text for image-only PDFs. Docling needs `torch`/`torchvision`, which is too heavy and too likely to collide (ABI mismatches were the actual root cause of an earlier session's crash) to add to the main venv or the CI dependency set. Isolating it in its own venv, invoked only as a subprocess with a scrubbed env, keeps the main install and CI untouched. Fails open on any OCR error so a flaky best-effort enhancement can never turn an already-successful upload into a hard failure. |
 
 ## Claims tools contract (2026-10-16)
 

@@ -187,6 +187,18 @@ class Settings:
     # short model call, only when the answer holds such an identifier); "static" runs only the
     # deterministic filename check; "off" skips it. See docs/adversarial-evaluation.md, P3.
     provenance_check: str = "llm"
+    # Scanned-document OCR fallback (backend/ocr_fallback_worker.py): when a PDF's primary text
+    # extraction comes back empty/whitespace-only, parse_bounded re-runs it under a SEPARATE,
+    # operator-provisioned Docling venv (scripts/setup_docling_ocr.sh) instead of silently
+    # ingesting a blank document. Docling pulls a ~6GB CPU torch/torchvision/transformers stack
+    # this project's own venv must never carry (it would clobber the pinned ROCm torch -- see PR
+    # #67), so it is never installed into .venv and never added to requirements.txt/CI. "auto"
+    # tries the fallback when ocr_fallback_python is set and exists; "off" disables it even then.
+    # With no path configured (the default), this stays a complete no-op -- there is no
+    # auto-install of the OCR venv here.
+    ocr_fallback_mode: str = "auto"
+    ocr_fallback_python: Path | None = None
+    ocr_fallback_timeout_seconds: int = 120
     # Prompt-injection defenses (backend/prompt_defense.py): comma list of sandwich, datamark,
     # sanitize, or "none". Default "sanitize": removed 0 honest sentences (no measured answer-quality
     # cost) -- sandwich/datamark cost ~0.12 correctness; see docs/adversarial-evaluation.md fix 3.
@@ -316,6 +328,9 @@ class Settings:
             answer_guard_mode=env.get("ANSWER_GUARD_MODE", "withhold").strip().lower(),
             conflict_check=env.get("CONFLICT_CHECK", "llm").strip().lower(),
             provenance_check=env.get("PROVENANCE_CHECK", "llm").strip().lower(),
+            ocr_fallback_mode=env.get("OCR_FALLBACK", "auto").strip().lower(),
+            ocr_fallback_python=Path(env["OCR_FALLBACK_PYTHON"]).expanduser() if env.get("OCR_FALLBACK_PYTHON") else None,
+            ocr_fallback_timeout_seconds=_int(env.get("OCR_FALLBACK_TIMEOUT_SECONDS"), 120, "OCR_FALLBACK_TIMEOUT_SECONDS"),
             prompt_defense=env.get("PROMPT_DEFENSE", "sanitize").strip().lower(),
             answerability_gate=env.get("ANSWERABILITY_GATE", "llm").strip().lower(),
             answerability_threshold=_float(env.get("ANSWERABILITY_THRESHOLD"), 0.5, "ANSWERABILITY_THRESHOLD"),
@@ -341,6 +356,8 @@ class Settings:
         parse_defenses(self.prompt_defense)  # raises ValueError on an unknown defense name
         if self.conflict_check not in {"llm", "off"}:
             raise ValueError("CONFLICT_CHECK must be llm or off")
+        if self.ocr_fallback_mode not in {"auto", "off"}:
+            raise ValueError("OCR_FALLBACK must be auto or off")
         if self.answerability_gate not in {"llm", "off"}:
             raise ValueError("ANSWERABILITY_GATE must be llm or off")
         if not 0 < self.answerability_threshold < 1:

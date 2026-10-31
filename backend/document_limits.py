@@ -112,7 +112,8 @@ def check_text(text, max_chars):
     return text
 
 
-def parse_bounded(path, kind, max_bytes, max_chars, timeout):
+def parse_bounded(path, kind, max_bytes, max_chars, timeout,
+                   ocr_fallback_mode='off', ocr_fallback_python=None, ocr_fallback_timeout=120):
     import os
     import subprocess
     import sys
@@ -146,4 +147,35 @@ def parse_bounded(path, kind, max_bytes, max_chars, timeout):
             raise DocumentLimitError('Document exceeds extracted text limit.')
         if result.returncode != 0:
             raise ValueError('Document could not be parsed within resource limits.')
+        text = check_text(output.read_text(encoding='utf-8'), max_chars)
+    if (kind == 'pdf' and not text.strip() and ocr_fallback_mode == 'auto'
+            and ocr_fallback_python and Path(ocr_fallback_python).exists()):
+        return _ocr_fallback(path, max_chars, ocr_fallback_timeout, ocr_fallback_python) or text
+    return text
+
+
+def _ocr_fallback(path, max_chars, timeout, ocr_python):
+    """Best-effort: a broken or slow OCR venv must not break an upload whose primary
+    parse already succeeded cleanly, so any failure here falls back to the caller's
+    (empty) text instead of raising."""
+    import os
+    import subprocess
+    import tempfile
+    from config import REPO_ROOT
+    with tempfile.TemporaryDirectory(prefix='claims-ocr-') as folder:
+        output = Path(folder) / 'text.txt'
+        passthrough = ('PATH', 'HOME', 'LANG', 'LC_ALL', 'TMPDIR')
+        env = {name: os.environ[name] for name in passthrough if name in os.environ}
+        try:
+            result = subprocess.run(
+                [str(ocr_python), '-m', 'backend.ocr_fallback_worker',
+                 str(Path(path).resolve()), str(output), str(max_chars)],
+                cwd=REPO_ROOT, timeout=timeout, check=False,
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                env=env,
+            )
+        except subprocess.TimeoutExpired:
+            return None
+        if result.returncode != 0 or not output.exists():
+            return None
         return check_text(output.read_text(encoding='utf-8'), max_chars)
