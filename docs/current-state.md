@@ -258,7 +258,7 @@ As of September 6, the authoritative state is [portfolio-hardening.md](portfolio
 > README gained a provenance note stating every document/claim/figure is synthetic, built on the
 > maintainer's own time. Both code tools are stdlib-only, test-first (30 new tests), workstream c
 > (governance story) was already done before this scope in PR #52. Verified: `pytest tests/ -q` 1358
-> passed / 30 skipped / 1 xfailed, ruff clean. **Next:** open the PR for this branch; then the Week 1
+> passed / 30 skipped / 1 xfailed, ruff clean. Merged as PR #53. **Next:** the Week 1
 > Owner items (score packet, recruit reviewers) are the maintainer's own work, not Claude's.
 
 > **Answerability gate ("JAG") built 2026-10-25, landed opt-in** (branch `feat/jag-relevance-gate`):
