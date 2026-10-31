@@ -70,7 +70,7 @@ As of September 6, the authoritative state is [portfolio-hardening.md](portfolio
 
 * **Phase 6.1 batching follow-up (session 38) supersedes the prior “next lever” note**: local batching is implemented and safely rollbackable, but the authoritative Postgres/HTTP concurrent-load comparison still needs to run with the corrected factory and an available database. The in-process result is directional only (~5.1% throughput improvement), not an SLO certification.
 * **Answer provenance check (P3, 2026-10-16)**: `backend/provenance_check.py` (`PROVENANCE_CHECK=llm` default) redacts answer lines repeating an identifier a source directs the model to reproduce, or a filename a document planted; a miscited real source loses only the filename. Known injection success 6%, held-out 25%, 0/28 golden answers touched. See `docs/adversarial-evaluation.md` fix 4.
-* **Docling OCR fallback for scanned PDFs (2026-10-31, uncommitted on branch `worktree-docling-ocr-fallback`)**: when `pypdf` extracts empty text from a PDF (image-only / scanned page), `document_limits.parse_bounded` can optionally shell out to `backend/ocr_fallback_worker.py` under a separate `.venv-docling/` interpreter (never the main venv or CI). Off by default (`OCR_FALLBACK=off`); opt in with `OCR_FALLBACK_PYTHON` pointing at the venv's python, built by `scripts/setup_docling_ocr.sh`. Fails open on any error. Verified against one synthetic scanned-PDF fixture (claim number, VIN, all five line-item dollar amounts and the total extracted correctly); real scanned documents (photocopies, faxes, phone photos) will likely score materially worse — this is "better than silently ingesting nothing," not production-grade OCR. 5 new unit tests (`tests/test_ocr_fallback.py`), full suite 1392 passed / 30 skipped / 1 xfailed, foundation gate 0 blocking. Not yet committed, pushed, or merged.
+* **Docling OCR fallback for scanned PDFs (2026-10-31, merged via PR #69)**: when `pypdf` extracts empty text from a PDF (image-only / scanned page), `document_limits.parse_bounded` can optionally shell out to `backend/ocr_fallback_worker.py` under a separate `.venv-docling/` interpreter (never the main venv or CI). Off by default (`OCR_FALLBACK=off`); opt in with `OCR_FALLBACK_PYTHON` pointing at the venv's python, built by `scripts/setup_docling_ocr.sh`. Fails open on any error. Verified against one synthetic scanned-PDF fixture (claim number, VIN, all five line-item dollar amounts and the total extracted correctly); real scanned documents (photocopies, faxes, phone photos) will likely score materially worse — this is "better than silently ingesting nothing," not production-grade OCR. 5 new unit tests (`tests/test_ocr_fallback.py`), full suite 1392 passed / 30 skipped / 1 xfailed, foundation gate 0 blocking. Merged; not yet live locally — `.venv-docling/` still needs to be provisioned by hand (see Next below).
 
 ### Known Issues
 
@@ -240,12 +240,11 @@ As of September 6, the authoritative state is [portfolio-hardening.md](portfolio
 > plan (`docs/go-to-market/plan.md`). Later: claim-scoped golden
 > questions for the supplement and total-loss buttons (needs a GPU judge re-score).
 
-> **Docling OCR fallback built 2026-10-31, not yet merged** (branch `worktree-docling-ocr-fallback`):
-> see Confirmed Working above and `docs/architecture.md`'s OCR fallback component and the "Docling
-> Must Never Enter the Main Venv or CI" constraint. **Next:** commit, push, open the PR, confirm CI
-> stays green (no docling install anywhere in CI), then merge per the standing per-milestone
-> instruction. Optionally, after merging: actually provision `.venv-docling/` on this machine and set
-> `OCR_FALLBACK_PYTHON` in `.env` so the feature goes live locally rather than merged-but-inert.
+> **Docling OCR fallback merged 2026-10-31** (PR #69): see Confirmed Working above and
+> `docs/architecture.md`'s OCR fallback component and the "Docling Must Never Enter the Main Venv or
+> CI" constraint. **Next (optional, owner's call):** provision `.venv-docling/` on this machine via
+> `scripts/setup_docling_ocr.sh` and set `OCR_FALLBACK_PYTHON` in `.env` so the feature goes live
+> locally rather than merged-but-inert.
 
 > **Go-to-market Week 1 Build done 2026-10-25** (branch `feat/go-to-market-week1`): the three remaining
 > Build-row items from `docs/go-to-market/plan.md` landed. (a) `eval/agreement.py` scores expert-review
