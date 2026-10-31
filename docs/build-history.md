@@ -1380,3 +1380,23 @@ own venv (owner's explicit pick over installing docling into the main venv, via 
   owner to merge by hand rather than worked around.
 - Verified no other open PRs exist and no other branches have unmerged work (`gh pr list --state
   open`, `git branch -a`).
+
+## Repo-root scratch cleanup — 2026-10-31
+
+Four untracked items had been sitting in the repo root across several handoffs, each one flagged
+"not part of this work, do not touch" without anyone actually checking what they were:
+- `.eval-run/` (two old eval run logs, 2026-10-25) — superseded scratch; the real evidence for that
+  date lives in the dated `eval/results-2026-10-25-*.json` files. Deleted, no receipt needed beyond
+  this note (nothing referenced it).
+- `dirlink-to-filelinks.sh` — diffed byte-identical against the copy already installed at
+  `~/.local/bin/dirlink-to-filelinks.sh` (on `PATH`). It's Lemonade/GPU tooling, unrelated to this
+  project, and a pure duplicate. Deleted.
+- `.ignore` + `graft/` — these are real, intentional per-repo tooling (`graft`, a repo-mapping tool
+  used the same way across several of the owner's other repos — confirmed by diffing against
+  `~/Projects/workflow-tools/.gitignore`, `~/cyberpunk-arpg/.gitignore` and `~/Projects/megajam/.gitignore`,
+  which all carry an identical `.ignore` plus a `/graft/` `.gitignore` entry). This repo was just
+  missing both: `/graft/` was never added to `.gitignore`, so `graft/`'s build cache showed as
+  untracked clutter, and `.ignore` (which re-admits `graft/` to ripgrep search while keeping
+  `graft/.cache/`/`graft/.graph/` out of it) had never been committed. Added the missing
+  `.gitignore` line and committed `.ignore`, matching the established convention exactly;
+  `graft/` itself stays untracked/regenerable (`graft build`).

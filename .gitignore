@@ -80,3 +80,6 @@ eval/adversarial/.work-holdout/
 
 # uv lockfile: CI installs from requirements.txt; a local uv.lock is not maintained
 uv.lock
+
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+/graft/
