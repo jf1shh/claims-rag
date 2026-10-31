@@ -573,7 +573,8 @@ def register_routes(app, runtime):
             # Step 1: Text extraction
             parse_start = time.time()
             try:
-                text = parse_bounded(tmp_path, file_ext, runtime.settings.max_upload_bytes, runtime.settings.max_document_chars, runtime.settings.request_timeout_seconds)
+                text = parse_bounded(tmp_path, file_ext, runtime.settings.max_upload_bytes, runtime.settings.max_document_chars, runtime.settings.request_timeout_seconds,
+                                      ocr_fallback_mode=runtime.settings.ocr_fallback_mode, ocr_fallback_python=runtime.settings.ocr_fallback_python, ocr_fallback_timeout=runtime.settings.ocr_fallback_timeout_seconds)
             except DocumentLimitError as exc:
                 raise HTTPException(status_code=413, detail=str(exc)) from None
             except Exception:
