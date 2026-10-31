@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from scripts.check_flake import classify, extract_failed_nodeids, load_registry
+from scripts.check_flake import classify, extract_failed_nodeids, load_registry  # noqa: E402
 
 REGISTRY_PATH = ROOT / "tests" / "known_flakes.json"
 
