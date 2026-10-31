@@ -1,0 +1,19 @@
+{
+  "description": "Registry of known-flaky CI failures, matched by failure-output substring/regex. Checked by scripts/check_flake.py so a session debugging a red run can tell a known flake from a novel failure without re-diagnosing from scratch. See docs/operations/local-and-production.md (## CI) for how it's used.",
+  "flakes": [
+    {
+      "nodeid": "tests/test_ingestion_load.py::test_given_small_load_when_async_ingested_then_no_failures_and_throughput_ok",
+      "signature": "LOAD TEST FAILED: throughput \\d+(\\.\\d+)? < floor 50\\.0",
+      "reason": "scripts/load_test_ingestion.py measures real wall-clock throughput for 500 synthetic docs against a fixed --floor-docs-per-sec 50.0; under shared-runner CPU load the fake-embedder pipeline occasionally dips below the floor (observed 45.2 docs/sec in CI) even though no documents failed. Not a real regression -- re-run the job.",
+      "first_identified": "2026-10-30",
+      "evidence": "gh run view 40223083512 --log-failed (run on main, 2026-10-25T18:49:36Z): \"AssertionError: load test failed:\\ncount=500 ... throughput=45.2 docs/sec processed=500 stats={'processed': 500, 'indexed': 500, 'deleted': 0, 'rejected': 0, 'dead_lettered': 0, 'duplicates': 0, 'malformed': 0}\\nLOAD TEST FAILED: throughput 45.2 < floor 50.0\""
+    },
+    {
+      "nodeid": "tests/test_ingestion_load.py::test_given_backend_postgres_flag_when_small_load_run_then_no_failures",
+      "signature": "LOAD TEST FAILED: throughput \\d+(\\.\\d+)? < floor 10\\.0",
+      "reason": "Same load-test script, pointed at the postgres backend with --floor-docs-per-sec 10.0 (Phase 6.1). Same shared-runner-load throughput flake as the sqlite case (observed 8.8 docs/sec in CI) -- the Postgres row-level-security warning that also appears in this test's stderr is pre-existing and unrelated, not the cause.",
+      "first_identified": "2026-10-30",
+      "evidence": "gh run view 40213874386 --log-failed (run on main, 2026-10-25T16:53:55Z): \"AssertionError: load test failed:\\ncount=50 ... throughput=8.8 docs/sec processed=50 stats={'processed': 50, 'indexed': 50, ...}\\nLOAD TEST FAILED: throughput 8.8 < floor 10.0\""
+    }
+  ]
+}
