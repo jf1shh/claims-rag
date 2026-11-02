@@ -279,7 +279,7 @@ Built independently by [Jared Fisher](https://www.linkedin.com/in/jaredfisher-ai
 
 **Data and employer note.** Every document, claim, claimant and figure in this repo is synthetic, generated for this project ([`generate_auto_pdfs.py`](generate_auto_pdfs.py), [`create_sample_files.py`](create_sample_files.py), [`ingest_all.py`](ingest_all.py)). No Liberty Mutual material, process or data is used anywhere in this repo. Built on Jared's own time and equipment, not as part of his employment.
 
-[GitHub profile](https://github.com/jf1shh) · [LinkedIn](https://www.linkedin.com/in/jaredfisher-ai/) · [Live portfolio](https://jf1shh.github.io/agentic-app-harness/)
+[GitHub profile](https://github.com/jf1shh) · [LinkedIn](https://www.linkedin.com/in/jaredfisher-ai/) · [Live portfolio](https://jf1shh.github.io/) · [Agentic App Harness showcase](https://jf1shh.github.io/agentic-app-harness/)
 
 ## License
 
