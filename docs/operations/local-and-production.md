@@ -120,8 +120,9 @@ The repository is public, so `.github/workflows/tests.yml` runs both jobs on Git
 - **Trusted PRs only**: the action's README says it is not hardened against prompt injection. The job runs only when the PR branch lives in this repository (not forks), is not a draft, and is not from Dependabot. Fork PRs simply skip it.
 - **Runner and permissions**: GitHub-hosted `ubuntu-latest` (never the self-hosted runner), with `contents: read` and `pull-requests: write` only.
 - **Pinned**: the action has no release tags, so it is pinned to a commit SHA. Update the SHA on purpose after reading the upstream diff.
-- **Noise control**: `docs/`, `.trail/`, `.worktrees/` and `tests/fixtures/` are excluded (the input takes directories, not lock-file globs). `docs/operations/security-review-instructions.txt` adds project-specific focus (path traversal, claim leakage, local-only data, SQL, XSS) and skips DoS and rate-limit findings.
-- **Secret**: needs the repository secret `CLAUDE_API_KEY`, an Anthropic API key (Console, API billing; a Claude Code plan OAuth token does not work here). Each run uploads a results artifact.
+- **Every push is scanned**: `run-every-commit: true` is required, because the action otherwise caches a per-PR marker and skips later pushes while staying green. Runs are queued, never cancelled (a cancelled run would leave a marker and make its replacement skip).
+- **Noise control**: the doc folders under `docs/` (except `docs/operations`), `.trail/`, `.worktrees/` and `tests/fixtures/` are excluded (the input takes directories, not lock-file globs). `docs/operations/security-review-instructions.txt` adds project-specific focus (path traversal, claim leakage, local-only data, SQL, XSS) and skips DoS and rate-limit findings. The workflow reads it from the **base branch** (a second checkout in `.base-ref/`), and `docs/operations` is scanned, so a PR cannot quietly rewrite the instructions.
+- **Secret**: needs the repository secret `CLAUDE_API_KEY`, an Anthropic API key (Console, API billing; a Claude Code plan OAuth token does not work here). Until it exists, the job logs a notice and skips instead of failing. Each run uploads a results artifact.
 
 ### Self-hosted runner (private-repository fallback only)
 
