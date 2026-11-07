@@ -17,12 +17,12 @@ permissions:
   contents: read
   pull-requests: write # to comment findings on the PR
 
-# Never cancel a running scan: the action saves a per-PR "already ran" marker
-# before it scans, so a cancelled run could make its replacement skip the scan.
-# Runs for one PR queue up instead.
+# A newer push cancels the older run, so the newest commit is always scanned.
+# This is safe only because run-every-commit is true below (the action's
+# per-PR "already ran" marker is then never used to skip a scan).
 concurrency:
   group: security-review-${{ github.event.pull_request.number }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   security:
@@ -66,6 +66,15 @@ jobs:
           sparse-checkout: docs/operations
           persist-credentials: false
 
+      - name: Require the instructions file
+        if: steps.key.outputs.present == 'true'
+        run: |
+          f=".base-ref/docs/operations/security-review-instructions.txt"
+          if [ ! -s "$f" ]; then
+            echo "::error::$f is missing on the base branch; refusing to scan without the project instructions."
+            exit 1
+          fi
+
       # The action has no release tags, so it is pinned to a commit SHA
       # (main as of 2026-11-07). Bump it deliberately after reading the diff.
       - uses: anthropics/claude-code-security-review@0c6a49f1fa56a1d472575da86a94dbc1edb78eda
@@ -82,4 +91,6 @@ jobs:
           # trees. docs/operations is deliberately NOT excluded, so edits to
           # the instructions file are scanned. Lock files are not excludable.
           exclude-directories: docs/agent-work,docs/go-to-market,docs/governance,docs/research,docs/superpowers,docs/workflows,.trail,.worktrees,tests/fixtures
-          custom-security-scan-instructions: .base-ref/docs/operations/security-review-instructions.txt
+          # Absolute: the action cd's into its own directory and does not join
+          # this path to the workspace, so a relative path is silently ignored.
+          custom-security-scan-instructions: ${{github.workspace}}/.base-ref/docs/operations/security-review-instructions.txt
