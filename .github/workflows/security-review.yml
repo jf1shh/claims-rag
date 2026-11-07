@@ -1,0 +1,52 @@
+name: Security Review
+
+# Extra review layer: Anthropic's claude-code-security-review looks at the PR
+# diff for security problems and comments on it. Advisory only; it never
+# approves or merges. See docs/operations/local-and-production.md ("Security
+# review").
+#
+# The action's README says it is NOT hardened against prompt injection and
+# must only review trusted PRs. So it runs only for branches in this
+# repository (never forks), and never on Dependabot PRs (they get no secrets).
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write # to comment findings on the PR
+
+concurrency:
+  group: security-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  security:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository
+      && !github.event.pull_request.draft
+      && github.actor != 'dependabot[bot]'
+    # Hosted runner only: this is a public repo, PR code never reaches the
+    # maintainer's self-hosted runner.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 2
+          persist-credentials: false
+
+      # The action has no release tags, so it is pinned to a commit SHA
+      # (main as of 2026-11-07). Bump it deliberately after reading the diff.
+      - uses: anthropics/claude-code-security-review@0c6a49f1fa56a1d472575da86a94dbc1edb78eda
+        with:
+          claude-api-key: ${{ secrets.CLAUDE_API_KEY }}
+          claude-model: claude-opus-5-5
+          comment-pr: true
+          upload-results: true
+          # Directories only (no file globs): docs and generated/vendored trees
+          # are noise. Lock files are not excludable by this input.
+          exclude-directories: docs,.trail,.worktrees,tests/fixtures
+          custom-security-scan-instructions: docs/operations/security-review-instructions.txt
