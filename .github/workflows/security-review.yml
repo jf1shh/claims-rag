@@ -1,0 +1,96 @@
+name: Security Review
+
+# Extra review layer: Anthropic's claude-code-security-review looks at the PR
+# diff for security problems and comments on it. Advisory only; it never
+# approves or merges. See docs/operations/local-and-production.md ("Security
+# review").
+#
+# The action's README says it is NOT hardened against prompt injection and
+# must only review trusted PRs. So it runs only for branches in this
+# repository (never forks), and never on Dependabot PRs (they get no secrets).
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+  pull-requests: write # to comment findings on the PR
+
+# A newer push cancels the older run, so the newest commit is always scanned.
+# This is safe only because run-every-commit is true below (the action's
+# per-PR "already ran" marker is then never used to skip a scan).
+concurrency:
+  group: security-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  security:
+    if: >-
+      github.event.pull_request.head.repo.full_name == github.repository
+      && !github.event.pull_request.draft
+      && github.actor != 'dependabot[bot]'
+    # Hosted runner only: this is a public repo, PR code never reaches the
+    # maintainer's self-hosted runner.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      # Until the owner adds the API key, skip quietly instead of a red check.
+      - name: Check for API key
+        id: key
+        env:
+          K: ${{ secrets.CLAUDE_API_KEY }}
+        run: |
+          if [ -z "$K" ]; then
+            echo "::notice::CLAUDE_API_KEY is not set; skipping the security review."
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.key.outputs.present == 'true'
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 2
+          persist-credentials: false
+
+      # The scan instructions are read from the BASE branch, not the PR, so a
+      # PR cannot rewrite them to "report nothing". Checked out into a
+      # separate path (untracked, so it is not part of the PR diff).
+      - uses: actions/checkout@v4
+        if: steps.key.outputs.present == 'true'
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: .base-ref
+          sparse-checkout: docs/operations
+          persist-credentials: false
+
+      - name: Require the instructions file
+        if: steps.key.outputs.present == 'true'
+        run: |
+          f=".base-ref/docs/operations/security-review-instructions.txt"
+          if [ ! -s "$f" ]; then
+            echo "::error::$f is missing on the base branch; refusing to scan without the project instructions."
+            exit 1
+          fi
+
+      # The action has no release tags, so it is pinned to a commit SHA
+      # (main as of 2026-11-07). Bump it deliberately after reading the diff.
+      - uses: anthropics/claude-code-security-review@0c6a49f1fa56a1d472575da86a94dbc1edb78eda
+        if: steps.key.outputs.present == 'true'
+        with:
+          claude-api-key: ${{ secrets.CLAUDE_API_KEY }}
+          claude-model: claude-opus-5-5
+          comment-pr: true
+          upload-results: true
+          # Without this the action skips every push after the first one on a
+          # PR (it caches a per-PR marker) and the check stays green.
+          run-every-commit: true
+          # Directories only (no file globs): noisy doc folders and generated
+          # trees. docs/operations is deliberately NOT excluded, so edits to
+          # the instructions file are scanned. Lock files are not excludable.
+          exclude-directories: docs/agent-work,docs/go-to-market,docs/governance,docs/research,docs/superpowers,docs/workflows,.trail,.worktrees,tests/fixtures
+          # Absolute: the action cd's into its own directory and does not join
+          # this path to the workspace, so a relative path is silently ignored.
+          custom-security-scan-instructions: ${{github.workspace}}/.base-ref/docs/operations/security-review-instructions.txt

@@ -1,0 +1,12 @@
+Project context for the security review of ClaimsRAG, a local RAG app for insurance claims documents.
+
+Pay particular attention to:
+- Filenames or claim ids from requests used to build filesystem paths without sanitization (path traversal).
+- Any document text, claim id or filename sent to an external service (ingestion and vector search must stay 100% local).
+- SQL built with string formatting instead of bound parameters, in the SQLite and Postgres stores.
+- Access to one claim's documents from another claim's scope (cross-claim leakage), including in error messages.
+- Frontend code that builds HTML or inline event handlers from strings (XSS).
+- Secrets, claim contents or personal data written to logs or the audit log.
+- Endpoints that skip authentication or authorization that sibling endpoints enforce.
+
+Do not report: denial of service, rate limiting, test-only code, or the synthetic sample data under the seed generators.
