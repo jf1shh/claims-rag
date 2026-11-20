@@ -36,7 +36,8 @@ def _floor_docs_per_sec() -> str:
     override = os.environ.get("LOAD_TEST_FLOOR_DOCS_PER_SEC")
     if override:
         return str(float(override))
-    return str(CI_FLOOR_DOCS_PER_SEC if os.environ.get("CI") else LOCAL_FLOOR_DOCS_PER_SEC)
+    on_ci = os.environ.get("CI", "").strip().lower() in ("true", "1")
+    return str(CI_FLOOR_DOCS_PER_SEC if on_ci else LOCAL_FLOOR_DOCS_PER_SEC)
 
 
 def test_given_small_load_when_async_ingested_then_no_failures_and_throughput_ok():
