@@ -22,3 +22,30 @@ def test_summary_counts_unranked_sources_as_misses():
     assert s["mrr"] == 0.5
     assert s["missing"] == 1
     assert s["fact_recall"] == 0.5
+
+
+def test_summary_counts_rows_where_a_distractor_outranks_the_source():
+    rows = [
+        {"ranks": {"a.pdf": 2}, "served": True, "facts": 1, "facts_found": 1, "distractor_outranks": True},
+        {"ranks": {"b.pdf": 1}, "served": True, "facts": 1, "facts_found": 1, "distractor_outranks": False},
+    ]
+    assert summarize(rows, top_k=15)["distractor_outranks"] == 1
+
+
+def test_hard_rows_are_well_formed_and_their_documents_exist():
+    import os
+
+    from eval.golden_hard_queries import HARD_GOLDEN_QUERIES
+    from scripts.probe_retrieval import _expected
+
+    hard_dir = os.path.join(os.path.dirname(__file__), "..", "eval", "hard_corpus")
+    extra = set(os.listdir(hard_dir))
+    ids = [r["id"] for r in HARD_GOLDEN_QUERIES]
+    assert len(ids) == len(set(ids))
+    for row in HARD_GOLDEN_QUERIES:
+        assert row["query"] and row["reference"] and _expected(row)
+        assert row["kind"] in {"near-miss", "multi-source", "paraphrase"}
+        for name in row.get("avoid", []):
+            assert name not in _expected(row)
+            if name.endswith(".txt"):
+                assert name in extra

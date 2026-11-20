@@ -11,6 +11,12 @@ retrieval change before paying for the full golden and adversarial suites.
     .venv/bin/python scripts/probe_retrieval.py --out probe.json      # keep per-query ranks
     .venv/bin/python scripts/probe_retrieval.py --embedding-model BAAI/bge-small-en-v1.5
 
+The original golden rows are always reported first and unchanged. Then the hard
+group (eval/golden_hard_queries.py) is run against the same corpus plus the
+distractor documents in eval/hard_corpus/ and reported as its own group; skip
+it with --no-hard. Hard rows may list `avoid` sources (near-miss documents);
+`distractor_outranks` counts rows where one ranks above every expected source.
+
 Reads the source store and stored_documents/ only; never writes to them.
 """
 
@@ -26,6 +32,7 @@ import time
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from backend.rag_engine import DocumentParser, EmbeddingEngine, RerankingEngine, SQLiteVectorStore  # noqa: E402
+from eval.golden_hard_queries import HARD_GOLDEN_QUERIES  # noqa: E402
 from eval.golden_queries import GOLDEN_QUERIES  # noqa: E402
 
 HIT_AT = 4  # the router synthesizes from the top 4 matches
@@ -76,9 +83,19 @@ def rebuild(source_db, stored_dir, target, embedder):
     return len(docs)
 
 
-def probe(store, embedder, reranker, candidate_pool, top_k):
+def add_extra_docs(extra_dir, target, embedder):
+    """Ingest the hard group's .txt documents (global scope) into `target`."""
+    names = sorted(n for n in os.listdir(extra_dir) if n.endswith(".txt"))
+    for name in names:
+        path = os.path.join(extra_dir, name)
+        target.add_document(name, "txt", os.path.getsize(path), _read_text(path, "txt"), embedder,
+                            claim_id=None, file_path=path)
+    return len(names)
+
+
+def probe(store, embedder, reranker, candidate_pool, top_k, queries=GOLDEN_QUERIES):
     rows = []
-    for row in GOLDEN_QUERIES:
+    for row in queries:
         expected = _expected(row)
         if not expected:
             continue
@@ -91,6 +108,8 @@ def probe(store, embedder, reranker, candidate_pool, top_k):
             if m["filename"] not in order:
                 order.append(m["filename"])
         ranks = {src: (order.index(src) + 1 if src in order else None) for src in expected}
+        avoid = list(row.get("avoid", []))
+        avoid_ranks = {src: (order.index(src) + 1 if src in order else None) for src in avoid}
         # Pinning only guarantees a slot within top_k, so the served top 4 is
         # its own call, not a prefix of the top-15 ranking.
         served = store.search_similarity(
@@ -104,16 +123,22 @@ def probe(store, embedder, reranker, candidate_pool, top_k):
         dossier = store.get_claim_chunks(row["claim_id"]) if row.get("claim_id") else []
         served_text = _norm(" ".join(m.get("content", "") for m in list(dossier) + served))
         found = [f for f in facts if f in served_text]
-        rows.append({"id": row["id"], "ranks": ranks, "served": all(src in served_names for src in expected),
-                     "facts": len(facts), "facts_found": len(found),
-                     "facts_missing": [f for f in facts if f not in found]})
+        entry = {"id": row["id"], "ranks": ranks, "served": all(src in served_names for src in expected),
+                 "facts": len(facts), "facts_found": len(found),
+                 "facts_missing": [f for f in facts if f not in found]}
+        if avoid:
+            best_expected = min((r for r in ranks.values() if r is not None), default=None)
+            best_avoid = min((r for r in avoid_ranks.values() if r is not None), default=None)
+            entry["avoid_ranks"] = avoid_ranks
+            entry["distractor_outranks"] = best_avoid is not None and (best_expected is None or best_avoid < best_expected)
+        rows.append(entry)
     return rows
 
 
 def summarize(rows, top_k):
     worst = [max((r if r is not None else top_k + 1) for r in row["ranks"].values()) for row in rows]
     rr = [1.0 / r if r else 0.0 for row in rows for r in row["ranks"].values()]
-    return {
+    out = {
         "queries": len(rows),
         f"all_sources_in_top{HIT_AT}": sum(1 for w in worst if w <= HIT_AT),
         f"all_sources_served_at_top_k{HIT_AT}": sum(1 for row in rows if row["served"]),
@@ -122,6 +147,17 @@ def summarize(rows, top_k):
         "missing": sum(1 for row in rows for r in row["ranks"].values() if r is None),
         "fact_recall": round(sum(r["facts_found"] for r in rows) / max(1, sum(r["facts"] for r in rows)), 4),
     }
+    if any("distractor_outranks" in row for row in rows):
+        out["distractor_outranks"] = sum(1 for row in rows if row.get("distractor_outranks"))
+    return out
+
+
+def _print_rows(rows):
+    for row in rows:
+        ranks = ", ".join(f"{k}={v if v else '-'}" for k, v in row["ranks"].items())
+        gap = "" if row["facts_found"] == row["facts"] else f" FACTS {row['facts_found']}/{row['facts']}"
+        leak = " DISTRACTOR-OUTRANKS" if row.get("distractor_outranks") else ""
+        print(f"{row['id']:<40} {'ok  ' if row['served'] else 'MISS'} {ranks}{gap}{leak}")
 
 
 def main(argv=None):
@@ -131,27 +167,40 @@ def main(argv=None):
     ap.add_argument("--embedding-model", default=os.environ.get("EMBEDDING_MODEL", "all-MiniLM-L6-v2"))
     ap.add_argument("--candidate-pool", type=int, default=int(os.environ.get("RERANK_CANDIDATE_POOL", "15")))
     ap.add_argument("--top-k", type=int, default=15)
+    ap.add_argument("--hard-dir", default=os.path.join(os.path.dirname(__file__), "..", "eval", "hard_corpus"),
+                    help="distractor and hard-group documents (.txt)")
+    ap.add_argument("--no-rerank", action="store_true", help="skip the cross-encoder (hybrid retrieval only)")
+    ap.add_argument("--no-hard", action="store_true", help="skip the hard group")
     ap.add_argument("--out", help="write per-query ranks and the summary as JSON")
     args = ap.parse_args(argv)
 
     embedder = EmbeddingEngine(args.embedding_model)
-    reranker = RerankingEngine(device="cpu")
+    reranker = None if args.no_rerank else RerankingEngine(device="cpu")
     with tempfile.TemporaryDirectory(prefix="crag-probe-") as tmp:
         store = SQLiteVectorStore(db_path=os.path.join(tmp, "probe.db"), storage_dir=os.path.join(tmp, "docs"))
         t0 = time.monotonic()
         n = rebuild(args.source_db, args.stored_dir, store, embedder)
         t1 = time.monotonic()
         rows = probe(store, embedder, reranker, args.candidate_pool, args.top_k)
+        hard_rows = hard_summary = None
+        if not args.no_hard:
+            extra = add_extra_docs(args.hard_dir, store, embedder)
+            hard_rows = probe(store, embedder, reranker, args.candidate_pool, args.top_k, HARD_GOLDEN_QUERIES)
+            hard_summary = summarize(hard_rows, args.top_k)
+            hard_summary.update(extra_documents=extra)
     summary = summarize(rows, args.top_k)
     summary.update(documents=n, ingest_s=round(t1 - t0, 1), embedding_model=args.embedding_model)
-    for row in rows:
-        ranks = ", ".join(f"{k}={v if v else '-'}" for k, v in row["ranks"].items())
-        gap = "" if row["facts_found"] == row["facts"] else f" FACTS {row['facts_found']}/{row['facts']}"
-        print(f"{row['id']:<40} {'ok  ' if row['served'] else 'MISS'} {ranks}{gap}")
+    _print_rows(rows)
     print(json.dumps(summary))
+    out = {"summary": summary, "rows": rows}
+    if hard_rows is not None:
+        print("--- hard group ---")
+        _print_rows(hard_rows)
+        print(json.dumps({"hard": hard_summary}))
+        out.update(hard_summary=hard_summary, hard_rows=hard_rows)
     if args.out:
         with open(args.out, "w") as f:
-            json.dump({"summary": summary, "rows": rows}, f, indent=1)
+            json.dump(out, f, indent=1)
 
 
 if __name__ == "__main__":
