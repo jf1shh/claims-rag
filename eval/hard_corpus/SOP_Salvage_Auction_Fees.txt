@@ -1,0 +1,5 @@
+SOP: Salvage Auction Fees and Timing
+1. Auction Fees
+The salvage vendor charges a flat $125 auction listing fee per vehicle plus 10% of the final sale price, deducted from the sale proceeds.
+2. Timing
+The vendor must pick up the vehicle within 3 business days of the assignment and list it within 5 business days of pickup. Proceeds are remitted within 14 calendar days of the sale.

@@ -1,0 +1,5 @@
+Claims Guideline: Diminished Value - Texas Addendum
+1. Scope
+This addendum applies to third-party diminished value claims on Texas-garaged vehicles and replaces the base percentage in the general Diminished Value guideline.
+2. Texas Formula
+The Texas base loss is 8% of the vehicle's pre-loss Actual Cash Value, multiplied by the damage modifier and the mileage modifier. A vehicle with 100,000 miles or more has no diminished value. A written offer must be issued within 15 business days of receiving the repair invoice.
