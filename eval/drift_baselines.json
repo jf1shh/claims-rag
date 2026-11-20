@@ -15,8 +15,8 @@
     "path": "eval/results-2026-10-21-34row-fts-or.json"
   },
   "probe": {
-    "accepted": "2026-10-22",
-    "note": "48-doc seed, CPU rerank, all-MiniLM-L6-v2: top4 30/33, served 33/33, mrr 0.8131, fact_recall 0.8837; two runs identical",
-    "path": "eval/probe-2026-10-21.json"
+    "accepted": "2026-11-20",
+    "note": "48-doc seed, CPU rerank, all-MiniLM-L6-v2, original 33 rows: top4 30/33, served 33/33, mrr 0.8131, fact_recall 0.8488 under the whole-number fact match (was 0.8837 under substring match; only fact recall moved, 3 facts flipped)",
+    "path": "eval/probe-2026-11-20.json"
   }
 }
