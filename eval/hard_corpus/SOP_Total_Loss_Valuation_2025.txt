@@ -1,0 +1,6 @@
+SOP: Total Loss Vehicle Valuation (2025 EDITION - SUPERSEDED)
+Status: Superseded effective 2026-01-01 by the 2026 Total Loss Valuation SOP.
+1. Total Loss Threshold Rule
+Most states enforce a statutory total loss threshold. In California, the Total Loss Formula (Cost of Repair + Salvage Value >= ACV) was used. In Texas, a flat threshold of 100% of ACV was applied. In Florida, the threshold was 75% of ACV.
+2. Valuation Methodology
+Claims handlers determined ACV using one valuation source, with a second source required only above $40,000 ACV.

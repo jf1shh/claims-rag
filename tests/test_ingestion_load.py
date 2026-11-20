@@ -36,7 +36,32 @@ def _floor_docs_per_sec() -> str:
     override = os.environ.get("LOAD_TEST_FLOOR_DOCS_PER_SEC")
     if override:
         return str(float(override))
-    return str(CI_FLOOR_DOCS_PER_SEC if os.environ.get("CI") else LOCAL_FLOOR_DOCS_PER_SEC)
+    on_ci = os.environ.get("CI", "").strip().lower() in ("true", "1")
+    return str(CI_FLOOR_DOCS_PER_SEC if on_ci else LOCAL_FLOOR_DOCS_PER_SEC)
+
+
+@pytest.mark.parametrize(
+    "ci, override, expected",
+    [
+        (None, None, "50.0"),
+        ("", None, "50.0"),
+        ("false", None, "50.0"),
+        ("0", None, "50.0"),
+        ("true", None, "20.0"),
+        (" TRUE ", None, "20.0"),
+        ("1", None, "20.0"),
+        ("true", "35", "35.0"),
+        (None, "35", "35.0"),
+    ],
+)
+def test_floor_is_50_locally_20_on_ci_and_overridable(monkeypatch, ci, override, expected):
+    monkeypatch.delenv("CI", raising=False)
+    monkeypatch.delenv("LOAD_TEST_FLOOR_DOCS_PER_SEC", raising=False)
+    if ci is not None:
+        monkeypatch.setenv("CI", ci)
+    if override is not None:
+        monkeypatch.setenv("LOAD_TEST_FLOOR_DOCS_PER_SEC", override)
+    assert _floor_docs_per_sec() == expected
 
 
 def test_given_small_load_when_async_ingested_then_no_failures_and_throughput_ok():
