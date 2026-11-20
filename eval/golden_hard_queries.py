@@ -139,6 +139,10 @@ HARD_GOLDEN_QUERIES = [
         "source": "Endorsement_Tire_Wheel_Protection_Form_T120.txt",
         "avoid": ["Endorsement_Tire_Wheel_Protection_Form_T210.txt"],
     },
+    # SOP_Total_Loss_Valuation.pdf (original corpus) also says the salvage estimate is
+    # deducted when the owner keeps the vehicle, but it has neither the 7-calendar-day
+    # release nor the written bid. It is a partial answer, so it is deliberately not in
+    # `avoid`: ranking it above the source would not be a wrong-document answer.
     {
         "id": "hard-salvage-owner-retention",
         "kind": "near-miss",
@@ -158,6 +162,10 @@ HARD_GOLDEN_QUERIES = [
         "source": "SOP_Salvage_Auction_Fees.txt",
         "avoid": ["SOP_Salvage_Owner_Retention.txt"],
     },
+    # "3 business days" appears in both sources (storage: transfer within 3 business days
+    # of the declaration; auction fees: vendor pickup within 3 business days of the
+    # assignment), so the pickup half can be answered from either. The storage half
+    # ($45 per day, 2026 edition) is only in SOP_Vehicle_Storage_Fees.txt.
     {
         "id": "hard-multi-storage-and-pickup",
         "kind": "multi-source",

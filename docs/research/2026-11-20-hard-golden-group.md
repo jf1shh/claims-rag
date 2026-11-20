@@ -11,13 +11,15 @@ Follow-up to the 2026-10-21 null result (`docs/current-state.md`): the original 
 ## Result (current main pipeline, all-MiniLM-L6-v2, cross-encoder, pool 15)
 Two identical runs differ by 0 (JSON compared apart from ingest seconds).
 
+Fact matching is by whole number (`_fact_in`: "8" does not match inside "18" or "0.8"). The first version of this table used a plain substring match; re-run with the whole-number match, the original-33 fact recall fell from 0.8837 to 0.8488 (pool 4: 0.8721 to 0.8372) and nothing else moved. Hard-group numbers, including fact recall 1.000, are unchanged. The 2026-10-21 baseline (`eval/probe-2026-10-21.json`, fact recall 0.8837) was measured with the substring match and is not comparable to these fact-recall figures.
+
 | Run | Original 33: in top4 / served / MRR / fact recall | Hard 19: in top4 / served / MRR / fact recall / distractor outranks |
 |---|---|---|
-| main (pool 15) | 30 / 33 / 0.8131 / 0.8837 | 19 / 19 / 0.8571 / 1.000 / 3 |
-| pool 8 | 30 / 33 / 0.8162 / 0.8837 | 19 / 19 / 0.8571 / 1.000 / 3 |
-| pool 4 | 31 / 32 / 0.8131 / 0.8721 | 19 / 19 / 0.8571 / 1.000 / 3 |
-| bge-small-en-v1.5 | 30 / 33 / 0.8120 / 0.8837 | 19 / 19 / 0.8571 / 1.000 / 3 |
-| no reranker | 31 / 32 / 0.7894 / 0.8837 | 19 / 19 / 0.8254 / 1.000 / 3 |
+| main (pool 15) | 30 / 33 / 0.8131 / 0.8488 | 19 / 19 / 0.8571 / 1.000 / 3 |
+| pool 8 | 30 / 33 / 0.8162 / 0.8488 | 19 / 19 / 0.8571 / 1.000 / 3 |
+| pool 4 | 31 / 32 / 0.8131 / 0.8372 | 19 / 19 / 0.8571 / 1.000 / 3 |
+| bge-small-en-v1.5 | 30 / 33 / 0.8120 / 0.8488 | 19 / 19 / 0.8571 / 1.000 / 3 |
+| no reranker | 31 / 32 / 0.7894 / 0.8488 | 19 / 19 / 0.8254 / 1.000 / 3 |
 
 ## Reading it
 The repair is **not achieved**. On honest hard rows the pipeline is still at the ceiling: every expected source is served (19/19) and every reference number is in the served text. The only spread is rank order (3 rows where a near-miss document ranks first: 2026 labor rates and Florida total loss, each behind its 2025 edition, and the general diminished-value guideline behind the state addenda). No knob moved a hard-group number by 0.05; the largest was the reranker off (MRR -0.032). Fact recall by number presence cannot see a wrong-document answer when the right one is also served.

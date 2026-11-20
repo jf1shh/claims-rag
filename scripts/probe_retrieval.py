@@ -59,6 +59,11 @@ def _facts(reference):
     return sorted({_norm(n) for n in _NUMBER.findall(reference)})
 
 
+def _fact_in(fact, text):
+    """Whole-number match: "8" must not match inside "18", "2008" or "0.8"."""
+    return re.search(r"(?<![\d.])" + re.escape(fact) + r"(?!\d)", text) is not None
+
+
 def _read_text(path, file_type):
     if file_type == "txt":
         with open(path, encoding="utf-8", errors="ignore") as f:
@@ -122,7 +127,7 @@ def probe(store, embedder, reranker, candidate_pool, top_k, queries=GOLDEN_QUERI
         # ahead of the matches, so they count as served context too.
         dossier = store.get_claim_chunks(row["claim_id"]) if row.get("claim_id") else []
         served_text = _norm(" ".join(m.get("content", "") for m in list(dossier) + served))
-        found = [f for f in facts if f in served_text]
+        found = [f for f in facts if _fact_in(f, served_text)]
         entry = {"id": row["id"], "ranks": ranks, "served": all(src in served_names for src in expected),
                  "facts": len(facts), "facts_found": len(found),
                  "facts_missing": [f for f in facts if f not in found]}

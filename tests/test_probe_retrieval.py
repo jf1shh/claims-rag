@@ -36,16 +36,35 @@ def test_hard_rows_are_well_formed_and_their_documents_exist():
     import os
 
     from eval.golden_hard_queries import HARD_GOLDEN_QUERIES
+    from eval.golden_queries import GOLDEN_QUERIES
     from scripts.probe_retrieval import _expected
 
     hard_dir = os.path.join(os.path.dirname(__file__), "..", "eval", "hard_corpus")
     extra = set(os.listdir(hard_dir))
+    # The original corpus (rag_store.db) is not in git, so the originals are the
+    # documents the original golden rows already name.
+    original = {name for r in GOLDEN_QUERIES for name in _expected(r)}
     ids = [r["id"] for r in HARD_GOLDEN_QUERIES]
     assert len(ids) == len(set(ids))
     for row in HARD_GOLDEN_QUERIES:
         assert row["query"] and row["reference"] and _expected(row)
         assert row["kind"] in {"near-miss", "multi-source", "paraphrase"}
+        for name in _expected(row):
+            assert name in extra or name in original, f"{row['id']}: unknown source {name}"
         for name in row.get("avoid", []):
             assert name not in _expected(row)
             if name.endswith(".txt"):
                 assert name in extra
+            else:
+                assert name in original, f"{row['id']}: unknown avoid {name}"
+
+
+def test_facts_match_whole_numbers_only():
+    from scripts.probe_retrieval import _fact_in
+
+    assert _fact_in("8", "a rate of 8% applies")
+    assert not _fact_in("8", "a rate of 18% or 2008")
+    assert not _fact_in("15", "up to 150 miles")
+    assert not _fact_in("5", "within 0.5 days")
+    assert _fact_in("0.60", "pays 0.60 per mile")
+    assert _fact_in("5000", "capped at 5000.")
