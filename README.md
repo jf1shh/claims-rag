@@ -12,6 +12,12 @@ Built by **Jared Fisher**: 17 years at Liberty Mutual, including 11 as senior ap
 
 *Recorded 2026-07-19: a theft claim is selected, then an OEM parts rider audit runs. The assistant plans its searches, pulls from both the policy documents and the claim's own file (police report, parts receipts), and writes a cited answer line by line. The current version also has sign-in, streamed answers and the answer checks described below; the recording predates them.*
 
+## Demo video
+
+[![ClaimsRAG demo video: the SIU checklist on a flagged claim, with the answer refusing to invent a reason](assets/demo-video-thumb.png)](assets/claimsrag-demo-2026-10-21.mp4)
+
+[Watch the 98-second demo (MP4, 2 MB)](assets/claimsrag-demo-2026-10-21.mp4). It runs in the app's labelled Simulation Mode on synthetic claims only: a supplement review, subrogation triage, an SIU indicator checklist, the refusal to invent a reason for an SIU flag, and the results table. GitHub opens the file on a view and download page, so click through to play it.
+
 **Jump to:** [For a hiring manager](#for-a-hiring-manager) · [Claims workflows](#claims-workflows) · [What it does for an adjuster](#what-it-does-for-an-adjuster) · [Results](#results) · [What testing found](#what-testing-found) · [Try it locally](#try-it-locally) · [How it works](#how-it-works) · [Known limitations](#known-limitations)
 
 ## For a hiring manager

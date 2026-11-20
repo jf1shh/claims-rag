@@ -31,7 +31,7 @@ All claims, SOPs and documents are synthetic.
 | 5 | 60–75 s | #2026-55912 (Elena Rostova) | Click the claim, then **SIU Indicator Checklist**. Hold on the coverage notes. | The record says "SIU Flagged". No SOP indicator supports it, and the answer says so instead of inventing a reason. |
 | 6 | 75–90 s | README, "Results" section | Scroll to the golden-set table. | 34 claims questions, scored by a local judge: context recall 0.983, reference-fact coverage 0.840. |
 
-The shots add up to 90 seconds. If a render runs long, trim shot 1 first.
+The shots add up to 90 seconds. The recording that was published ([`assets/claimsrag-demo-2026-10-21.mp4`](../../assets/claimsrag-demo-2026-10-21.mp4)) runs 98 seconds. If a render runs long, trim shot 1 first.
 
 ## Notes
 
