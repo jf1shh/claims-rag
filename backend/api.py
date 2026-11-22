@@ -233,12 +233,15 @@ def register_routes(app, runtime):
                    for source, evidence in zip(result.get("sources") or [], structured["evidence"], strict=True)]
         return {**result, "sources": sources, "structured": structured}
 
-    def guard_result(result, claim_id):
+    def guard_result(result, claim_id, query=""):
         """Post-generation answer guard (backend/answer_guard.py), applied before audit and
         projection so neither the caller nor the structured contract sees an unsupported
         claim outcome or off-allowlist contact as the assistant's answer."""
         from backend.agentic_router import claim_record_status
-        from backend.answer_guard import apply_guard
+        from backend.answer_guard import apply_decision_guard, apply_guard
+        declined = apply_decision_guard(result, query)
+        if declined is not result:
+            return declined
         return apply_guard(
             result,
             mode=runtime.settings.answer_guard_mode,
@@ -251,7 +254,7 @@ def register_routes(app, runtime):
         answer with at least two distinct sources; any failure leaves the result unchanged, so
         the status simply stays as it was (this is a label, not a gate)."""
         if (runtime.settings.conflict_check == "off" or result.get("status") == "error"
-                or (result.get("guard") or {}).get("action") == "withheld"
+                or (result.get("guard") or {}).get("action") in {"withheld", "declined"}
                 or "simulated" in str(result.get("engine", ""))):
             return result
         from backend.conflict_check import assess_conflict
@@ -265,7 +268,7 @@ def register_routes(app, runtime):
         substantive survives. Any failure leaves the answer unchanged."""
         mode = runtime.settings.provenance_check
         if (mode == "off" or result.get("status") == "error"
-                or (result.get("guard") or {}).get("action") == "withheld"
+                or (result.get("guard") or {}).get("action") in {"withheld", "declined"}
                 or "simulated" in str(result.get("engine", ""))):
             return result
         from backend.provenance_check import MIN_KEPT_CHARS, check_provenance, substantive_chars
@@ -843,7 +846,7 @@ def register_routes(app, runtime):
                     llm_client=runtime._llm_client,
                     caps=runtime.settings,
                 )
-                result = tools_result(conflict_result(provenance_result(guard_result(result, req.claim_id)), req.query))
+                result = tools_result(conflict_result(provenance_result(guard_result(result, req.claim_id, req.query)), req.query))
             _audit(
                 request,
                 principal,
@@ -917,7 +920,7 @@ def register_routes(app, runtime):
                         # replaces the streamed bubble (frontend finalizeStreamingBubble), so a
                         # withheld answer is withdrawn from view once generation completes.
                         final_event = project_result(request, tools_result(conflict_result(
-                            provenance_result(guard_result(event, req.claim_id)), req.query)))
+                            provenance_result(guard_result(event, req.claim_id, req.query)), req.query)))
                         yield f"data: {json.dumps({k: v for k, v in final_event.items() if k != 'type'})}\n\n"
                 yield "data: [DONE]\n\n"
             finally:

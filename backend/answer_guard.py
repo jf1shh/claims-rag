@@ -127,7 +127,7 @@ _OUTCOME_RES: dict[str, tuple[re.Pattern[str], ...]] = {
 class GuardFinding:
     """One unsupported assertion found in an answer."""
 
-    kind: Literal["claim_outcome", "external_contact"]
+    kind: Literal["claim_outcome", "external_contact", "decision_request"]
     category: str
     excerpt: str
     reason: str
@@ -341,4 +341,83 @@ def apply_guard(
     guarded = {**result, "guard": {"action": action, "findings": [finding.to_dict() for finding in findings]}}
     if action == "withheld":
         guarded["answer"] = withheld_text(findings)
+    return guarded
+
+
+# --- Request-side check: the user asks the assistant to make a claim decision -------------------
+# One place for the intent check. Both engines (simulated and live) pass through api.guard_result,
+# so the same refusal and the same audit fields apply everywhere. Patterns are anchored to the start
+# of the request (after polite filler) or to "should I/we", so questions about the policy or the
+# process ("what does the policy say about denying a claim?") are not treated as decision requests.
+
+_DECISION_PREFIX = (
+    r"^\W*(?:(?:please|pls|kindly|now|just|go ahead and|can you|could you|would you|will you|"
+    r"i need you to|i want you to|you need to|you must|you should|i['\u2019]?d like you to)\s+)*"
+)
+_DECISION_VERB = r"(?:approve|deny|reject|authori[sz]e|pay(?!\s+attention)|settle|close)"
+_DECISION_OBJECT = (
+    r"(?:claim|payment|loss|file|settlement|supplement|total loss|invoice|check|demand|offer|bill|"
+    r"estimate)s?"
+)
+_DECISION_PATTERNS: dict[str, re.Pattern[str]] = {
+    "approve_deny_pay": re.compile(
+        rf"{_DECISION_PREFIX}{_DECISION_VERB}\b.{{0,40}}?\b{_DECISION_OBJECT}\b"
+        rf"|\b(?:should|shall)\s+(?:i|we)\s+(?:just\s+)?{_DECISION_VERB}\b.{{0,40}}?\b{_DECISION_OBJECT}\b",
+        re.IGNORECASE,
+    ),
+    "determine_coverage_liability": re.compile(
+        rf"{_DECISION_PREFIX}(?:decide|determine|rule on|make the (?:final )?(?:call|decision|determination)"
+        r")\b.{0,40}?\b(?:coverage|covered|liability|fault|claim|payment|settlement)\b",
+        re.IGNORECASE,
+    ),
+    "set_reserve": re.compile(
+        rf"{_DECISION_PREFIX}set\b.{{0,20}}?\breserves?\b.{{0,15}}?\b(?:at|to)\b\s*\$?\d",
+        re.IGNORECASE,
+    ),
+    "mark_outcome": re.compile(
+        rf"{_DECISION_PREFIX}(?:mark|set|change|update|record)\b.{{0,30}}?\b(?:approved|denied|paid|closed|settled)\b",
+        re.IGNORECASE,
+    ),
+}
+
+
+def find_decision_request(query: str) -> list[GuardFinding]:
+    """Findings (kind "decision_request") when `query` asks the assistant to decide a claim."""
+    text = _clean(query or "")
+    findings = []
+    for category, pattern in _DECISION_PATTERNS.items():
+        match = pattern.search(text)
+        if match:
+            findings.append(GuardFinding(
+                kind="decision_request", category=category, excerpt=match.group(0)[:120],
+                reason="The request asks the assistant to make a claim decision.",
+            ))
+    return findings
+
+
+DECLINED_TEXT = (
+    "I don't make claim decisions. Approving, denying, paying, settling, setting a reserve and "
+    "deciding coverage, liability or fault are decided by a licensed adjuster or another authorized "
+    "person, not by this assistant. What I can do: show the policy and guideline excerpts that "
+    "bear on this question (listed below with their sources), summarize the claim file and adjuster "
+    "notes, or put together a checklist of what the adjuster should confirm before deciding."
+)
+
+
+def apply_decision_guard(result: dict, query: str) -> dict:
+    """Replace the answer with the plain refusal-and-offer when `query` asks for a claim decision.
+
+    Sources are kept so the offered excerpts stay cited; computed figures (`tool_section`) are
+    dropped because they could read as a decision. The `guard` report uses action "declined" and
+    flows into the structured contract and the audit record like the other guard actions.
+    Applies in every engine mode and in every `answer_guard_mode`. Input is never mutated.
+    """
+    if result.get("status") == "error":
+        return result
+    findings = find_decision_request(query)
+    if not findings:
+        return result
+    guarded = {k: v for k, v in result.items() if k != "tool_section"}
+    guarded["guard"] = {"action": "declined", "findings": [finding.to_dict() for finding in findings]}
+    guarded["answer"] = DECLINED_TEXT
     return guarded

@@ -2,6 +2,9 @@
 
 > Moved out of `CLAUDE.md` on 2026-10-02. This is the living status record: **read it at session start and update it at session end** (Current State, What's Next, phase notes).
 
+## 2026-11-22: explicit no-adjudication refusal
+Requests that ask the assistant to approve, deny, pay, settle, set a reserve or decide coverage/liability get one plain refusal plus an offer (cited excerpts, summary, checklist) on every path, simulated and live. Check: `find_decision_request` / `apply_decision_guard` in `backend/answer_guard.py`, wired in `api.guard_result`; guard action `declined`, audited as `guard_action`. Tests: `tests/test_api_decision_guard.py`.
+
 ## Build Plan — Current Phase
 
 September 6: portfolio hardening implemented and verified; see [validation and remaining work](portfolio-hardening.md). Earlier phase notes below are historical.

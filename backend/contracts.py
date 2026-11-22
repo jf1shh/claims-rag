@@ -30,7 +30,7 @@ class DecisionBoundary(BaseModel):
 
 
 class GuardFindingRecord(BaseModel):
-    kind: Literal["claim_outcome", "external_contact"]
+    kind: Literal["claim_outcome", "external_contact", "decision_request"]
     category: str
     excerpt: str
     reason: str
@@ -40,9 +40,10 @@ class GuardReport(BaseModel):
     """Post-generation answer guard result (backend/answer_guard.py).
 
     `withheld`: the generated text was replaced and is not shown; `flagged`: the
-    text is shown but asserted something the guard could not verify.
+    text is shown but asserted something the guard could not verify; `declined`: the request
+    asked the assistant to make a claim decision, so the answer is a refusal plus an offer.
     """
-    action: Literal["withheld", "flagged"]
+    action: Literal["withheld", "flagged", "declined"]
     findings: list[GuardFindingRecord] = Field(default_factory=list)
 
 
@@ -161,7 +162,7 @@ def structured_projection(
         # explicit assumptions and a withheld answer carries no grounded claim.
         assumptions = [finding.reason for finding in guard.findings]
         uncertainty = "high"
-        if guard.action == "withheld" and status != "error":
+        if guard.action in {"withheld", "declined"} and status != "error":
             status = "insufficient_evidence"
     conflict = ConflictReport.model_validate(legacy_result["conflict"]) if legacy_result.get("conflict") else None
     if conflict is not None and conflict.disagreement and status == "grounded":
