@@ -251,7 +251,7 @@ def register_routes(app, runtime):
         answer with at least two distinct sources; any failure leaves the result unchanged, so
         the status simply stays as it was (this is a label, not a gate)."""
         if (runtime.settings.conflict_check == "off" or result.get("status") == "error"
-                or (result.get("guard") or {}).get("action") == "withheld"
+                or (result.get("guard") or {}).get("action") in {"withheld", "declined"}
                 or "simulated" in str(result.get("engine", ""))):
             return result
         from backend.conflict_check import assess_conflict
@@ -265,7 +265,7 @@ def register_routes(app, runtime):
         substantive survives. Any failure leaves the answer unchanged."""
         mode = runtime.settings.provenance_check
         if (mode == "off" or result.get("status") == "error"
-                or (result.get("guard") or {}).get("action") == "withheld"
+                or (result.get("guard") or {}).get("action") in {"withheld", "declined"}
                 or "simulated" in str(result.get("engine", ""))):
             return result
         from backend.provenance_check import MIN_KEPT_CHARS, check_provenance, substantive_chars
@@ -326,6 +326,16 @@ def register_routes(app, runtime):
             fields.update({"provenance_action": provenance["action"],
                            "provenance_findings": sorted({f["kind"] for f in provenance["findings"]})})
         return fields
+
+    def decision_refusal(req):
+        """Pre-router decision check (backend/answer_guard.py): a request that asks the assistant
+        to make a claim decision is answered with the refusal-and-offer BEFORE any retrieval or
+        model call, so no generated text (live or streamed) can show an outcome. None otherwise."""
+        from backend.answer_guard import apply_decision_guard
+        base = {"answer": "", "sources": [], "claim_dossier": None, "engine": "decision-guard",
+                "pipeline_logs": []}
+        declined = apply_decision_guard(base, req.query)
+        return None if declined is base else declined
 
     def validate_chat(req):
         if not req.query.strip():
@@ -830,6 +840,11 @@ def register_routes(app, runtime):
             except HTTPException:
                 _audit(request, principal, "chat", outcome="denied", claim_id=req.claim_id)
                 raise
+        refusal = decision_refusal(req)
+        if refusal is not None:
+            _audit(request, principal, "chat", query=req.query, claim_id=req.claim_id, engine=req.engine,
+                   sources=[], outcome="completed", **guard_audit_fields(refusal))
+            return project_result(request, refusal)
         principal_key = _acquire_slot(principal, _chat_gate, "chat", runtime.settings.max_concurrent_chat)
         try:
             with llm_deadline_scope(runtime.settings.chat_deadline_seconds):
@@ -881,6 +896,14 @@ def register_routes(app, runtime):
             except HTTPException:
                 _audit(request, principal, "chat", outcome="denied", claim_id=req.claim_id)
                 raise
+        refusal = decision_refusal(req)
+        if refusal is not None:
+            _audit(request, principal, "chat", query=req.query, claim_id=req.claim_id, engine=req.engine,
+                   sources=[], outcome="completed", **guard_audit_fields(refusal))
+            final = project_result(request, refusal)
+            payload = f"data: {json.dumps(final)}\n\ndata: [DONE]\n\n"
+            return StreamingResponse(iter([payload]), media_type="text/event-stream",
+                                     headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
         principal_key = _acquire_slot(principal, _chat_gate, "chat", runtime.settings.max_concurrent_chat)
         finished = threading.Event()
 
