@@ -100,7 +100,7 @@ class _RerankBatchCoordinator:
             batch = [self._pending.popleft()]
             pair_count = len(batch[0].passages)
             deadline = time.monotonic() + self._max_wait_seconds
-            while len(batch) < self._max_requests and pair_count < self._max_pairs:
+            while not self._closed and len(batch) < self._max_requests and pair_count < self._max_pairs:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     break
@@ -133,9 +133,9 @@ class _RerankBatchCoordinator:
                 end = offset + len(work.passages)
                 scored = []
                 for passage, score in zip(work.passages, scores[offset:end], strict=True):
-                    scored_passage = dict(passage)
-                    scored_passage["rerank_score"] = float(1.0 / (1.0 + math.exp(-float(score))))
-                    scored.append(scored_passage)
+                    # _BatchWorkItem already deep-copied each passage at submit time.
+                    passage["rerank_score"] = float(1.0 / (1.0 + math.exp(-float(score))))
+                    scored.append(passage)
                 scored.sort(key=lambda item: item["rerank_score"], reverse=True)
                 results.append(scored[:work.top_k])
                 offset = end

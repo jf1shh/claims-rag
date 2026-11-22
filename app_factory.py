@@ -261,6 +261,8 @@ def build_dependencies(settings: Settings) -> AppDependencies:
             pool_statement_timeout_ms=settings.postgres_statement_timeout_ms,
             pool_max_size=settings.postgres_pool_max_size,
             pool_timeout_seconds=settings.postgres_pool_timeout_seconds,
+            vector_search_mode=settings.postgres_vector_search_mode,
+            hnsw_candidates=settings.postgres_hnsw_candidates,
         )
     else:
         vector_store = SQLiteVectorStore(

@@ -90,6 +90,21 @@ def test_rerank_device_defaults_to_auto_and_parses():
     assert Settings.from_env({"RERANK_DEVICE": ""}).rerank_device == "auto"
 
 
+def test_postgres_vector_search_mode_defaults_overrides_and_validation():
+    default = Settings.from_env({})
+    assert default.postgres_vector_search_mode == "exact"
+    assert default.postgres_hnsw_candidates == 100
+    hnsw = Settings.from_env({"POSTGRES_VECTOR_SEARCH_MODE": " HNSW ", "POSTGRES_HNSW_CANDIDATES": "250"})
+    assert hnsw.postgres_vector_search_mode == "hnsw"
+    assert hnsw.postgres_hnsw_candidates == 250
+    hnsw.validate_for_environment()
+    bad_mode = Settings.from_env({"POSTGRES_VECTOR_SEARCH_MODE": "ivfflat"})
+    with pytest.raises(ValueError, match="POSTGRES_VECTOR_SEARCH_MODE"):
+        bad_mode.validate_for_environment()
+    with pytest.raises(ValueError, match="POSTGRES_HNSW_CANDIDATES"):
+        Settings.from_env({"POSTGRES_HNSW_CANDIDATES": "0"})
+
+
 def test_rerank_device_rejects_unknown_value():
     settings = Settings.from_env({"RERANK_DEVICE": "rocm"})  # ROCm cards are "cuda" to torch
     with pytest.raises(ValueError, match="RERANK_DEVICE"):

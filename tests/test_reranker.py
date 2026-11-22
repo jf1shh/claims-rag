@@ -372,6 +372,35 @@ def test_fallback_reranker_closes_local_fallback():
     batched_reranker.close()
 
 
+def test_close_interrupts_batch_wait_window_promptly():
+    import time
+
+    class FastEngine:
+        def score_pairs(self, pairs, inference_batch_size=16):
+            return [0.5 for _ in pairs]
+
+    reranker = LocalReranker(engine=FastEngine(), batch_max_wait_ms=2000)
+    result_holder = []
+    caller_passages = [{"id": 1, "content": "a", "meta": {"k": "v"}}]
+
+    def run_call():
+        result_holder.append(reranker.rerank("q", caller_passages, top_k=1))
+
+    worker = threading.Thread(target=run_call)
+    worker.start()
+    deadline = time.monotonic() + 1.0
+    while reranker.stats()["submitted_requests"] < 1 and time.monotonic() < deadline:
+        time.sleep(0.005)
+    t0 = time.monotonic()
+    reranker.close()
+    elapsed = time.monotonic() - t0
+    worker.join(timeout=1.0)
+    assert elapsed < 0.5
+    assert len(result_holder) == 1
+    assert result_holder[0][0]["id"] == 1
+    assert "rerank_score" not in caller_passages[0]
+
+
 class FakeResponse:
     def __init__(self, result, status=200):
         self.result = result

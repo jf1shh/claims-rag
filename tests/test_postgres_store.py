@@ -720,3 +720,48 @@ def test_keyword_leg_matches_question_missing_some_words(store):
     q = "What is the deductible for a cracked windshield? Not covered OR near"
     results = store.search_similarity(_ALONG, q, top_k=3, candidate_pool=3)
     assert "glass.txt" in [r["filename"] for r in results]
+
+
+def test_postgres_vector_search_mode_sql_and_validation():
+    import contextlib
+    from backend.postgres_store import PostgresVectorStore
+
+    with pytest.raises(ValueError, match="vector_search_mode"):
+        PostgresVectorStore(dsn="postgresql://u:p@localhost/db", vector_search_mode="bad")
+    with pytest.raises(ValueError, match="hnsw_candidates"):
+        PostgresVectorStore(dsn="postgresql://u:p@localhost/db", hnsw_candidates=0)
+
+    class _FakeCursor:
+        def fetchall(self):
+            return []
+
+    class _FakeConn:
+        def __init__(self):
+            self.queries = []
+
+        @contextlib.contextmanager
+        def transaction(self):
+            yield
+
+        def execute(self, sql, params=None):
+            self.queries.append((sql, params))
+            return _FakeCursor()
+
+        def close(self):
+            pass
+
+    for mode, expect_cte in (("exact", False), ("hnsw", True)):
+        fake_conn = _FakeConn()
+        pg_store = PostgresVectorStore(
+            dsn="postgresql://u:p@localhost/db",
+            tenant_id="t1",
+            vector_search_mode=mode,
+            hnsw_candidates=120,
+        )
+        pg_store._connect = lambda c=fake_conn: c
+        pg_store.search_similarity(np.ones(384, dtype=np.float32), "glass deductible", use_fts=False, candidate_pool=15)
+        sql, params = fake_conn.queries[0]
+        assert ("WITH nearest AS" in sql) is expect_cte
+        if expect_cte:
+            assert "ORDER BY c.embedding <=> %(q)s" in sql
+            assert params["knn_lim"] == 120

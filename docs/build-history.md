@@ -1400,3 +1400,10 @@ Four untracked items had been sitting in the repo root across several handoffs, 
   `graft/.cache/`/`graft/.graph/` out of it) had never been committed. Added the missing
   `.gitignore` line and committed `.ignore`, matching the established convention exactly;
   `graft/` itself stays untracked/regenerable (`graft build`).
+
+## 2026-11-22 — Reranker shutdown/copy fix, opt-in Postgres HNSW mode, docs sync & ROCm venv check (`fix/reranker-hnsw-docs`)
+
+- **`backend/reranker.py`**: `_RerankBatchCoordinator._next_batch()` now checks `not self._closed` during its wait loop so `close()` wakes immediately instead of stalling up to `batch_max_wait_ms`, and `_process()` reuses `_BatchWorkItem`'s deep-copied passage snapshots instead of copying every passage a second time.
+- **`backend/postgres_store.py` / `config.py` / `app_factory.py` / `.env.example`**: Added opt-in `POSTGRES_VECTOR_SEARCH_MODE` (`exact` default | `hnsw`) and `POSTGRES_HNSW_CANDIDATES` (default `100`) so Postgres deployments at 100k+ docs can use the HNSW index (`WITH nearest AS (... ORDER BY c.embedding <=> %(q)s LIMIT %(knn_lim)s)`) while keeping `exact` as default for Phase-1 SQLite parity.
+- **Docs**: Updated stale `HANDOFF.md` (was Oct 24 / PR #50) to current `main` (PR #79) and fixed the `docs/current-state.md` Phase 6.1 note that contradicted session 38's already-implemented `_RerankBatchCoordinator`.
+- **Tests**: Added unit tests for prompt `close()` interruption in `tests/test_reranker.py`, `POSTGRES_VECTOR_SEARCH_MODE`/`POSTGRES_HNSW_CANDIDATES` validation in `tests/test_config.py`, and exact-vs-HNSW SQL emission in `tests/test_postgres_store.py`.
