@@ -65,6 +65,8 @@ class Settings:
     postgres_statement_timeout_ms: int = 30000
     postgres_pool_max_size: int = 10
     postgres_pool_timeout_seconds: float = 10.0
+    postgres_vector_search_mode: str = "exact"  # "exact" | "hnsw"
+    postgres_hnsw_candidates: int = 100
     tenant_id: str = "local-development"
     object_storage_provider: str = "filesystem"
     object_storage_bucket: str | None = None
@@ -251,6 +253,10 @@ class Settings:
             postgres_pool_timeout_seconds=_float(
                 env.get("POSTGRES_POOL_TIMEOUT_SECONDS"), 10.0, "POSTGRES_POOL_TIMEOUT_SECONDS"
             ),
+            postgres_vector_search_mode=(env.get("POSTGRES_VECTOR_SEARCH_MODE") or "exact").strip().lower(),
+            postgres_hnsw_candidates=_int(
+                env.get("POSTGRES_HNSW_CANDIDATES"), 100, "POSTGRES_HNSW_CANDIDATES"
+            ),
             tenant_id=env.get("TENANT_ID", "local-development").strip(),
             object_storage_provider=env.get("OBJECT_STORAGE_PROVIDER", "filesystem").strip().lower(),
             object_storage_bucket=env.get("OBJECT_STORAGE_BUCKET") or None,
@@ -395,6 +401,8 @@ class Settings:
             raise ValueError("RERANK_PROVIDER must be local or remote")
         if self.rerank_device not in {"auto", "cpu", "cuda"}:
             raise ValueError("RERANK_DEVICE must be auto, cpu, or cuda")
+        if self.postgres_vector_search_mode not in {"exact", "hnsw"}:
+            raise ValueError("POSTGRES_VECTOR_SEARCH_MODE must be exact or hnsw")
         if self.rerank_batch_max_pairs < self.rerank_candidate_pool:
             raise ValueError("RERANK_BATCH_MAX_PAIRS must be at least RERANK_CANDIDATE_POOL")
         if self.rerank_provider == "remote":

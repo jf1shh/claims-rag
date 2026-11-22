@@ -98,6 +98,9 @@ class PostgresVectorStore:
     (`all-MiniLM-L6-v2` -> 384) and the `vector(N)` column in the schema.
     """
 
+    vector_search_mode: str = "exact"
+    hnsw_candidates: int = 100
+
     def __init__(
         self,
         dsn: str,
@@ -109,6 +112,8 @@ class PostgresVectorStore:
         pool_statement_timeout_ms: int = 30000,
         pool_max_size: int = 10,
         pool_timeout_seconds: float = 10.0,
+        vector_search_mode: str = "exact",
+        hnsw_candidates: int = 100,
     ):
         from backend.rag_engine import STORED_DOCUMENTS_DIR
 
@@ -116,6 +121,10 @@ class PostgresVectorStore:
             raise ValueError("dsn must not be empty")
         if not tenant_id:
             raise ValueError("tenant_id must not be empty")
+        if vector_search_mode not in {"exact", "hnsw"}:
+            raise ValueError("vector_search_mode must be 'exact' or 'hnsw'")
+        if hnsw_candidates <= 0:
+            raise ValueError("hnsw_candidates must be positive")
         self.dsn = dsn
         self.tenant_id = tenant_id
         self.storage_dir = storage_dir or STORED_DOCUMENTS_DIR
@@ -130,6 +139,8 @@ class PostgresVectorStore:
         self.pool_statement_timeout_ms = pool_statement_timeout_ms
         self.pool_max_size = pool_max_size
         self.pool_timeout_seconds = pool_timeout_seconds
+        self.vector_search_mode = vector_search_mode
+        self.hnsw_candidates = hnsw_candidates
         # Created lazily on first use (see _get_pool) so constructing a store
         # that never touches the DB (scripts, offline tests) opens nothing.
         self._pool = None
@@ -523,20 +534,45 @@ class PostgresVectorStore:
                 # with it (a plain aborted-transaction error would otherwise
                 # make every subsequent statement on `conn` fail too).
                 with conn.transaction():
-                    top = conn.execute(
-                        """
-                        SELECT c.parent_id, max(1.0 - (c.embedding <=> %(q)s)) AS sim
-                        FROM child_chunks c
-                        JOIN parent_chunks p ON c.parent_id = p.id
-                        JOIN documents d ON p.document_id = d.id
-                        WHERE c.tenant_id = %(t)s
-                          AND (d.claim_id IS NULL OR d.claim_id = %(c)s)
-                        GROUP BY c.parent_id
-                        ORDER BY sim DESC
-                        LIMIT %(lim)s
-                        """,
-                        {"q": query, "t": self.tenant_id, "c": claim_id, "lim": pool},
-                    ).fetchall()
+                    if self.vector_search_mode == "hnsw":
+                        # KNN-accelerated path: lets Postgres use the HNSW index on
+                        # child_chunks.embedding before rolling up max(sim) per parent.
+                        knn_lim = max(pool * 4, self.hnsw_candidates)
+                        top = conn.execute(
+                            """
+                            WITH nearest AS (
+                                SELECT c.parent_id, 1.0 - (c.embedding <=> %(q)s) AS sim
+                                FROM child_chunks c
+                                JOIN parent_chunks p ON c.parent_id = p.id
+                                JOIN documents d ON p.document_id = d.id
+                                WHERE c.tenant_id = %(t)s
+                                  AND (d.claim_id IS NULL OR d.claim_id = %(c)s)
+                                ORDER BY c.embedding <=> %(q)s
+                                LIMIT %(knn_lim)s
+                            )
+                            SELECT parent_id, max(sim) AS sim
+                            FROM nearest
+                            GROUP BY parent_id
+                            ORDER BY sim DESC
+                            LIMIT %(lim)s
+                            """,
+                            {"q": query, "t": self.tenant_id, "c": claim_id, "knn_lim": knn_lim, "lim": pool},
+                        ).fetchall()
+                    else:
+                        top = conn.execute(
+                            """
+                            SELECT c.parent_id, max(1.0 - (c.embedding <=> %(q)s)) AS sim
+                            FROM child_chunks c
+                            JOIN parent_chunks p ON c.parent_id = p.id
+                            JOIN documents d ON p.document_id = d.id
+                            WHERE c.tenant_id = %(t)s
+                              AND (d.claim_id IS NULL OR d.claim_id = %(c)s)
+                            GROUP BY c.parent_id
+                            ORDER BY sim DESC
+                            LIMIT %(lim)s
+                            """,
+                            {"q": query, "t": self.tenant_id, "c": claim_id, "lim": pool},
+                        ).fetchall()
                     if top:
                         ids = [r[0] for r in top]
                         meta = {
