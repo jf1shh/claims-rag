@@ -398,16 +398,16 @@ def find_decision_request(query: str) -> list[GuardFinding]:
 DECLINED_TEXT = (
     "I don't make claim decisions. Approving, denying, paying, settling, setting a reserve and "
     "deciding coverage, liability or fault are decided by a licensed adjuster or another authorized "
-    "person, not by this assistant. What I can do: show the policy and guideline excerpts that "
-    "bear on this question (listed below with their sources), summarize the claim file and adjuster "
-    "notes, or put together a checklist of what the adjuster should confirm before deciding."
+    "person, not by this assistant. What I can do: pull the cited policy and guideline excerpts that "
+    "bear on this question, summarize the claim file and adjuster notes, or put together a checklist "
+    "of what the adjuster should confirm before deciding. Ask me for any of those."
 )
 
 
 def apply_decision_guard(result: dict, query: str) -> dict:
     """Replace the answer with the plain refusal-and-offer when `query` asks for a claim decision.
 
-    Sources are kept so the offered excerpts stay cited; computed figures (`tool_section`) are
+    Runs before the router (api.decision_refusal), so no retrieval or model call happens; computed figures (`tool_section`) are
     dropped because they could read as a decision. The `guard` report uses action "declined" and
     flows into the structured contract and the audit record like the other guard actions.
     Applies in every engine mode and in every `answer_guard_mode`. Input is never mutated.

@@ -233,15 +233,12 @@ def register_routes(app, runtime):
                    for source, evidence in zip(result.get("sources") or [], structured["evidence"], strict=True)]
         return {**result, "sources": sources, "structured": structured}
 
-    def guard_result(result, claim_id, query=""):
+    def guard_result(result, claim_id):
         """Post-generation answer guard (backend/answer_guard.py), applied before audit and
         projection so neither the caller nor the structured contract sees an unsupported
         claim outcome or off-allowlist contact as the assistant's answer."""
         from backend.agentic_router import claim_record_status
-        from backend.answer_guard import apply_decision_guard, apply_guard
-        declined = apply_decision_guard(result, query)
-        if declined is not result:
-            return declined
+        from backend.answer_guard import apply_guard
         return apply_guard(
             result,
             mode=runtime.settings.answer_guard_mode,
@@ -329,6 +326,16 @@ def register_routes(app, runtime):
             fields.update({"provenance_action": provenance["action"],
                            "provenance_findings": sorted({f["kind"] for f in provenance["findings"]})})
         return fields
+
+    def decision_refusal(req):
+        """Pre-router decision check (backend/answer_guard.py): a request that asks the assistant
+        to make a claim decision is answered with the refusal-and-offer BEFORE any retrieval or
+        model call, so no generated text (live or streamed) can show an outcome. None otherwise."""
+        from backend.answer_guard import apply_decision_guard
+        base = {"answer": "", "sources": [], "claim_dossier": None, "engine": "decision-guard",
+                "pipeline_logs": []}
+        declined = apply_decision_guard(base, req.query)
+        return None if declined is base else declined
 
     def validate_chat(req):
         if not req.query.strip():
@@ -833,6 +840,11 @@ def register_routes(app, runtime):
             except HTTPException:
                 _audit(request, principal, "chat", outcome="denied", claim_id=req.claim_id)
                 raise
+        refusal = decision_refusal(req)
+        if refusal is not None:
+            _audit(request, principal, "chat", query=req.query, claim_id=req.claim_id, engine=req.engine,
+                   sources=[], outcome="completed", **guard_audit_fields(refusal))
+            return project_result(request, refusal)
         principal_key = _acquire_slot(principal, _chat_gate, "chat", runtime.settings.max_concurrent_chat)
         try:
             with llm_deadline_scope(runtime.settings.chat_deadline_seconds):
@@ -846,7 +858,7 @@ def register_routes(app, runtime):
                     llm_client=runtime._llm_client,
                     caps=runtime.settings,
                 )
-                result = tools_result(conflict_result(provenance_result(guard_result(result, req.claim_id, req.query)), req.query))
+                result = tools_result(conflict_result(provenance_result(guard_result(result, req.claim_id)), req.query))
             _audit(
                 request,
                 principal,
@@ -884,6 +896,14 @@ def register_routes(app, runtime):
             except HTTPException:
                 _audit(request, principal, "chat", outcome="denied", claim_id=req.claim_id)
                 raise
+        refusal = decision_refusal(req)
+        if refusal is not None:
+            _audit(request, principal, "chat", query=req.query, claim_id=req.claim_id, engine=req.engine,
+                   sources=[], outcome="completed", **guard_audit_fields(refusal))
+            final = project_result(request, refusal)
+            payload = f"data: {json.dumps(final)}\n\ndata: [DONE]\n\n"
+            return StreamingResponse(iter([payload]), media_type="text/event-stream",
+                                     headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
         principal_key = _acquire_slot(principal, _chat_gate, "chat", runtime.settings.max_concurrent_chat)
         finished = threading.Event()
 
@@ -920,7 +940,7 @@ def register_routes(app, runtime):
                         # replaces the streamed bubble (frontend finalizeStreamingBubble), so a
                         # withheld answer is withdrawn from view once generation completes.
                         final_event = project_result(request, tools_result(conflict_result(
-                            provenance_result(guard_result(event, req.claim_id, req.query)), req.query)))
+                            provenance_result(guard_result(event, req.claim_id)), req.query)))
                         yield f"data: {json.dumps({k: v for k, v in final_event.items() if k != 'type'})}\n\n"
                 yield "data: [DONE]\n\n"
             finally:
